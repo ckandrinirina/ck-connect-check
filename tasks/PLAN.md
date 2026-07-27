@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | T-01 | Set the project up so tests can run | done | S | — |
 | T-02 | Turn the router's XML replies into typed data | done | S | T-01 |
-| T-03 | Fetch a live usage snapshot from the router | todo | M | T-02 |
+| T-03 | Fetch a live usage snapshot from the router | done | M | T-02 |
 | T-04 | Work out how much of the plan is used and when it resets | todo | S | T-01 |
 | T-05 | Remember the plan limit and router address | todo | S | T-01 |
 | T-06 | Show usage in the macOS menu bar | todo | M | T-03, T-04, T-05 |
@@ -60,23 +60,29 @@ T-02 · status: done · size: S · needs: T-01 · files: src/hilink/parse.ts, sr
 
 ## T-03 Fetch a live usage snapshot from the router
 
-T-03 · status: todo · size: M · needs: T-02 · files: src/hilink/client.ts, src/hilink/session.ts, test/hilink/client.test.ts
+T-03 · status: done · size: M · needs: T-02 · files: src/hilink/client.ts, src/hilink/session.ts, test/hilink/client.test.ts
 
 ### Acceptance
-- [ ] A snapshot request first calls `/api/webserver/SesTokInfo`, then sends the returned `SesInfo` as `Cookie` and `TokInfo` as `__RequestVerificationToken` on every subsequent call
-- [ ] The five data endpoints are fetched and merged into one `RouterSnapshot`
-- [ ] A `125002` response triggers exactly one fresh handshake and one retry; a second `125002` returns an offline result
-- [ ] The session is reused across polls and only re-fetched after a `125002`
-- [ ] An unreachable host returns `{ online: false, reason: "unreachable" }` and never throws
-- [ ] A request that exceeds the configured timeout aborts and returns an offline result
-- [ ] The router host is injected, not hard-coded — the tests drive a stub server, not `192.168.8.1`
+- [x] A snapshot request first calls `/api/webserver/SesTokInfo`, then sends the returned `SesInfo` as `Cookie` and `TokInfo` as `__RequestVerificationToken` on every subsequent call
+- [x] The five data endpoints are fetched and merged into one `RouterSnapshot`
+- [x] A `125002` response triggers exactly one fresh handshake and one retry; a second `125002` returns an offline result
+- [x] The session is reused across polls and only re-fetched after a `125002`
+- [x] An unreachable host returns `{ online: false, reason: "unreachable" }` and never throws
+- [x] A request that exceeds the configured timeout aborts and returns an offline result
+- [x] The router host is injected, not hard-coded — the tests drive a stub server, not `192.168.8.1`
 
 ### Tasks
-- [ ] Failing tests against a stub HTTP server serving the T-02 fixtures
-- [ ] Session handshake with cookie and token capture
-- [ ] Snapshot fetcher merging the five endpoints
-- [ ] Retry-once-on-125002 and timeout handling
-- [ ] Offline result type covering unreachable, timeout and repeated-session-failure
+- [x] Failing tests against a stub HTTP server serving the T-02 fixtures
+- [x] Session handshake with cookie and token capture
+- [x] Snapshot fetcher merging the five endpoints
+- [x] Retry-once-on-125002 and timeout handling
+- [x] Offline result type covering unreachable, timeout and repeated-session-failure
+
+### Notes
+- Endpoints are fetched sequentially on one session; a 125002 retries the whole
+  snapshot rather than the single failed call — decided in the T-03 clarify round.
+- Malformed XML and non-125002 API codes return `{ online: false, reason: "error" }`
+  rather than throwing, so every failure renders as "offline".
 
 ## T-04 Work out how much of the plan is used and when it resets
 
