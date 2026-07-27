@@ -3,7 +3,7 @@
 | ID | Title | Status | Size | Needs |
 |---|---|---|---|---|
 | T-01 | Set the project up so tests can run | done | S | — |
-| T-02 | Turn the router's XML replies into typed data | todo | S | T-01 |
+| T-02 | Turn the router's XML replies into typed data | done | S | T-01 |
 | T-03 | Fetch a live usage snapshot from the router | todo | M | T-02 |
 | T-04 | Work out how much of the plan is used and when it resets | todo | S | T-01 |
 | T-05 | Remember the plan limit and router address | todo | S | T-01 |
@@ -32,23 +32,31 @@ T-01 · status: done · size: S · needs: — · files: package.json, package-lo
 
 ## T-02 Turn the router's XML replies into typed data
 
-T-02 · status: todo · size: S · needs: T-01 · files: src/hilink/parse.ts, src/hilink/types.ts, test/hilink/parse.test.ts, test/fixtures/*.xml
+T-02 · status: done · size: S · needs: T-01 · files: src/hilink/parse.ts, src/hilink/types.ts, test/hilink/parse.test.ts, test/fixtures/hilink/*.xml
 
 ### Acceptance
-- [ ] A recorded `month_statistics` reply parses to numeric `monthDownloadBytes` 4427475340 and `monthUploadBytes` 1403243047
-- [ ] A recorded `traffic-statistics` reply parses to numeric `downloadRateBps` and `uploadRateBps`
-- [ ] A recorded `status` reply parses to `signalBars`, `maxSignalBars`, `connectedDevices` and a `connected` boolean
-- [ ] A recorded `current-plmn` reply parses to `carrier` `"Yas"`
-- [ ] A recorded `start_date` reply parses to `startDay` 1 and `routerDataLimitBytes` 0
-- [ ] An `<error><code>125002</code></error>` reply is recognised as a stale-session error, distinct from a parse failure
-- [ ] Malformed XML raises a typed parse error naming the endpoint, never returns `undefined` fields
-- [ ] Every parsed numeric field is `typeof "number"`, never a string
+- [x] A recorded `month_statistics` reply parses to numeric `monthDownloadBytes` 4427475340 and `monthUploadBytes` 1403243047
+- [x] A recorded `traffic-statistics` reply parses to numeric `downloadRateBps` and `uploadRateBps`
+- [x] A recorded `status` reply parses to `signalBars`, `maxSignalBars`, `connectedDevices` and a `connected` boolean
+- [x] A recorded `current-plmn` reply parses to `carrier` `"Yas"`
+- [x] A recorded `start_date` reply parses to `startDay` 1 and `routerDataLimitBytes` 0
+- [x] An `<error><code>125002</code></error>` reply is recognised as a stale-session error, distinct from a parse failure
+- [x] Malformed XML raises a typed parse error naming the endpoint, never returns `undefined` fields
+- [x] Every parsed numeric field is `typeof "number"`, never a string
 
 ### Tasks
-- [ ] Save the six live replies already captured as fixtures under `test/fixtures/`
-- [ ] Failing tests for every criterion above
-- [ ] Declare the `RouterSnapshot` field types in `src/hilink/types.ts`
-- [ ] Implement the parser, converting all numeric fields at the boundary
+- [x] Save the six live replies already captured as fixtures under `test/fixtures/`
+- [x] Failing tests for every criterion above
+- [x] Declare the `RouterSnapshot` field types in `src/hilink/types.ts`
+- [x] Implement the parser, converting all numeric fields at the boundary
+
+### Notes
+- Fixtures were re-captured live from the device on 2026-07-27 for authentic element
+  names and ordering, with the month totals pinned to the recorded values above so the
+  criteria stay stable. `ses-tok-info.xml` carries a synthetic session ID of the same
+  shape — no real token is committed.
+- `DataLimit` is parsed with decimal units (`50GB` → 50,000,000,000 bytes), matching the
+  architecture decision to display usage in decimal GB.
 
 ## T-03 Fetch a live usage snapshot from the router
 
