@@ -1,0 +1,25 @@
+{
+  "name": "ck-connect-check",
+  "version": "0.1.0",
+  "private": true,
+  "description": "macOS menu bar app showing mobile data usage from a Huawei HiLink router",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.10.2",
+    "electron": "^33.2.1",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}

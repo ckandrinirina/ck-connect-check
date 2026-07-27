@@ -1,0 +1,7 @@
+node_modules/
+dist/
+out/
+
+# editor / OS noise
+.DS_Store
+*.log
