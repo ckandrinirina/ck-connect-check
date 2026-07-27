@@ -9,6 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "start": "npm run build && electron .",
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint ."
