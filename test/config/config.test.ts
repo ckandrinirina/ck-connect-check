@@ -30,6 +30,7 @@ import {
   defaultConfigPath,
 } from "../../src/config/defaults.js";
 import type { AppConfig } from "../../src/config/defaults.js";
+import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 
 let dir: string;
 
@@ -440,6 +441,164 @@ describe("router credential fields", () => {
 
     expect(result.config).toEqual(defaultConfig());
     expect(result.problem).toContain("routerPasswordBlob");
+  });
+});
+
+describe("the stored allowance anchor", () => {
+  const ANCHOR: AllowanceAnchor = {
+    planLabel: "NET MONTH 200 000",
+    remainingBytes: 145_835_900_000,
+    expiresAt: new Date(2026, 7, 12),
+    routerMonthBytes: 1_000_000_000,
+    routerClearTime: "2026-7-27",
+    syncedAt: new Date(2026, 6, 27, 10, 0, 0),
+  };
+
+  it("accepts a config with no anchor at all", () => {
+    const parsed = parseConfig({ host: "10.0.0.1" });
+
+    expect(parsed).not.toHaveProperty("allowanceAnchor");
+    expect(parsed).not.toHaveProperty("planTotalBytes");
+  });
+
+  it("leaves every existing config file valid", () => {
+    expect(loadConfig(path("never-written.json")).problem).toBeUndefined();
+    expect(parseConfig(defaultConfig()).allowanceAnchor).toBeUndefined();
+  });
+
+  it("round-trips an anchor through save and load unchanged", () => {
+    const written: AppConfig = {
+      ...defaultConfig(),
+      allowanceAnchor: ANCHOR,
+      planTotalBytes: 200_000_000_000,
+    };
+
+    saveConfig(path(), written);
+
+    expect(loadConfig(path()).config).toEqual(written);
+  });
+
+  it("round-trips the expiry date, not a string", () => {
+    saveConfig(path(), { ...defaultConfig(), allowanceAnchor: ANCHOR });
+
+    const stored = loadConfig(path()).config.allowanceAnchor;
+
+    expect(stored?.expiresAt).toBeInstanceOf(Date);
+    expect(stored?.expiresAt?.getTime()).toBe(ANCHOR.expiresAt?.getTime());
+    expect(stored?.syncedAt).toBeInstanceOf(Date);
+    expect(stored?.syncedAt.getTime()).toBe(ANCHOR.syncedAt.getTime());
+  });
+
+  it("stores the dates as ISO strings on disk", () => {
+    saveConfig(path(), { ...defaultConfig(), allowanceAnchor: ANCHOR });
+
+    const raw = JSON.parse(readFileSync(path(), "utf8")) as {
+      allowanceAnchor: { expiresAt: unknown; syncedAt: unknown };
+    };
+
+    expect(typeof raw.allowanceAnchor.expiresAt).toBe("string");
+    expect(typeof raw.allowanceAnchor.syncedAt).toBe("string");
+  });
+
+  it("round-trips an anchor whose carrier stated no expiry", () => {
+    const undated: AppConfig = {
+      ...defaultConfig(),
+      allowanceAnchor: { ...ANCHOR, expiresAt: null },
+    };
+
+    saveConfig(path(), undated);
+
+    expect(loadConfig(path()).config).toEqual(undated);
+  });
+
+  it("rejects an anchor with a non-numeric byte count", () => {
+    expect(() =>
+      parseConfig({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, remainingBytes: "lots" },
+      }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, routerMonthBytes: null },
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("names the offending anchor field on the rejection", () => {
+    try {
+      parseConfig({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, remainingBytes: "lots" },
+      });
+      expect.unreachable("expected a ConfigValidationError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).field).toBe(
+        "allowanceAnchor.remainingBytes",
+      );
+    }
+  });
+
+  it("rejects an anchor with an unparseable date", () => {
+    expect(() =>
+      parseConfig({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, expiresAt: "the twelfth of never" },
+      }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, syncedAt: "not-a-date" },
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("rejects an anchor that is not an object", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), allowanceAnchor: "anchored" }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("rejects a negative remaining volume", () => {
+    expect(() =>
+      parseConfig({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, remainingBytes: -1 },
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("rejects a high-water plan total that is not a non-negative number", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), planTotalBytes: "big" }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({ ...defaultConfig(), planTotalBytes: -1 }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("falls back to the defaults when a stored anchor is invalid", () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({
+        ...defaultConfig(),
+        allowanceAnchor: { ...ANCHOR, remainingBytes: "lots" },
+      }),
+    );
+
+    const result = loadConfig(path());
+
+    expect(result.config).toEqual(defaultConfig());
+    expect(result.problem).toContain("allowanceAnchor.remainingBytes");
+  });
+
+  it("writes no anchor key when nothing has been anchored", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(readFileSync(path(), "utf8")).not.toContain("allowanceAnchor");
   });
 });
 

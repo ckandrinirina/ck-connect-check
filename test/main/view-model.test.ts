@@ -5,6 +5,7 @@ import {
   createRateHistory,
   type RateSample,
 } from "../../src/domain/history.js";
+import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
@@ -406,6 +407,127 @@ describe("buildPopoverModel — the recent throughput history", () => {
 
     expect(second.history.download).toEqual(first.history.download);
     expect(live.samples()).toHaveLength(1);
+  });
+});
+
+describe("buildPopoverModel — a real allowance anchored from a sync", () => {
+  const ANCHOR: AllowanceAnchor = {
+    planLabel: "NET MONTH 200 000",
+    remainingBytes: 100_000_000_000,
+    expiresAt: new Date(2026, 7, 12),
+    routerMonthBytes: 1_000_000_000,
+    routerClearTime: "2026-7-27",
+    syncedAt: SEVEN_HOURS_AGO,
+  };
+
+  /** The router's counter 10 Go past the anchored one, with its clear time intact. */
+  const counter = (bytes: number, clearTime = "2026-7-27") =>
+    online({
+      month: {
+        monthDownloadBytes: bytes,
+        monthUploadBytes: 0,
+        monthDurationSeconds: 27_960,
+        monthLastClearTime: clearTime,
+      },
+    });
+
+  function withAnchor(
+    anchor: AllowanceAnchor | undefined,
+    result = counter(11_000_000_000),
+  ): PopoverModel {
+    return buildPopoverModel({
+      result,
+      lastReading: null,
+      config: {
+        ...configWithLimit(20_000_000_000),
+        ...(anchor === undefined ? {} : { allowanceAnchor: anchor }),
+        planTotalBytes: 200_000_000_000,
+      },
+      clock,
+    });
+  }
+
+  it("computes the share used from the anchor, not from the configured limit", () => {
+    // 200 Go anchored total, 90 Go left → 55%. The configured 20 Go limit would
+    // read as an overrun instead.
+    expect(withAnchor(ANCHOR).progress.label).toBe("55%");
+    expect(withAnchor(ANCHOR).progress.available).toBe(true);
+  });
+
+  it("shows the exact remaining volume the anchor carries forward", () => {
+    const model = withAnchor(ANCHOR);
+
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.remaining).toBe("90.00 Go");
+    expect(model.allowance.planLabel).toBe("NET MONTH 200 000");
+  });
+
+  it("shows the expiry as a date and the days left", () => {
+    const model = withAnchor(ANCHOR);
+
+    expect(model.allowance.expires).toBe("12/08/2026");
+    expect(model.allowance.daysUntilExpiry).toBe("16 days");
+  });
+
+  it("is not marked stale while the anchor holds", () => {
+    expect(withAnchor(ANCHOR).allowance.stale).toBe(false);
+    expect(withAnchor(ANCHOR).allowance.note).toBe("");
+  });
+
+  it("falls back to the configured limit when there is no anchor", () => {
+    const model = withAnchor(undefined, online());
+
+    expect(model.progress.label).toBe("29%");
+    expect(model.allowance.available).toBe(false);
+    expect(model.allowance.remaining).toBe("—");
+  });
+
+  it("keeps showing the last computed remaining when the anchor goes stale", () => {
+    const model = withAnchor(ANCHOR, counter(400_000_000));
+
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.stale).toBe(true);
+    expect(model.allowance.note).not.toBe("");
+    expect(model.allowance.remaining).toBe("100.00 Go");
+  });
+
+  it("falls back to the configured limit for the dial once the anchor is stale", () => {
+    // 4 Go counted against the configured 20 Go limit — 20%, not the 98% the
+    // anchor would have claimed.
+    const model = withAnchor(ANCHOR, counter(4_000_000_000, "2026-8-1"));
+
+    expect(model.allowance.stale).toBe(true);
+    expect(model.progress.label).toBe("20%");
+  });
+
+  it("marks an exhausted allowance", () => {
+    const model = withAnchor(
+      { ...ANCHOR, remainingBytes: 2_000_000_000 },
+      counter(11_000_000_000),
+    );
+
+    expect(model.allowance.remaining).toBe("0 o");
+    expect(model.allowance.exhausted).toBe(true);
+  });
+
+  it("still hands the renderer only display strings", () => {
+    const model = withAnchor(ANCHOR);
+
+    for (const leaf of leaves(model.allowance)) {
+      expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
+    }
+  });
+
+  it("shows nothing from an anchor before the first reading arrives", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: { ...defaultConfig(), allowanceAnchor: ANCHOR },
+      clock,
+    });
+
+    expect(model.allowance.available).toBe(false);
+    expect(model.allowance.remaining).toBe("—");
   });
 });
 

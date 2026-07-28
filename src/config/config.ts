@@ -21,6 +21,7 @@ import {
   defaultConfig,
 } from "./defaults.js";
 import type { AppConfig } from "./defaults.js";
+import type { AllowanceAnchor } from "../domain/allowance.js";
 
 /** A config value the app refuses to run on. `field` names the culprit. */
 export class ConfigValidationError extends Error {
@@ -199,6 +200,99 @@ function readCredentialField(
   return value;
 }
 
+function requireNonNegative(value: unknown, field: string): number {
+  const bytes = requireNumber(value, field);
+
+  if (bytes < 0) {
+    throw new ConfigValidationError(field, "must not be negative");
+  }
+
+  return bytes;
+}
+
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    throw new ConfigValidationError(
+      field,
+      `expected a string, got ${formatValue(value)}`,
+    );
+  }
+
+  return value;
+}
+
+/**
+ * A date as it survives a round trip: a `Date` on the way in from a live
+ * config, an ISO string on the way back off disk. Anything that does not parse
+ * is rejected rather than silently becoming an Invalid Date, which would make
+ * every expiry comparison read as false.
+ */
+function requireDate(value: unknown, field: string): Date {
+  const date =
+    value instanceof Date ? value : new Date(requireString(value, field));
+
+  if (Number.isNaN(date.getTime())) {
+    throw new ConfigValidationError(
+      field,
+      `expected a date, got ${formatValue(value)}`,
+    );
+  }
+
+  return date;
+}
+
+/**
+ * Reads the anchored allowance. Absent is the normal state — every config file
+ * written before the first sync is still valid — but a stored anchor has to be
+ * complete: a half-read one would carry the wrong volume forward for days.
+ */
+function readAllowanceAnchor(
+  raw: Record<string, unknown>,
+): AllowanceAnchor | undefined {
+  const value = raw.allowanceAnchor;
+
+  if (value === undefined || value === null) return undefined;
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new ConfigValidationError(
+      "allowanceAnchor",
+      `expected an object, got ${formatValue(value)}`,
+    );
+  }
+
+  const anchor = value as Record<string, unknown>;
+  const expiresAt = anchor.expiresAt;
+
+  return {
+    planLabel: requireString(anchor.planLabel, "allowanceAnchor.planLabel"),
+    remainingBytes: requireNonNegative(
+      anchor.remainingBytes,
+      "allowanceAnchor.remainingBytes",
+    ),
+    expiresAt:
+      expiresAt === null || expiresAt === undefined
+        ? null
+        : requireDate(expiresAt, "allowanceAnchor.expiresAt"),
+    routerMonthBytes: requireNonNegative(
+      anchor.routerMonthBytes,
+      "allowanceAnchor.routerMonthBytes",
+    ),
+    routerClearTime: requireString(
+      anchor.routerClearTime,
+      "allowanceAnchor.routerClearTime",
+    ),
+    syncedAt: requireDate(anchor.syncedAt, "allowanceAnchor.syncedAt"),
+  };
+}
+
+/** The high-water plan total. Absent until something has been anchored. */
+function readPlanTotal(raw: Record<string, unknown>): number | undefined {
+  if (raw.planTotalBytes === undefined || raw.planTotalBytes === null)
+    return undefined;
+
+  return requireNonNegative(raw.planTotalBytes, "planTotalBytes");
+}
+
 /**
  * Validates arbitrary parsed JSON into an {@link AppConfig}, filling absent
  * fields from the defaults. Throws {@link ConfigValidationError} on a value
@@ -216,6 +310,8 @@ export function parseConfig(raw: unknown): AppConfig {
   const pollIntervalSeconds = readPollInterval(record);
   const routerUsername = readCredentialField(record, "routerUsername");
   const routerPasswordBlob = readCredentialField(record, "routerPasswordBlob");
+  const allowanceAnchor = readAllowanceAnchor(record);
+  const planTotalBytes = readPlanTotal(record);
 
   return {
     host: readHost(record),
@@ -228,6 +324,8 @@ export function parseConfig(raw: unknown): AppConfig {
     planLimitBytes: readPlanLimit(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
+    ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),
+    ...(planTotalBytes === undefined ? {} : { planTotalBytes }),
   };
 }
 
