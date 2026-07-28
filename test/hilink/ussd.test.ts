@@ -45,12 +45,12 @@ const NOT_READY = fixture("ussd-not-ready");
 const MALFORMED = fixture("malformed");
 
 /** The four replies captured from the device, in the order they arrived. */
-const RECORDED_REPLIES = [
-  fixture("ussd-1-credit"),
-  fixture("ussd-2-offers"),
-  fixture("ussd-3-offer"),
-  fixture("ussd-4-allowance"),
-];
+const CREDIT = fixture("ussd-1-credit");
+const OFFERS = fixture("ussd-2-offers");
+const OFFER = fixture("ussd-3-offer");
+const ALLOWANCE = fixture("ussd-4-allowance");
+
+const RECORDED_REPLIES = [CREDIT, OFFERS, OFFER, ALLOWANCE];
 
 function statusBody(result: number): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<result>${result}</result>\n</response>`;
@@ -209,6 +209,10 @@ function carrier(script: CarrierScript = {}): Responder {
       };
     }
     if (path === USSD_RELEASE) {
+      // Releasing ends the session on the device, so the script starts over —
+      // a second dialogue sees the same menu the first one did.
+      sends = 0;
+      polls = 0;
       return { body: OK_REPLY };
     }
     return undefined;
@@ -323,12 +327,7 @@ describe("readAllowance menu navigation", () => {
   it("navigates an Info conso numbered 2 with 2, not with the recorded 1", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [
-          RECORDED_REPLIES[0] ?? "",
-          RECORDED_REPLIES[1] ?? "",
-          REORDERED_OFFER,
-          RECORDED_REPLIES[3] ?? "",
-        ],
+        replies: [CREDIT, OFFERS, REORDERED_OFFER, ALLOWANCE],
       }),
     );
 
@@ -343,12 +342,7 @@ describe("readAllowance menu navigation", () => {
   it("matches the Mes offres label wherever the carrier numbered it", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [
-          REORDERED_CREDIT,
-          RECORDED_REPLIES[1] ?? "",
-          RECORDED_REPLIES[2] ?? "",
-          RECORDED_REPLIES[3] ?? "",
-        ],
+        replies: [REORDERED_CREDIT, OFFERS, OFFER, ALLOWANCE],
       }),
     );
 
@@ -362,12 +356,7 @@ describe("readAllowance menu navigation", () => {
   it("falls back to the recorded digit when no option label matches", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [
-          RECORDED_REPLIES[0] ?? "",
-          RECORDED_REPLIES[1] ?? "",
-          UNLABELLED_OFFER,
-          RECORDED_REPLIES[3] ?? "",
-        ],
+        replies: [CREDIT, OFFERS, UNLABELLED_OFFER, ALLOWANCE],
       }),
     );
 
@@ -381,12 +370,7 @@ describe("readAllowance menu navigation", () => {
   it("never picks the Page precedente entry", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [
-          RECORDED_REPLIES[0] ?? "",
-          RECORDED_REPLIES[1] ?? "",
-          REORDERED_OFFER,
-          RECORDED_REPLIES[3] ?? "",
-        ],
+        replies: [CREDIT, OFFERS, REORDERED_OFFER, ALLOWANCE],
       }),
     );
 
@@ -400,7 +384,18 @@ describe("readAllowance menu navigation", () => {
 });
 
 describe("chooseDigit", () => {
+  /** The `Info conso` step — the last one, and the only one that names a label twice. */
   const step = MENU_SCRIPT[2] ?? { label: null, fallbackDigit: "1" };
+
+  it("scripts the three steps that follow the code itself", () => {
+    expect(MENU_SCRIPT).toHaveLength(3);
+    expect(MENU_SCRIPT.map((entry) => entry.fallbackDigit)).toEqual([
+      "1",
+      "1",
+      "1",
+    ]);
+    expect(step.label?.test("Info conso")).toBe(true);
+  });
 
   it("prefers the labelled option over the first one", () => {
     expect(
@@ -507,7 +502,7 @@ describe("readAllowance release", () => {
   it("releases the channel after a mid-dialogue error", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [RECORDED_REPLIES[0] ?? "", errorReply(100005)],
+        replies: [CREDIT, errorReply(100005)],
       }),
     );
 
@@ -537,12 +532,7 @@ describe("readAllowance release", () => {
   it("releases the channel after an unparseable final reply", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [
-          RECORDED_REPLIES[0] ?? "",
-          RECORDED_REPLIES[1] ?? "",
-          RECORDED_REPLIES[2] ?? "",
-          envelope("Merci de votre visite."),
-        ],
+        replies: [CREDIT, OFFERS, OFFER, envelope("Merci de votre visite.")],
       }),
     );
 
@@ -557,12 +547,7 @@ describe("readAllowance release", () => {
   it("releases the channel after a malformed reply body", async () => {
     const stub = await startStubRouter(
       carrier({
-        replies: [
-          RECORDED_REPLIES[0] ?? "",
-          RECORDED_REPLIES[1] ?? "",
-          RECORDED_REPLIES[2] ?? "",
-          MALFORMED,
-        ],
+        replies: [CREDIT, OFFERS, OFFER, MALFORMED],
       }),
     );
 
@@ -633,7 +618,7 @@ describe("readAllowance missing login", () => {
 
   it("names the missing login for a 100003 arriving mid-dialogue", async () => {
     const stub = await startStubRouter(
-      carrier({ replies: [RECORDED_REPLIES[0] ?? "", errorReply(100003)] }),
+      carrier({ replies: [CREDIT, errorReply(100003)] }),
     );
 
     const result = await new RouterClient({
