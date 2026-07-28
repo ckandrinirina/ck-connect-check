@@ -1,10 +1,15 @@
-import type { Rectangle, Tray } from 'electron';
+import type { Rectangle, Tray } from "electron";
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { defaultConfig } from '../../src/config/defaults.js';
-import { bindTrayToPopover, createPopover } from '../../src/main/popover.js';
-import { buildPopoverModel } from '../../src/main/view-model.js';
+import { defaultConfig } from "../../src/config/defaults.js";
+import { bindTrayToPopover, createPopover } from "../../src/main/popover.js";
+import {
+  buildPopoverModel,
+  type PopoverModel,
+} from "../../src/main/view-model.js";
+
+import type { RouterSnapshot } from "../../src/hilink/types.js";
 
 /**
  * Electron is never loaded for real. The fake window records the constructor
@@ -35,7 +40,7 @@ interface FakeWindow {
   destroy(): void;
 }
 
-vi.mock('electron', () => {
+vi.mock("electron", () => {
   class BrowserWindow {
     options: Record<string, unknown>;
     visible = false;
@@ -94,7 +99,7 @@ function fakeTray(): { tray: Tray; click(bounds: Rectangle): void } {
   return {
     tray: {
       on(event: string, handler: (event: unknown, bounds: Rectangle) => void) {
-        if (event === 'click') {
+        if (event === "click") {
           listener = handler;
         }
         return this;
@@ -110,19 +115,69 @@ function lastWindow(): FakeWindow {
   const window = electron.windows.at(-1);
 
   if (window === undefined) {
-    throw new Error('no popover window was created');
+    throw new Error("no popover window was created");
   }
 
   return window;
 }
 
-describe('createPopover', () => {
+const GB = 1_000_000_000;
+
+function snapshot(usedBytes: number): RouterSnapshot {
+  return {
+    month: {
+      monthDownloadBytes: usedBytes,
+      monthUploadBytes: 0,
+      monthDurationSeconds: 27_960,
+      monthLastClearTime: "2026-7-27",
+    },
+    traffic: {
+      downloadRateBps: 0,
+      uploadRateBps: 0,
+      connectTimeSeconds: 27_960,
+    },
+    status: {
+      connected: true,
+      signalBars: 4,
+      maxSignalBars: 5,
+      connectedDevices: 3,
+    },
+    carrier: { carrier: "Yas" },
+    billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
+  };
+}
+
+/** Two readings apart, so one pushed payload can be told from the one before it. */
+function modelUsing(usedBytes: number): PopoverModel {
+  return buildPopoverModel({
+    result: { online: true, snapshot: snapshot(usedBytes) },
+    lastReading: null,
+    config: defaultConfig(),
+  });
+}
+
+/** The model the page was last handed, read back out of the injected script. */
+function lastPushed(window: FakeWindow): PopoverModel {
+  const call = window.webContents.executeJavaScript.mock.calls.at(-1);
+
+  if (call === undefined) {
+    throw new Error("nothing was pushed to the page");
+  }
+
+  const [script] = call as [string];
+
+  return JSON.parse(
+    script.slice(script.indexOf("(") + 1, script.lastIndexOf(")")),
+  ) as PopoverModel;
+}
+
+describe("createPopover", () => {
   beforeEach(() => {
     electron.windows.length = 0;
   });
 
-  it('creates the window frameless, non-resizable and out of the app switcher', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html' });
+  it("creates the window frameless, non-resizable and out of the app switcher", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
     popover.show(TRAY_BOUNDS);
 
     expect(lastWindow().options).toMatchObject({
@@ -134,16 +189,16 @@ describe('createPopover', () => {
     popover.destroy();
   });
 
-  it('does not open a window until it is first shown', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html' });
+  it("does not open a window until it is first shown", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
 
     expect(electron.windows).toHaveLength(0);
 
     popover.destroy();
   });
 
-  it('opens on the first tray click and closes on the second', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html' });
+  it("opens on the first tray click and closes on the second", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
     const { tray, click } = fakeTray();
     bindTrayToPopover(tray, popover);
 
@@ -159,12 +214,12 @@ describe('createPopover', () => {
     popover.destroy();
   });
 
-  it('closes when the window loses focus', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html' });
+  it("closes when the window loses focus", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
     popover.show(TRAY_BOUNDS);
 
-    const blur = lastWindow().handlers.get('blur');
-    expect(blur).toBeTypeOf('function');
+    const blur = lastWindow().handlers.get("blur");
+    expect(blur).toBeTypeOf("function");
 
     blur?.();
     expect(popover.isOpen()).toBe(false);
@@ -172,8 +227,8 @@ describe('createPopover', () => {
     popover.destroy();
   });
 
-  it('positions itself under the tray item it was clicked from', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html', width: 320 });
+  it("positions itself under the tray item it was clicked from", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html", width: 320 });
     popover.show(TRAY_BOUNDS);
 
     // Centred on the tray item, hanging just below the menu bar.
@@ -182,23 +237,116 @@ describe('createPopover', () => {
     popover.destroy();
   });
 
-  it('hands the current model to the page rather than letting it compute anything', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html' });
-    popover.setModel(buildPopoverModel({ result: null, lastReading: null, config: defaultConfig() }));
+  it("hands the current model to the page rather than letting it compute anything", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.setModel(
+      buildPopoverModel({
+        result: null,
+        lastReading: null,
+        config: defaultConfig(),
+      }),
+    );
     popover.show(TRAY_BOUNDS);
 
     const window = lastWindow();
-    window.webContents.handlers.get('did-finish-load')?.();
+    window.webContents.handlers.get("did-finish-load")?.();
 
-    const [script] = window.webContents.executeJavaScript.mock.calls.at(-1) as [string];
-    expect(script).toContain('applyPopoverModel');
+    const [script] = window.webContents.executeJavaScript.mock.calls.at(-1) as [
+      string,
+    ];
+    expect(script).toContain("applyPopoverModel");
     expect(script).toContain('"stale":true');
 
     popover.destroy();
   });
 
-  it('releases the window when destroyed', () => {
-    const popover = createPopover({ htmlPath: '/tmp/index.html' });
+  it("keeps the renderer unthrottled so a hidden panel still applies pushes", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    expect(lastWindow().options["webPreferences"]).toMatchObject({
+      backgroundThrottling: false,
+    });
+
+    popover.destroy();
+  });
+
+  it("pushes into a hidden window instead of waiting for the next open", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    window.webContents.handlers.get("did-finish-load")?.();
+    popover.hide();
+    window.webContents.executeJavaScript.mockClear();
+
+    const model = modelUsing(9 * GB);
+    popover.setModel(model);
+
+    expect(window.webContents.executeJavaScript).toHaveBeenCalledTimes(1);
+    expect(lastPushed(window)).toEqual(model);
+
+    popover.destroy();
+  });
+
+  it("remembers a model set before the window exists and pushes it on load", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    const model = modelUsing(5 * GB);
+
+    expect(() => {
+      popover.setModel(model);
+    }).not.toThrow();
+    expect(electron.windows).toHaveLength(0);
+
+    popover.show(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    window.webContents.executeJavaScript.mockClear();
+    window.webContents.handlers.get("did-finish-load")?.();
+
+    expect(lastPushed(window)).toEqual(model);
+
+    popover.destroy();
+  });
+
+  it("pushes twice for two updates in a row rather than swallowing the second", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    window.webContents.handlers.get("did-finish-load")?.();
+    window.webContents.executeJavaScript.mockClear();
+
+    popover.setModel(modelUsing(9 * GB));
+    popover.setModel(modelUsing(11 * GB));
+
+    expect(window.webContents.executeJavaScript).toHaveBeenCalledTimes(2);
+
+    popover.destroy();
+  });
+
+  it("pushes the newest model, never a stale one", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    window.webContents.handlers.get("did-finish-load")?.();
+
+    popover.setModel(modelUsing(9 * GB));
+
+    const newest = modelUsing(11 * GB);
+    popover.setModel(newest);
+
+    expect(lastPushed(window)).toEqual(newest);
+    expect(lastPushed(window).monthTotal).not.toBe(
+      modelUsing(9 * GB).monthTotal,
+    );
+
+    popover.destroy();
+  });
+
+  it("releases the window when destroyed", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
     popover.show(TRAY_BOUNDS);
     const window = lastWindow();
 
