@@ -11,12 +11,12 @@
  * not cost a renderer process.
  */
 
-import { BrowserWindow } from 'electron';
-import { fileURLToPath } from 'node:url';
+import { BrowserWindow } from "electron";
+import { fileURLToPath } from "node:url";
 
-import type { Rectangle, Tray } from 'electron';
+import type { Rectangle, Tray } from "electron";
 
-import type { PopoverModel } from './view-model.js';
+import type { PopoverModel } from "./view-model.js";
 
 /** Wide enough for a rate and its unit on one line without wrapping. */
 export const POPOVER_WIDTH = 320;
@@ -30,7 +30,9 @@ export const POPOVER_HEIGHT = 380;
  * `dist/` after a build — so the same relative walk finds it either way.
  */
 function defaultHtmlPath(): string {
-  return fileURLToPath(new URL('../../src/renderer/index.html', import.meta.url));
+  return fileURLToPath(
+    new URL("../../src/renderer/index.html", import.meta.url),
+  );
 }
 
 export interface PopoverOptions {
@@ -97,14 +99,22 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       // Keeps the panel out of the app switcher and the taskbar; together with
       // `app.dock.hide()` in `main.ts` the app has no window-list presence.
       skipTaskbar: true,
-      webPreferences: { contextIsolation: true, nodeIntegration: false },
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        // The window is hidden rather than destroyed between opens, and Chromium
+        // throttles a hidden renderer — the pushes below would then queue up and
+        // only run on the next `show`, leaving an open panel frozen. Keep the
+        // renderer awake so every poll lands as it arrives.
+        backgroundThrottling: false,
+      },
     });
 
     // Clicking anywhere else dismisses the panel, the way a real popover behaves.
-    created.on('blur', () => {
+    created.on("blur", () => {
       hide();
     });
-    created.webContents.on('did-finish-load', () => {
+    created.webContents.on("did-finish-load", () => {
       push();
     });
 
@@ -171,7 +181,7 @@ export function createPopover(options: PopoverOptions = {}): Popover {
  * right click and leaves the left button to the popover.
  */
 export function bindTrayToPopover(tray: Tray, popover: Popover): void {
-  tray.on('click', (_event, bounds) => {
+  tray.on("click", (_event, bounds) => {
     popover.toggle(bounds);
   });
 }

@@ -338,7 +338,7 @@ describe("createPopover", () => {
     popover.setModel(newest);
 
     expect(lastPushed(window)).toEqual(newest);
-    expect(lastPushed(window).monthTotal).not.toEqual(
+    expect(lastPushed(window).monthTotal).not.toBe(
       modelUsing(9 * GB).monthTotal,
     );
 
