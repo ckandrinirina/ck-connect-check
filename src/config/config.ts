@@ -176,6 +176,30 @@ function readPlanLimit(raw: Record<string, unknown>): number | null {
 }
 
 /**
+ * Reads one of the two credential fields. Both are optional — every config file
+ * written before the router needed a login is still valid — but a field that is
+ * present has to be a real non-empty string, since a blank blob or username is
+ * indistinguishable from a corrupted one.
+ */
+function readCredentialField(
+  raw: Record<string, unknown>,
+  field: "routerUsername" | "routerPasswordBlob",
+): string | undefined {
+  const value = raw[field];
+
+  if (value === undefined) return undefined;
+
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new ConfigValidationError(
+      field,
+      `must be a non-empty string, got ${formatValue(value)}`,
+    );
+  }
+
+  return value;
+}
+
+/**
  * Validates arbitrary parsed JSON into an {@link AppConfig}, filling absent
  * fields from the defaults. Throws {@link ConfigValidationError} on a value
  * that is present but wrong.
@@ -190,6 +214,8 @@ export function parseConfig(raw: unknown): AppConfig {
 
   const record = raw as Record<string, unknown>;
   const pollIntervalSeconds = readPollInterval(record);
+  const routerUsername = readCredentialField(record, "routerUsername");
+  const routerPasswordBlob = readCredentialField(record, "routerPasswordBlob");
 
   return {
     host: readHost(record),
@@ -200,6 +226,8 @@ export function parseConfig(raw: unknown): AppConfig {
     ),
     warnThresholdPercent: readWarnThreshold(record),
     planLimitBytes: readPlanLimit(record),
+    ...(routerUsername === undefined ? {} : { routerUsername }),
+    ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
   };
 }
 

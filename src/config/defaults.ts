@@ -25,6 +25,17 @@ export interface AppConfig {
   warnThresholdPercent: number;
   /** Monthly quota in bytes, or `null` when the user has not set one. */
   planLimitBytes: number | null;
+  /**
+   * Router admin username. Absent until a credential has been saved — a router
+   * that needs no login never grows either credential field.
+   */
+  routerUsername?: string;
+  /**
+   * The router admin password as encrypted by the macOS Keychain, base64-encoded.
+   * Never the plaintext: only `src/main/credentials.ts` can turn this back into
+   * a password, and only on the machine that wrote it.
+   */
+  routerPasswordBlob?: string;
 }
 
 /** The stock HiLink address; the router answers here out of the box. */
