@@ -24,6 +24,11 @@ T-01 installs these and is the point at which this section describes reality.
 - test: `npm test` (Vitest, `vitest run`)
 - build: `npm run build` (`tsc -p tsconfig.build.json` → `dist/`)
 - lint: `npm run lint` (`eslint .`, flat config)
+- icon: `npm run icon` (rasterises `assets/icon.svg` into the `.iconset` and `.icns`)
+
+`npm run icon` draws through an offscreen Electron window, so it launches a GUI
+process — a sandboxed shell blocks it and the run hangs silently. `npm test`
+inherits that, because the icon test runs the real rasteriser.
 
 `tsconfig.json` is the strict base used for type-checking `src/` and `test/`;
 `tsconfig.build.json` extends it, narrows the inputs to `src/` and is the only config
@@ -167,6 +172,9 @@ src/
                 keychain-backed router password
   renderer/     popover UI (HTML + CSS + TS)
 test/           mirrors src/, one .test.ts per source file
+assets/         icon sources — hand-written SVG, and the PNG/.icns rasterised from them
+scripts/        build-time scripts that are not part of the app — icon rasterisation
+docs/media/     screenshots referenced by README.md
 ```
 
 ## Decisions
@@ -210,6 +218,12 @@ Append-only. One line each, always with the reason.
 - `CurrentNetworkTypeEx` is mapped to a label in `src/domain/`, not in `src/hilink/` — the code-to-name table is carrier-agnostic constants, and the router boundary's job ends at turning the string into a number
 - An unmapped network-type code is shown as the code itself rather than hidden or guessed — the same reason an unrecognised error code is carried to the surface with its number
 - The Sync button moves to the header but its status line stays at the foot of the panel — the steps of a dialogue that takes tens of seconds are several lines that arrive over time, and a header that grew and shrank mid-sync would push the dial down while it is being read
+- The icon is a hand-written SVG in `assets/`, rasterised by a script rather than committed as a binary from a design tool — the artwork is a ring and four bars, which is geometry a text file states exactly, and a reviewable diff beats an opaque PNG
+- Rasterisation runs through Electron's own offscreen `BrowserWindow`, not a new image dependency — Chromium is already in the tree and renders the SVG identically to the panel that inspired the mark, so the icon cannot drift from the UI it belongs to
+- The generated PNG and `.icns` artefacts are committed, not built on demand — `electron-forge` reads `packagerConfig.icon` from disk at package time, and a packaged build must never depend on a rasterisation step having been run first
+- `assets/` and `scripts/` are added to the forge ignore list — the icon reaches the bundle through `packagerConfig.icon`, so shipping its sources inside the asar would be dead weight
+- The menu bar glyph is the signal bars and changes with the level, while the `.icns` is the ring mark — a tray image that never changes is the decoration already rejected for the panel, whereas the bundle icon's job is identity, not measurement
+- The tray glyph is a template image, so macOS inverts it for dark and light menu bars and for the selected state — a coloured tray icon is the one thing that always looks wrong on one of the two appearances
 
 ## Conventions
 
