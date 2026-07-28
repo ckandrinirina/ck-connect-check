@@ -132,22 +132,26 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("hands the renderer only display strings — never a number to format", () => {
-    // The sparkline history is the one exception: a chart is geometry, not
-    // text, so it carries raw rates. Everything the user *reads* is a string.
+    // Two exceptions, both geometry rather than text: the sparkline history and
+    // the dial's sweep. Everything the user *reads* is a string.
     const displayed = Object.entries(model).filter(
       ([field]) => field !== "history",
     );
 
     for (const leaf of leaves(Object.fromEntries(displayed))) {
-      expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
+      const geometry = leaf === model.progress.sweep;
+
+      expect(
+        geometry || typeof leaf === "string" || typeof leaf === "boolean",
+      ).toBe(true);
     }
   });
 
-  it("pre-computes the progress bar width as a CSS length", () => {
-    expect(model.progress.fillWidth).toBe("29.2%");
+  it("pre-computes the dial's sweep as a share of the ring", () => {
+    expect(model.progress.sweep).toBeCloseTo(0.2915, 4);
   });
 
-  it("caps the bar at full width when the plan is overrun, but still reports the real share", () => {
+  it("caps the sweep at a full ring when the plan is overrun, but still reports the real share", () => {
     const over = buildPopoverModel({
       result: online(),
       lastReading: null,
@@ -156,7 +160,12 @@ describe("buildPopoverModel — a live reading", () => {
     });
 
     expect(over.progress.label).toBe("117%");
-    expect(over.progress.fillWidth).toBe("100.0%");
+    expect(over.progress.sweep).toBe(1);
+  });
+
+  it("describes the dial for a screen reader with both the share and the total", () => {
+    expect(model.progress.description).toContain("29%");
+    expect(model.progress.description).toContain("5.83 GB");
   });
 
   it("is not flagged stale and carries no age", () => {
@@ -174,14 +183,19 @@ describe("buildPopoverModel — no plan limit configured", () => {
     clock,
   });
 
-  it("marks the progress bar unavailable rather than reporting 0%", () => {
+  it("marks the dial unavailable rather than reporting 0%", () => {
     expect(model.progress.available).toBe(false);
     expect(model.progress.label).toBe("—");
-    expect(model.progress.fillWidth).toBe("0%");
+    expect(model.progress.sweep).toBe(0);
   });
 
   it("prompts the user to set a limit", () => {
     expect(model.progress.prompt).toMatch(/limit/i);
+  });
+
+  it("describes the dial with the usage it does know and the limit it does not", () => {
+    expect(model.progress.description).toContain("5.83 GB");
+    expect(model.progress.description).toMatch(/limit/i);
   });
 
   it("still reports the usage figures it does know", () => {
@@ -242,13 +256,13 @@ describe("buildPopoverModel — nothing has been read yet", () => {
     expect(model.daysUntilReset).toBe("—");
   });
 
-  it("leaves the progress bar unavailable", () => {
+  it("leaves the dial unavailable", () => {
     expect(model.progress.available).toBe(false);
-    expect(model.progress.fillWidth).toBe("0%");
+    expect(model.progress.sweep).toBe(0);
   });
 });
 
-describe("buildPopoverModel — the usage state on the progress bar", () => {
+describe("buildPopoverModel — the usage state on the dial", () => {
   const GB = 1_000_000_000;
   const PLAN = 20 * GB;
 

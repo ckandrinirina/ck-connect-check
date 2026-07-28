@@ -48,23 +48,31 @@ export interface UsageReading {
 }
 
 /**
- * The progress bar, or the reason there is not one.
+ * The usage dial, or the reason there is not one.
  *
  * The `state` field is how close the user is to the plan limit, decided in
  * `../domain/quota.js` against the exact percentage. The renderer does not
  * compare it to anything — it puts it on the root element and lets the
- * stylesheet colour the bar.
+ * stylesheet colour the arc.
  */
 export interface PopoverProgress {
-  /** False when no plan limit is configured — there is no bar to draw. */
+  /** False when no plan limit is configured — there is no arc to draw. */
   available: boolean;
   /** `"29%"`, or a dash when there is no limit to measure against. */
   label: string;
-  /** CSS width for the filled part, e.g. `"29.2%"`. Capped at `"100.0%"`. */
-  fillWidth: string;
-  /** What to tell the user instead of a bar. Empty when the bar is available. */
+  /**
+   * How much of the ring to draw, 0 to 1 — geometry rather than text, like
+   * {@link PopoverHistory}, so the renderer scales it by the arc's
+   * circumference without deriving anything. Clamped, so an overrun plan draws
+   * a full ring instead of wrapping round a second time; {@link label} still
+   * carries the real share, which is the one thing the user must see.
+   */
+  sweep: number;
+  /** What to tell the user instead of a dial. Empty when the dial is available. */
   prompt: string;
-  /** How the bar should read: `"ok"`, `"warn"`, `"over"`, or `"unknown"`. */
+  /** The dial's accessible label: the share of the plan, and the bytes behind it. */
+  description: string;
+  /** How the dial should read: `"ok"`, `"warn"`, `"over"`, or `"unknown"`. */
   state: UsageState;
 }
 
@@ -151,15 +159,21 @@ function buildProgress(
     usedBytes === null ? null : percentUsed(usedBytes, limitBytes);
   const state = usageState(percent, warnThresholdPercent);
 
+  const total = usedBytes === null ? NO_VALUE : formatBytes(usedBytes);
+
   if (percent === null) {
     return {
       available: false,
       label: NO_VALUE,
-      fillWidth: "0%",
+      sweep: 0,
       prompt:
         usedBytes === null
           ? "Waiting for the first reading from the router."
           : "Set a plan limit to see how much of it is left.",
+      description:
+        usedBytes === null
+          ? "No usage read from the router yet"
+          : `${total} used this month, with no plan limit set`,
       state,
     };
   }
@@ -167,10 +181,11 @@ function buildProgress(
   return {
     available: true,
     // The label carries the real share — going over the plan is the one thing
-    // the user must not be shielded from — while the bar stops at full.
+    // the user must not be shielded from — while the ring stops at full.
     label: formatPercent(percent),
-    fillWidth: `${Math.min(Math.max(percent, 0), 100).toFixed(1)}%`,
+    sweep: Math.min(Math.max(percent, 0), 100) / 100,
     prompt: "",
+    description: `${formatPercent(percent)} of the plan used, ${total} this month`,
     state,
   };
 }

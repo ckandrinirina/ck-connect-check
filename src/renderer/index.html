@@ -26,20 +26,27 @@
           <span data-field="signal">—</span>
         </span>
       </div>
-      <span class="freshness" data-field="freshness">Waiting for the router</span>
+      <span class="freshness" data-field="freshness"
+        >Waiting for the router</span
+      >
     </header>
 
     <section class="usage">
-      <div class="usage-total">
+      <!--
+        The ring itself is built by `popover.ts`: its geometry comes from the
+        model, and an SVG whose only job is to be redrawn belongs where the
+        redrawing happens. The percentage stays here as ordinary text so the
+        page reads the same as every other field.
+      -->
+      <div class="dial" data-dial role="img" aria-label="No usage read yet">
+        <span class="dial-value" data-field="percent">—</span>
+      </div>
+
+      <div class="usage-figures">
         <span class="total" data-field="monthTotal">—</span>
-        <span class="percent" data-field="percent">—</span>
+        <span class="caption">used this month</span>
+        <p class="prompt" data-field="prompt"></p>
       </div>
-
-      <div class="bar" role="presentation">
-        <div class="bar-fill" data-fill></div>
-      </div>
-
-      <p class="prompt" data-field="prompt"></p>
     </section>
 
     <dl class="stats">
