@@ -16,6 +16,7 @@
 | T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03             |
 | T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10             |
 | T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13       |
+| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14             |
 
 ## T-01 Set the project up so tests can run
 
@@ -546,3 +547,38 @@ budget above is arithmetic, not a measurement.
 
 The SVGs are `aria-hidden="true"`; the formatted rate text beside each line is what a screen
 reader announces.
+
+## T-15 Show sizes in French octets (Go) instead of English bytes (GB)
+
+T-15 · status: done · size: S · needs: T-14 · files: src/domain/format.ts, src/main/tray.ts, src/main/view-model.ts, test/domain/format.test.ts, test/main/tray.test.ts, test/main/view-model.test.ts, test/main/poller.test.ts, test/main/main.test.ts, test/renderer/popover.test.ts, docs/ARCHITECTURE.md
+
+The app is French-facing but every size reads in English units. This swaps the
+display labels to octets across the whole scale — base unit included, so nothing
+mixes `B` with `Go` — and widens the tray suffix to match. The decimal 1000³
+scaling is not touched: only the strings change, so `4427475340` still scales to
+`4.43`, it just reads `4.43 Go`.
+
+The router's own `DataLimit` values (`0MB`, `50GB`) are wire format and keep
+their English suffixes in `src/hilink/parse.ts`; that parser is out of scope.
+
+### Acceptance
+
+- [x] `formatBytes` returns `"4.43 Go"` for `4427475340` and `"1.02 Ko"` for `1024`
+- [x] `formatBytes` returns `"512 o"` for `512` — the base unit is `o`, with no decimals
+- [x] `formatRate` returns `"2.4 Ko/s"` for `2400` and `"0 o/s"` for `0`
+- [x] `formatBytes` returns `"1.50 To"` for `1_500_000_000_000`
+- [x] The unknown-value dash `"—"` is still returned for a non-finite byte count or rate
+- [x] The tray title for `5_830_718_387` reads `"5.8Go"`, and for `52_000_000_000` reads `"52Go"`
+- [x] The tray title stays at or under 12 characters at its worst case (`999Go ⚠ 999%`)
+- [x] The popover's month total and rate labels read in octets, asserted through the existing renderer tests
+- [x] No test or source file outside `src/hilink/parse.ts` asserts a `GB`, `MB`, `KB` or `kB` display string
+
+### Tasks
+
+- [x] Failing tests in `test/domain/format.test.ts` for the octet spelling of `formatBytes` and `formatRate`, covering the `o` base unit, the `To` ceiling and the non-finite dash
+- [x] Failing tests in `test/main/tray.test.ts` for the `"5.8Go"` and `"52Go"` tray titles and the 12-character worst case
+- [x] Replace `BYTE_UNITS` and `RATE_UNITS` in `src/domain/format.ts` with the octet scale, and update the `unit === 'B'` / `unit === 'B/s'` zero-decimal guards to the new base unit
+- [x] Update the doc comments in `src/domain/format.ts` so the examples show octets
+- [x] Update `UNIT_LETTERS` in `src/main/tray.ts` to the octet suffixes, and confirm `compactBytes` still keys off the new unit strings
+- [x] Update the expected strings in `test/renderer/popover.test.ts` and the wording in `test/config/config.test.ts`
+- [x] Confirm the `files:` line above reflects everything actually touched
