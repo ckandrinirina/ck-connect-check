@@ -10,9 +10,14 @@ const GB = 1_000_000_000;
 const POLL_INTERVAL_SECONDS = 30;
 const POLL_INTERVAL_MS = POLL_INTERVAL_SECONDS * 1_000;
 
+/** The faster cadence used while the panel is on screen. */
+const ACTIVE_INTERVAL_SECONDS = 2;
+const ACTIVE_INTERVAL_MS = ACTIVE_INTERVAL_SECONDS * 1_000;
+
 const CONFIG: AppConfig = {
   host: "192.168.8.1",
   pollIntervalSeconds: POLL_INTERVAL_SECONDS,
+  activePollIntervalSeconds: ACTIVE_INTERVAL_SECONDS,
   warnThresholdPercent: 90,
   planLimitBytes: 20 * GB,
 };
@@ -238,6 +243,141 @@ describe("UsagePoller", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
 
     expect(poller.title).toBe("5.8G · 29%");
+  });
+});
+
+describe("UsagePoller — the active interval", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("polls at the active interval once the panel is open", async () => {
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({ client, config: CONFIG });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const opened = client.calls;
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_INTERVAL_MS * 3);
+
+    expect(client.calls).toBe(opened + 3);
+    poller.stop();
+  });
+
+  it("returns to the idle interval once the panel is shut", async () => {
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({ client, config: CONFIG });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    poller.setActive(false);
+    const closed = client.calls;
+
+    // The active-interval timer that was pending must not survive the close.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS - 1);
+    expect(client.calls).toBe(closed);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.calls).toBe(closed + 1);
+
+    poller.stop();
+  });
+
+  it("polls immediately on opening rather than waiting out the pending timer", async () => {
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({ client, config: CONFIG });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.calls).toBe(1);
+
+    // Halfway through a 30 second wait: without the immediate poll the panel
+    // would open on figures up to fifteen seconds stale.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS / 2);
+    expect(client.calls).toBe(1);
+
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.calls).toBe(2);
+    poller.stop();
+  });
+
+  it("triggers one extra poll when opening is signalled twice", async () => {
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({ client, config: CONFIG });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    poller.setActive(true);
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.calls).toBe(2);
+    poller.stop();
+  });
+
+  it("never stacks a second request while a slow reply is still in flight", async () => {
+    let resolveFirst: (result: SnapshotResult) => void = () => undefined;
+    const first = new Promise<SnapshotResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+    let calls = 0;
+
+    const poller = new UsagePoller({
+      client: {
+        snapshot(): Promise<SnapshotResult> {
+          calls += 1;
+
+          return calls === 1 ? first : Promise.resolve(USED_5_8_GB);
+        },
+      },
+      config: CONFIG,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The router is still answering the first request — opening the panel must
+    // not put a second one on the wire.
+    expect(calls).toBe(1);
+
+    resolveFirst(USED_5_8_GB);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_INTERVAL_MS);
+    expect(calls).toBe(2);
+
+    poller.stop();
+  });
+
+  it("stays quiet when opening before the poller has started", async () => {
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({ client, config: CONFIG });
+
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(ACTIVE_INTERVAL_MS * 3);
+
+    expect(client.calls).toBe(0);
+    poller.stop();
   });
 });
 

@@ -79,6 +79,11 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
   const client: SnapshotSource = {
     async snapshot(): Promise<SnapshotResult> {
+      // The panel dismisses itself when the user clicks elsewhere, which the
+      // wrapper below never sees. Reading its real visibility on every poll is
+      // what stops the fast cadence from outliving the panel that earned it.
+      poller.setActive(popover.isOpen());
+
       result = await router.snapshot();
 
       if (result.online) {
@@ -108,12 +113,32 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     onTitle: (title) => tray.setTitle(title),
   });
 
+  // The panel is the only reason to poll quickly, so every way of opening or
+  // closing it passes through here on its way to the poller.
+  const panel: Popover = {
+    isOpen: () => popover.isOpen(),
+    setModel: (model) => popover.setModel(model),
+    destroy: () => popover.destroy(),
+    show(bounds) {
+      popover.show(bounds);
+      poller.setActive(true);
+    },
+    hide() {
+      popover.hide();
+      poller.setActive(false);
+    },
+    toggle(bounds) {
+      popover.toggle(bounds);
+      poller.setActive(popover.isOpen());
+    },
+  };
+
   // A context menu would swallow the left click on macOS, so Quit moves to the
   // right button and the left one belongs to the popover.
   const menu = Menu.buildFromTemplate([{ label: "Quit", role: "quit" }]);
 
   tray.on("right-click", () => tray.popUpContextMenu(menu));
-  bindTrayToPopover(tray, popover);
+  bindTrayToPopover(tray, panel);
   tray.setTitle(poller.title);
   refreshPopover();
   poller.start();

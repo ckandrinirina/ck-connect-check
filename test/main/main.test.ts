@@ -13,6 +13,7 @@ import type { PopoverModel } from "../../src/main/view-model.js";
 const electron = vi.hoisted(() => ({
   dockHide: vi.fn(),
   setTitle: vi.fn(),
+  on: vi.fn(),
   buildFromTemplate: vi.fn((template: unknown) => ({ template })),
 }));
 
@@ -22,7 +23,7 @@ vi.mock("electron", () => {
     setToolTip = vi.fn();
     setContextMenu = vi.fn();
     destroy = vi.fn();
-    on = vi.fn();
+    on = electron.on;
   }
 
   return {
@@ -131,6 +132,42 @@ function latest(popover: RecordingPopover): PopoverModel {
   return popover.models[popover.models.length - 1];
 }
 
+/**
+ * The left-click handler `main.ts` hangs off the tray — the only way a user
+ * opens or closes the panel, and so the only honest way to drive it here.
+ */
+function clickTray(): void {
+  const registered = electron.on.mock.calls.find(
+    ([event]) => event === "click",
+  );
+
+  if (registered === undefined) {
+    throw new Error("no tray click handler was registered");
+  }
+
+  (registered[1] as (event: unknown, bounds: unknown) => void)(
+    {},
+    { x: 0, y: 0, width: 24, height: 22 },
+  );
+}
+
+/** A client that answers every poll and counts how often it was asked. */
+function countingClient(): {
+  snapshot: () => Promise<SnapshotResult>;
+  calls: number;
+} {
+  const client = {
+    calls: 0,
+    snapshot: (): Promise<SnapshotResult> => {
+      client.calls += 1;
+
+      return Promise.resolve(READING);
+    },
+  };
+
+  return client;
+}
+
 /** A config path that does not exist — `loadConfig` falls back to the defaults. */
 const MISSING_CONFIG = join(tmpdir(), "ck-connect-check-absent", "config.json");
 
@@ -231,6 +268,99 @@ describe("startMenuBarApp — the throughput history", () => {
     popover.show();
 
     expect(latest(popover).history.download).toEqual([1_000, 2_000]);
+    app.stop();
+  });
+});
+
+/** The default active interval — one poll per two seconds while the panel is up. */
+const ACTIVE_MS = 2_000;
+
+describe("startMenuBarApp — polling while the panel is open", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("polls at the active interval while the panel is open", async () => {
+    const client = countingClient();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client,
+      popover: recordingPopover(),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.calls).toBe(1);
+
+    clickTray();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Opening reads straight away rather than waiting out the 30 second timer.
+    expect(client.calls).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS * 3);
+    expect(client.calls).toBe(5);
+
+    app.stop();
+  });
+
+  it("returns to the idle interval once the panel is shut", async () => {
+    const client = countingClient();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client,
+      popover: recordingPopover(),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    clickTray();
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS * 2);
+    expect(client.calls).toBe(4);
+
+    clickTray();
+    const shut = client.calls;
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS * 3);
+    expect(client.calls).toBe(shut);
+
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(client.calls).toBe(shut + 1);
+
+    app.stop();
+  });
+
+  it("leaves the active interval when the panel closes itself", async () => {
+    const popover = recordingPopover();
+    const client = countingClient();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client,
+      popover,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    clickTray();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.calls).toBe(2);
+
+    // A click anywhere else dismisses the panel from inside, without the tray
+    // ever hearing about it.
+    popover.hide();
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS);
+    const settled = client.calls;
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS * 3);
+    expect(client.calls).toBe(settled);
+
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(client.calls).toBe(settled + 1);
+
     app.stop();
   });
 });

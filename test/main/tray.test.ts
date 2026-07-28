@@ -22,6 +22,7 @@ function config(
   return {
     host: "192.168.8.1",
     pollIntervalSeconds: 30,
+    activePollIntervalSeconds: 2,
     warnThresholdPercent,
     planLimitBytes,
   };
