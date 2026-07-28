@@ -3,7 +3,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'out/**', 'node_modules/**', 'test/fixtures/**'],
+    // `.claude/**` covers the throwaway git worktrees agents build in — each
+    // carries its own `dist/`, which the top-level `dist/**` pattern does not reach.
+    ignores: [
+      'dist/**',
+      'out/**',
+      'node_modules/**',
+      'test/fixtures/**',
+      '.claude/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
