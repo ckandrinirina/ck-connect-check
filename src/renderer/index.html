@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-stale="true" data-limit="unset">
+  <head>
+    <meta charset="utf-8" />
+    <!-- No remote anything: the panel only ever renders strings handed to it by the main process. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src file: 'self'; script-src file: 'self'"
+    />
+    <title>Data usage</title>
+    <link rel="stylesheet" href="./popover.css" />
+    <!--
+      The markup and the stylesheet are read straight from `src/renderer/`, but
+      `tsc` emits the script to `dist/`, so this is the one path that has to
+      reach across. Change it to `./popover.js` if the build ever copies the
+      page and its stylesheet into `dist/renderer/` beside the compiled script.
+    -->
+    <script type="module" src="../../dist/renderer/popover.js"></script>
+  </head>
+  <body>
+    <header class="header">
+      <div class="network">
+        <span class="carrier" data-field="carrier">—</span>
+        <span class="signal" title="Signal bars">
+          <span class="signal-icon" aria-hidden="true"></span>
+          <span data-field="signal">—</span>
+        </span>
+      </div>
+      <span class="freshness" data-field="freshness">Waiting for the router</span>
+    </header>
+
+    <section class="usage">
+      <div class="usage-total">
+        <span class="total" data-field="monthTotal">—</span>
+        <span class="percent" data-field="percent">—</span>
+      </div>
+
+      <div class="bar" role="presentation">
+        <div class="bar-fill" data-fill></div>
+      </div>
+
+      <p class="prompt" data-field="prompt"></p>
+    </section>
+
+    <dl class="stats">
+      <div class="stat">
+        <dt>Downloaded</dt>
+        <dd data-field="monthDownload">—</dd>
+      </div>
+      <div class="stat">
+        <dt>Uploaded</dt>
+        <dd data-field="monthUpload">—</dd>
+      </div>
+      <div class="stat">
+        <dt>Down now</dt>
+        <dd data-field="downloadRate">—</dd>
+      </div>
+      <div class="stat">
+        <dt>Up now</dt>
+        <dd data-field="uploadRate">—</dd>
+      </div>
+      <div class="stat">
+        <dt>Devices</dt>
+        <dd data-field="connectedDevices">—</dd>
+      </div>
+      <div class="stat">
+        <dt>Resets in</dt>
+        <dd data-field="daysUntilReset">—</dd>
+      </div>
+    </dl>
+  </body>
+</html>
