@@ -15,22 +15,22 @@ import {
   parseStartDate,
   parseStatus,
   parseTrafficStatistics,
-} from './parse.js';
-import { SessionStore, sessionHeaders } from './session.js';
-import type { RouterSnapshot } from './types.js';
+} from "./parse.js";
+import { SessionStore, sessionHeaders } from "./session.js";
+import type { LoginResult, RouterCredential, RouterSnapshot } from "./types.js";
 
-const SES_TOK_INFO = '/api/webserver/SesTokInfo';
-const MONTH_STATISTICS = '/api/monitoring/month_statistics';
-const TRAFFIC_STATISTICS = '/api/monitoring/traffic-statistics';
-const STATUS = '/api/monitoring/status';
-const CURRENT_PLMN = '/api/net/current-plmn';
-const START_DATE = '/api/monitoring/start_date';
+const SES_TOK_INFO = "/api/webserver/SesTokInfo";
+const MONTH_STATISTICS = "/api/monitoring/month_statistics";
+const TRAFFIC_STATISTICS = "/api/monitoring/traffic-statistics";
+const STATUS = "/api/monitoring/status";
+const CURRENT_PLMN = "/api/net/current-plmn";
+const START_DATE = "/api/monitoring/start_date";
 
 /** Every network call carries a timeout; there is no unbounded await. */
 const DEFAULT_TIMEOUT_MS = 5_000;
 
 /** Why a poll produced no snapshot. All four render as "offline". */
-export type OfflineReason = 'unreachable' | 'timeout' | 'session' | 'error';
+export type OfflineReason = "unreachable" | "timeout" | "session" | "error";
 
 export type SnapshotResult =
   | { online: true; snapshot: RouterSnapshot }
@@ -47,7 +47,7 @@ export interface RouterClientOptions {
 class RouterUnreachableError extends Error {
   constructor(url: string, cause: unknown) {
     super(`${url}: router unreachable`, { cause });
-    this.name = 'RouterUnreachableError';
+    this.name = "RouterUnreachableError";
   }
 }
 
@@ -55,7 +55,7 @@ class RouterUnreachableError extends Error {
 class RouterTimeoutError extends Error {
   constructor(url: string, timeoutMs: number) {
     super(`${url}: no reply within ${timeoutMs}ms`);
-    this.name = 'RouterTimeoutError';
+    this.name = "RouterTimeoutError";
   }
 }
 
@@ -63,21 +63,24 @@ class RouterTimeoutError extends Error {
 class RouterHttpError extends Error {
   constructor(url: string, status: number) {
     super(`${url}: router answered HTTP ${status}`);
-    this.name = 'RouterHttpError';
+    this.name = "RouterHttpError";
   }
 }
 
-function offlineReason(error: unknown, staleReason: OfflineReason): OfflineReason {
+function offlineReason(
+  error: unknown,
+  staleReason: OfflineReason,
+): OfflineReason {
   if (error instanceof RouterTimeoutError) {
-    return 'timeout';
+    return "timeout";
   }
   if (error instanceof RouterUnreachableError) {
-    return 'unreachable';
+    return "unreachable";
   }
   if (isStaleSessionError(error)) {
     return staleReason;
   }
-  return 'error';
+  return "error";
 }
 
 export class RouterClient {
@@ -102,7 +105,7 @@ export class RouterClient {
       return { online: true, snapshot: await this.#collect() };
     } catch (error) {
       if (!isStaleSessionError(error)) {
-        return { online: false, reason: offlineReason(error, 'error') };
+        return { online: false, reason: offlineReason(error, "error") };
       }
     }
 
@@ -111,15 +114,27 @@ export class RouterClient {
     try {
       return { online: true, snapshot: await this.#collect() };
     } catch (error) {
-      return { online: false, reason: offlineReason(error, 'session') };
+      return { online: false, reason: offlineReason(error, "session") };
     }
+  }
+
+  /** Sign in. Stub — T-17 RED. */
+  async login(_credential: RouterCredential): Promise<LoginResult> {
+    throw new Error("not implemented");
+  }
+
+  /** Sign out. Stub — T-17 RED. */
+  async logout(): Promise<void> {
+    throw new Error("not implemented");
   }
 
   async #collect(): Promise<RouterSnapshot> {
     const headers = sessionHeaders(await this.#session.current());
     return {
       month: parseMonthStatistics(await this.#get(MONTH_STATISTICS, headers)),
-      traffic: parseTrafficStatistics(await this.#get(TRAFFIC_STATISTICS, headers)),
+      traffic: parseTrafficStatistics(
+        await this.#get(TRAFFIC_STATISTICS, headers),
+      ),
       status: parseStatus(await this.#get(STATUS, headers)),
       carrier: parseCurrentPlmn(await this.#get(CURRENT_PLMN, headers)),
       billing: parseStartDate(await this.#get(START_DATE, headers)),
