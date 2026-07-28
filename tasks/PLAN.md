@@ -11,9 +11,9 @@
 | T-07 | Show the details when the menu bar item is clicked | done | M | T-06 |
 | T-08 | Warn when usage approaches or passes the limit | done | S | T-04, T-06 |
 | T-09 | Launch the app on login without a Dock icon | done | S | T-06 |
-| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | todo | S | T-07 |
+| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | doing | S | T-07 |
 | T-11 | Refresh quickly while the panel is open and slowly while it is shut | todo | S | T-10 |
-| T-12 | Remember the last few minutes of throughput | todo | S | T-03 |
+| T-12 | Remember the last few minutes of throughput | doing | S | T-03 |
 | T-13 | Show the month's usage as a dial instead of a bar | todo | M | T-10 |
 | T-14 | Show download and upload rates as live sparklines | todo | M | T-12, T-13 |
 
@@ -262,7 +262,7 @@ the test suite covers the login-item wrapper only. Record the result here when d
 
 ## T-10 Keep the open panel refreshing instead of freezing until it is reopened
 
-T-10 · status: todo · size: S · needs: T-07 · files: src/main/popover.ts, test/main/popover.test.ts
+T-10 · status: doing · size: S · needs: T-07 · files: src/main/popover.ts, test/main/popover.test.ts
 
 The panel currently looks like it only updates when it is opened and closed. `setModel`
 does push on every poll, but the popover's `BrowserWindow` is created with Chromium's
@@ -310,7 +310,7 @@ timer.
 
 ## T-12 Remember the last few minutes of throughput
 
-T-12 · status: todo · size: S · needs: T-03 · files: src/domain/history.ts, src/main/main.ts, src/main/view-model.ts, test/domain/history.test.ts, test/main/view-model.test.ts
+T-12 · status: doing · size: S · needs: T-03 · files: src/domain/history.ts, src/main/main.ts, src/main/view-model.ts, test/domain/history.test.ts, test/main/view-model.test.ts
 
 A sparkline needs a series, and the router only reports an instant. A fixed-size ring
 buffer in the main process holds the recent download and upload rates. It is pure, lives
