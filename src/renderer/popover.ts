@@ -13,7 +13,7 @@
  * machinery than that deserves.
  */
 
-import type { PopoverModel } from '../main/view-model.js';
+import type { PopoverModel } from "../main/view-model.js";
 
 declare global {
   interface Window {
@@ -43,23 +43,25 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
 window.applyPopoverModel = (model: PopoverModel): void => {
   const fields = fieldsOf(model);
 
-  document.querySelectorAll<HTMLElement>('[data-field]').forEach((node) => {
-    const name = node.dataset['field'];
+  document.querySelectorAll<HTMLElement>("[data-field]").forEach((node) => {
+    const name = node.dataset["field"];
 
     if (name !== undefined && name in fields) {
-      node.textContent = fields[name] ?? '';
+      node.textContent = fields[name] ?? "";
     }
   });
 
-  // Two flags drive every conditional in the stylesheet: whether the figures
-  // are current, and whether there is a plan limit to draw a bar against.
-  // T-08 adds the usage state here as a third, for colouring the bar.
+  // Three flags drive every conditional in the stylesheet: whether the figures
+  // are current, whether there is a plan limit to draw a bar against, and how
+  // close that bar is to the limit. No arithmetic — the state is decided in the
+  // main process and the stylesheet only colours by it.
   const root = document.documentElement;
 
-  root.dataset['stale'] = String(model.freshness.stale);
-  root.dataset['limit'] = model.progress.available ? 'set' : 'unset';
+  root.dataset["stale"] = String(model.freshness.stale);
+  root.dataset["limit"] = model.progress.available ? "set" : "unset";
+  root.dataset["usage"] = model.progress.state;
 
-  const fill = document.querySelector<HTMLElement>('[data-fill]');
+  const fill = document.querySelector<HTMLElement>("[data-fill]");
 
   if (fill !== null) {
     fill.style.width = model.progress.fillWidth;

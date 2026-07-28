@@ -11,6 +11,8 @@
   --muted: #6d6d72;
   --line: rgb(0 0 0 / 10%);
   --accent: #0a84ff;
+  --warn: #ff9f0a;
+  --over: #ff453a;
   --track: rgb(0 0 0 / 8%);
 
   color-scheme: light dark;
@@ -24,6 +26,8 @@
     --muted: #9a9aa0;
     --line: rgb(255 255 255 / 12%);
     --accent: #0a84ff;
+    --warn: #ffa726;
+    --over: #ff6961;
     --track: rgb(255 255 255 / 12%);
   }
 }
@@ -37,7 +41,11 @@ body {
   padding: 14px 16px 16px;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font:
+    13px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    "Helvetica Neue",
+    sans-serif;
   font-variant-numeric: tabular-nums;
 
   /* A popover is dismissed by clicking away, never dragged or selected. */
@@ -135,8 +143,25 @@ body {
   border-radius: 3px;
   background: var(--accent);
 
-  /* T-08 recolours this by usage state; the width stays the model's business. */
-  transition: width 240ms ease-out;
+  /* The width is the model's business; the colour is the usage state's. */
+  transition:
+    width 240ms ease-out,
+    background 240ms ease-out;
+}
+
+/* Approaching the plan limit, then past it. The state is decided in the main
+   process — nothing here compares a percentage to a threshold. */
+:root[data-usage="warn"] .bar-fill {
+  background: var(--warn);
+}
+
+:root[data-usage="over"] .bar-fill {
+  background: var(--over);
+}
+
+:root[data-usage="warn"] .percent,
+:root[data-usage="over"] .percent {
+  color: var(--text);
 }
 
 .prompt {
