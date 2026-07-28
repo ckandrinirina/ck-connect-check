@@ -1,4 +1,6 @@
-node_modules/
+# No trailing slash: also ignores a `node_modules` symlink, which a worktree
+# needs to reuse the main checkout's install and must never be committed.
+node_modules
 dist/
 out/
 .claude/
