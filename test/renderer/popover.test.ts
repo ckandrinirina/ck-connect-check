@@ -18,9 +18,11 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig, type AppConfig } from "../../src/config/defaults.js";
+import type { AllowanceAnchor } from "../../src/domain/allowance.js";
+import type { SyncFailure, SyncState } from "../../src/main/sync.js";
 import type { RateSample } from "../../src/domain/history.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
@@ -34,7 +36,7 @@ import {
  * from `src/main/popover.ts` would drag Electron into a jsdom run for one
  * number. `test/main/popover.test.ts` guards the window that uses it.
  */
-const POPOVER_HEIGHT = 380;
+const POPOVER_HEIGHT = 520;
 
 /**
  * `import.meta.url` is turned into a path before anything is resolved against
@@ -430,12 +432,14 @@ describe("the popover page", () => {
     // No layout engine, so this is a budget rather than a measurement: the
     // room everything other than the dial and the two sparklines takes, which
     // is 30px of body padding, ~29px of header and its rule, 22px of padding
-    // around the dial, 23px of rule and spacing above the sparklines and ~105px
-    // for the two-row stats grid with its own rule — call it 210px, rounded up
-    // to 220 so a stray line of text does not silently overrun. Anything that
+    // around the dial, ~56px for the allowance strip and its rule, 23px of rule
+    // and spacing above the sparklines, ~160px for the three-row stats grid
+    // with its own rule and ~46px for the sync row — call it 330px, rounded up
+    // to 340 so a stray line of text does not silently overrun. Anything that
     // outgrows what is left pushes the panel past POPOVER_HEIGHT and raises a
-    // scrollbar, which a popover has no room for.
-    const CHROME_HEIGHT = 220;
+    // scrollbar, which a popover has no room for. The password prompt is
+    // `hidden` until it is needed, so it costs nothing here.
+    const CHROME_HEIGHT = 340;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const SPARK_ROWS = 2;
@@ -668,5 +672,371 @@ describe("the rate sparklines — an unreachable router", () => {
     expect(POPOVER_CSS).toMatch(
       /:root\[data-stale="true"\]\s+\.spark-line\s*\{[^}]*\}/,
     );
+  });
+});
+
+/** The anchor a successful sync leaves behind: 100 Go left, expiring 12 August. */
+const ANCHOR: AllowanceAnchor = {
+  planLabel: "NET MONTH 200 000",
+  remainingBytes: 100_000_000_000,
+  expiresAt: new Date(2026, 7, 12),
+  routerMonthBytes: 1_000_000_000,
+  routerClearTime: "2026-7-27",
+  syncedAt: new Date(NOW.getTime() - 5 * 60_000),
+};
+
+/**
+ * A live model with a sync state, and optionally an anchor. `clearTime` is what
+ * makes an anchor stale: a counter that restarted under it.
+ */
+function modelSyncing(
+  sync: SyncState,
+  anchor?: AllowanceAnchor,
+  clearTime = "2026-7-27",
+): PopoverModel {
+  const taken = snapshot(11_000_000_000);
+
+  return buildPopoverModel({
+    result: {
+      online: true,
+      snapshot: {
+        ...taken,
+        month: { ...taken.month, monthLastClearTime: clearTime },
+      },
+    },
+    lastReading: null,
+    config: {
+      ...configWithLimit(20 * GB),
+      ...(anchor === undefined ? {} : { allowanceAnchor: anchor }),
+      planTotalBytes: 200_000_000_000,
+    },
+    sync,
+    clock,
+  });
+}
+
+interface FakeBridge {
+  sync: ReturnType<typeof vi.fn>;
+  savePassword: ReturnType<typeof vi.fn>;
+}
+
+/** The preload bridge, replaced by a recorder — no Electron, no IPC. */
+function stubBridge(): FakeBridge {
+  const bridge: FakeBridge = { sync: vi.fn(), savePassword: vi.fn() };
+
+  window.popoverBridge = bridge;
+
+  return bridge;
+}
+
+function syncButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>("[data-sync]");
+
+  if (button === null) {
+    throw new Error("the panel has no Sync button");
+  }
+
+  return button;
+}
+
+function passwordPrompt(): HTMLElement {
+  const prompt = document.querySelector<HTMLElement>("[data-password-prompt]");
+
+  if (prompt === null) {
+    throw new Error("the panel has no password prompt");
+  }
+
+  return prompt;
+}
+
+describe("the Sync button — pressing it", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("is a real button rather than a decorated span", () => {
+    expect(syncButton().tagName).toBe("BUTTON");
+    expect(syncButton().getAttribute("type")).toBe("button");
+  });
+
+  it("sends exactly one sync request when pressed", () => {
+    syncButton().click();
+
+    expect(bridge.sync).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends one request per press, not one per model pushed since", () => {
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+    syncButton().click();
+
+    expect(bridge.sync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the Sync button — while a sync is in flight", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelSyncing({ phase: "running", step: "signing-in" }));
+  });
+
+  it("is disabled", () => {
+    expect(syncButton().disabled).toBe(true);
+  });
+
+  it("sends nothing on a second press", () => {
+    syncButton().click();
+
+    expect(bridge.sync).not.toHaveBeenCalled();
+  });
+
+  it("names the step it is on rather than freezing the panel", () => {
+    expect(textOf("syncStatus")).toMatch(/sign/i);
+
+    apply(modelSyncing({ phase: "running", step: "asking-carrier" }));
+
+    expect(textOf("syncStatus")).toMatch(/carrier/i);
+  });
+
+  it("becomes pressable again once the sync settles", () => {
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(syncButton().disabled).toBe(false);
+
+    syncButton().click();
+
+    expect(bridge.sync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the allowance — a successful sync", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("renders the exact remaining volume in octets", () => {
+    expect(textOf("allowanceRemaining")).toBe("90.00 Go");
+  });
+
+  it("renders the expiry as a date and the days left", () => {
+    expect(textOf("allowanceExpires")).toBe("12/08/2026");
+    expect(textOf("allowanceDaysLeft")).toBe("16 days");
+  });
+
+  it("names the carrier's own offer", () => {
+    expect(textOf("allowancePlan")).toBe("NET MONTH 200 000");
+  });
+
+  it("says how long ago the sync happened", () => {
+    expect(textOf("allowanceSynced")).toBe("Synced 5m ago");
+  });
+
+  it("refreshes that age from the next poll push", () => {
+    const later = buildPopoverModel({
+      result: { online: true, snapshot: snapshot(11_000_000_000) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(20 * GB),
+        allowanceAnchor: ANCHOR,
+        planTotalBytes: 200_000_000_000,
+      },
+      clock: { now: () => new Date(NOW.getTime() + 60 * 60_000) },
+    });
+
+    apply(later);
+
+    expect(textOf("allowanceSynced")).toBe("Synced 1h 5m ago");
+  });
+
+  it("carries no re-sync marker while the anchor holds", () => {
+    expect(textOf("allowanceNote")).toBe("");
+    expect(syncButton().dataset["attention"]).toBe("false");
+  });
+});
+
+describe("the allowance — a stale anchor", () => {
+  beforeEach(() => {
+    stubBridge();
+    // The router's counter restarted under the anchor: the figure is the last
+    // one that could honestly be computed, and it has to be marked as such.
+    apply(modelSyncing({ phase: "idle" }, ANCHOR, "2026-8-1"));
+  });
+
+  it("still renders the last computed figure", () => {
+    expect(textOf("allowanceRemaining")).toBe("100.00 Go");
+  });
+
+  it("never puts the config-limit estimate in its place", () => {
+    // 11 Go of a 20 Go configured limit is what the dial falls back to; the
+    // allowance figure must stay the carrier's, not that.
+    expect(textOf("allowanceRemaining")).not.toBe("11.00 Go");
+    expect(textOf("allowanceRemaining")).not.toBe("9.00 Go");
+    expect(textOf("allowanceRemaining")).toBe("100.00 Go");
+  });
+
+  it("marks it with words, not with colour alone", () => {
+    expect(textOf("allowanceNote")).toMatch(/sync/i);
+    expect(document.documentElement.dataset["allowance"]).toBe("stale");
+  });
+
+  it("puts the Sync button into an attention state", () => {
+    expect(syncButton().dataset["attention"]).toBe("true");
+  });
+
+  it("styles the attention state as well as naming it", () => {
+    expect(POPOVER_CSS).toMatch(
+      /\.sync-button\[data-attention="true"\]\s*\{[^}]*\}/,
+    );
+  });
+});
+
+describe("the Sync button — a sync that failed", () => {
+  const REASONS: readonly [SyncFailure, RegExp][] = [
+    ["busy", /busy/i],
+    ["timeout", /time/i],
+    ["wrong-credential", /password/i],
+    ["account-locked", /lock/i],
+    ["no-password", /password/i],
+    ["unreachable", /router/i],
+  ];
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  for (const [reason, wording] of REASONS) {
+    it(`renders "${reason}" as panel text the user can read`, () => {
+      apply(modelSyncing({ phase: "failed", reason }));
+
+      expect(textOf("syncStatus")).toMatch(wording);
+    });
+  }
+
+  it("gives each reason its own line rather than one catch-all", () => {
+    const rendered = REASONS.map(([reason]) => {
+      apply(modelSyncing({ phase: "failed", reason }));
+
+      return textOf("syncStatus");
+    });
+
+    expect(new Set(rendered).size).toBe(REASONS.length);
+  });
+
+  it("clears the message once a later sync succeeds", () => {
+    apply(modelSyncing({ phase: "failed", reason: "timeout" }));
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(textOf("syncStatus")).toBe("");
+  });
+});
+
+describe("the password prompt", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+  });
+
+  it("stays out of the way while a password is stored", () => {
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(passwordPrompt().hidden).toBe(true);
+  });
+
+  it("appears when the panel reports there is no password", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+
+    expect(passwordPrompt().hidden).toBe(false);
+    expect(textOf("syncStatus")).toMatch(/password/i);
+  });
+
+  it("saves what was entered rather than starting a dialogue itself", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+
+    const username = document.querySelector<HTMLInputElement>(
+      "[data-password-username]",
+    );
+    const password = document.querySelector<HTMLInputElement>(
+      "[data-password-password]",
+    );
+
+    expect(username).not.toBeNull();
+    expect(password?.type).toBe("password");
+
+    if (username === null || password === null) return;
+
+    username.value = "admin";
+    password.value = "hunter2";
+    passwordPrompt().dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    expect(bridge.savePassword).toHaveBeenCalledWith({
+      username: "admin",
+      password: "hunter2",
+    });
+    expect(bridge.sync).not.toHaveBeenCalled();
+  });
+
+  it("does not leave the typed password sitting in the field", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+
+    const password = document.querySelector<HTMLInputElement>(
+      "[data-password-password]",
+    );
+
+    if (password === null) throw new Error("no password field");
+
+    password.value = "hunter2";
+    passwordPrompt().dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    expect(password.value).toBe("");
+  });
+});
+
+describe("the Sync control — reaching it without a mouse", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("is in the tab order", () => {
+    expect(syncButton().tabIndex).toBeGreaterThanOrEqual(0);
+    expect(syncButton().getAttribute("tabindex")).not.toBe("-1");
+  });
+
+  it("carries an accessible name that says what it does", () => {
+    const name =
+      syncButton().getAttribute("aria-label") ?? syncButton().textContent ?? "";
+
+    expect(name.trim()).not.toBe("");
+    expect(name).toMatch(/sync/i);
+  });
+
+  it("announces the progress line as it changes", () => {
+    const status = document.querySelector<HTMLElement>(
+      '[data-field="syncStatus"]',
+    );
+
+    expect(status?.getAttribute("role")).toBe("status");
+  });
+
+  it("announces the stale marker as text rather than as a colour", () => {
+    apply(modelSyncing({ phase: "idle" }, ANCHOR, "2026-8-1"));
+
+    const note = document.querySelector<HTMLElement>(
+      '[data-field="allowanceNote"]',
+    );
+
+    expect(note?.textContent?.trim()).not.toBe("");
+    expect(note?.getAttribute("aria-hidden")).not.toBe("true");
   });
 });

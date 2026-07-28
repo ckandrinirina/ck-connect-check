@@ -9,6 +9,7 @@ import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import type { SyncFailure, SyncState } from "../../src/main/sync.js";
 import {
   buildPopoverModel,
   type PopoverModel,
@@ -528,6 +529,201 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
 
     expect(model.allowance.available).toBe(false);
     expect(model.allowance.remaining).toBe("—");
+  });
+});
+
+describe("buildPopoverModel — the sync control", () => {
+  const ANCHOR: AllowanceAnchor = {
+    planLabel: "NET MONTH 200 000",
+    remainingBytes: 100_000_000_000,
+    expiresAt: new Date(2026, 7, 12),
+    routerMonthBytes: 1_000_000_000,
+    routerClearTime: "2026-7-27",
+    syncedAt: SEVEN_HOURS_AGO,
+  };
+
+  function withSync(
+    sync: SyncState,
+    anchor?: AllowanceAnchor,
+    clearTime = "2026-7-27",
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: online({
+        month: {
+          monthDownloadBytes: 11_000_000_000,
+          monthUploadBytes: 0,
+          monthDurationSeconds: 27_960,
+          monthLastClearTime: clearTime,
+        },
+      }),
+      lastReading: null,
+      config: {
+        ...configWithLimit(20_000_000_000),
+        ...(anchor === undefined ? {} : { allowanceAnchor: anchor }),
+        planTotalBytes: 200_000_000_000,
+      },
+      sync,
+      clock,
+    });
+  }
+
+  it("offers a pressable button while nothing is in flight", () => {
+    const { sync } = withSync({ phase: "idle" });
+
+    expect(sync.busy).toBe(false);
+    expect(sync.needsPassword).toBe(false);
+    expect(sync.status).toBe("");
+    expect(sync.buttonLabel).toBe("Sync");
+    expect(sync.buttonDescription).not.toBe("");
+  });
+
+  it("is busy and names the step while the dialogue runs", () => {
+    const signingIn = withSync({ phase: "running", step: "signing-in" }).sync;
+    const asking = withSync({ phase: "running", step: "asking-carrier" }).sync;
+
+    expect(signingIn.busy).toBe(true);
+    expect(asking.busy).toBe(true);
+    expect(signingIn.status).toMatch(/sign/i);
+    expect(asking.status).toMatch(/carrier/i);
+    expect(signingIn.status).not.toBe(asking.status);
+  });
+
+  it("asks for a password rather than reporting a failure", () => {
+    const { sync } = withSync({ phase: "needs-password" });
+
+    expect(sync.needsPassword).toBe(true);
+    expect(sync.busy).toBe(false);
+    expect(sync.status).toMatch(/password/i);
+  });
+
+  it("carries no attention while the anchored figure still holds", () => {
+    expect(withSync({ phase: "idle" }, ANCHOR).sync.attention).toBe(false);
+  });
+
+  it("calls for attention once the anchor has gone stale", () => {
+    const model = withSync({ phase: "idle" }, ANCHOR, "2026-8-1");
+
+    expect(model.allowance.stale).toBe(true);
+    expect(model.sync.attention).toBe(true);
+  });
+
+  it("defaults to an idle control when no sync state is supplied", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      clock,
+    });
+
+    expect(model.sync.busy).toBe(false);
+    expect(model.sync.needsPassword).toBe(false);
+  });
+
+  it("hands the renderer only display strings", () => {
+    for (const leaf of leaves(withSync({ phase: "idle" }, ANCHOR).sync)) {
+      expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
+    }
+  });
+});
+
+describe("buildPopoverModel — why a sync failed", () => {
+  const REASONS: readonly [SyncFailure, RegExp][] = [
+    ["busy", /busy/i],
+    ["timeout", /time/i],
+    ["wrong-credential", /password/i],
+    ["account-locked", /lock/i],
+    ["no-password", /password/i],
+    ["unreachable", /router/i],
+  ];
+
+  function statusFor(reason: SyncFailure): string {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      sync: { phase: "failed", reason },
+      clock,
+    }).sync.status;
+  }
+
+  for (const [reason, wording] of REASONS) {
+    it(`explains "${reason}" in words the panel can show`, () => {
+      const status = statusFor(reason);
+
+      expect(status).not.toBe("");
+      expect(status).toMatch(wording);
+    });
+  }
+
+  it("gives every reason its own wording rather than one catch-all", () => {
+    const statuses = REASONS.map(([reason]) => statusFor(reason));
+
+    expect(new Set(statuses).size).toBe(REASONS.length);
+  });
+
+  it("leaves the button pressable so the user can try again", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      sync: { phase: "failed", reason: "timeout" },
+      clock,
+    });
+
+    expect(model.sync.busy).toBe(false);
+  });
+});
+
+describe("buildPopoverModel — how long ago the sync happened", () => {
+  const ANCHOR: AllowanceAnchor = {
+    planLabel: "NET MONTH 200 000",
+    remainingBytes: 100_000_000_000,
+    expiresAt: new Date(2026, 7, 12),
+    routerMonthBytes: 1_000_000_000,
+    routerClearTime: "2026-7-27",
+    syncedAt: SEVEN_HOURS_AGO,
+  };
+
+  function at(now: Date): PopoverModel {
+    return buildPopoverModel({
+      result: online({
+        month: {
+          monthDownloadBytes: 11_000_000_000,
+          monthUploadBytes: 0,
+          monthDurationSeconds: 27_960,
+          monthLastClearTime: "2026-7-27",
+        },
+      }),
+      lastReading: null,
+      config: {
+        ...configWithLimit(20_000_000_000),
+        allowanceAnchor: ANCHOR,
+        planTotalBytes: 200_000_000_000,
+      },
+      clock: { now: () => now },
+    });
+  }
+
+  it("says how old the anchored figure is", () => {
+    expect(at(NOW).allowance.syncedAgo).toBe("Synced 7h 46m ago");
+  });
+
+  it("ages with every poll rather than freezing at the sync", () => {
+    const later = new Date(NOW.getTime() + 3_600_000);
+
+    expect(at(later).allowance.syncedAgo).not.toBe(at(NOW).allowance.syncedAgo);
+    expect(at(later).allowance.syncedAgo).toBe("Synced 8h 46m ago");
+  });
+
+  it("has nothing to report before the first sync", () => {
+    const never = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      clock,
+    });
+
+    expect(never.allowance.syncedAgo).toBe("—");
   });
 });
 

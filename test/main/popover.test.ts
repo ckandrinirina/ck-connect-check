@@ -3,7 +3,12 @@ import type { Rectangle, Tray } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig } from "../../src/config/defaults.js";
-import { bindTrayToPopover, createPopover } from "../../src/main/popover.js";
+import {
+  POPOVER_SAVE_PASSWORD_CHANNEL,
+  POPOVER_SYNC_CHANNEL,
+  bindTrayToPopover,
+  createPopover,
+} from "../../src/main/popover.js";
 import {
   buildPopoverModel,
   type PopoverModel,
@@ -18,6 +23,8 @@ import type { RouterSnapshot } from "../../src/hilink/types.js";
  */
 const electron = vi.hoisted(() => ({
   windows: [] as FakeWindow[],
+  /** Every `ipcMain.on` subscription still registered, by channel. */
+  channels: new Map<string, Set<(...args: unknown[]) => void>>(),
 }));
 
 interface FakeWindow {
@@ -87,7 +94,30 @@ vi.mock("electron", () => {
     }
   }
 
-  return { BrowserWindow };
+  /**
+   * A stand-in for `ipcMain`: the renderer never runs here, so a "message"
+   * is this suite calling the handler `popover.ts` registered, with the sender
+   * it chooses.
+   */
+  const ipcMain = {
+    on(channel: string, handler: (...args: unknown[]) => void) {
+      const listeners =
+        electron.channels.get(channel) ??
+        new Set<(...args: unknown[]) => void>();
+
+      listeners.add(handler);
+      electron.channels.set(channel, listeners);
+
+      return ipcMain;
+    },
+    removeListener(channel: string, handler: (...args: unknown[]) => void) {
+      electron.channels.get(channel)?.delete(handler);
+
+      return ipcMain;
+    },
+  };
+
+  return { BrowserWindow, ipcMain };
 });
 
 const TRAY_BOUNDS: Rectangle = { x: 900, y: 0, width: 40, height: 24 };
@@ -354,5 +384,113 @@ describe("createPopover", () => {
 
     expect(window.isDestroyed()).toBe(true);
     expect(popover.isOpen()).toBe(false);
+  });
+});
+
+/** Delivers one renderer message on `channel`, as `sender` sent it. */
+function send(channel: string, sender: unknown, payload?: unknown): void {
+  for (const handler of electron.channels.get(channel) ?? []) {
+    handler({ sender }, payload);
+  }
+}
+
+describe("createPopover — the panel talking back", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  it("gives the page a preload bridge rather than leaving it isolated", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      preloadPath: "/tmp/preload.cjs",
+    });
+    popover.show(TRAY_BOUNDS);
+
+    expect(lastWindow().options["webPreferences"]).toMatchObject({
+      preload: "/tmp/preload.cjs",
+      contextIsolation: true,
+      nodeIntegration: false,
+    });
+
+    popover.destroy();
+  });
+
+  it("reports a Sync press from its own page exactly once", () => {
+    const onSync = vi.fn();
+    const popover = createPopover({ htmlPath: "/tmp/index.html", onSync });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SYNC_CHANNEL, lastWindow().webContents);
+
+    expect(onSync).toHaveBeenCalledTimes(1);
+
+    popover.destroy();
+  });
+
+  it("ignores a Sync press that did not come from its own page", () => {
+    const onSync = vi.fn();
+    const popover = createPopover({ htmlPath: "/tmp/index.html", onSync });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SYNC_CHANNEL, { someone: "else" });
+
+    expect(onSync).not.toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("hands the entered credential on rather than the raw payload", () => {
+    const onSavePassword = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSavePassword,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SAVE_PASSWORD_CHANNEL, lastWindow().webContents, {
+      username: "admin",
+      password: "hunter2",
+      extra: "ignored",
+    });
+
+    expect(onSavePassword).toHaveBeenCalledWith({
+      username: "admin",
+      password: "hunter2",
+    });
+
+    popover.destroy();
+  });
+
+  it("drops a credential message that is not a username and a password", () => {
+    const onSavePassword = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSavePassword,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+
+    send(POPOVER_SAVE_PASSWORD_CHANNEL, sender, "hunter2");
+    send(POPOVER_SAVE_PASSWORD_CHANNEL, sender, { username: "admin" });
+    send(POPOVER_SAVE_PASSWORD_CHANNEL, sender, null);
+
+    expect(onSavePassword).not.toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("stops listening once the panel is destroyed", () => {
+    const onSync = vi.fn();
+    const popover = createPopover({ htmlPath: "/tmp/index.html", onSync });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+    popover.destroy();
+
+    send(POPOVER_SYNC_CHANNEL, sender);
+
+    expect(onSync).not.toHaveBeenCalled();
   });
 });
