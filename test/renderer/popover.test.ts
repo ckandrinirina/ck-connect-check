@@ -382,7 +382,7 @@ describe("the usage dial — the accessible label", () => {
     const label = dial().getAttribute("aria-label") ?? "";
 
     expect(label).toContain("50%");
-    expect(label).toContain("10.00 GB");
+    expect(label).toContain("10.00 Go");
   });
 
   it("names the usage and the missing limit when no plan is configured", () => {
@@ -390,7 +390,7 @@ describe("the usage dial — the accessible label", () => {
 
     const label = dial().getAttribute("aria-label") ?? "";
 
-    expect(label).toContain("5.00 GB");
+    expect(label).toContain("5.00 Go");
     expect(label).toMatch(/limit/i);
   });
 
@@ -454,11 +454,11 @@ describe("the popover page", () => {
   it("still fills every plain text field from the model", () => {
     apply(modelUsing(10 * GB));
 
-    expect(textOf("monthTotal")).toBe("10.00 GB");
+    expect(textOf("monthTotal")).toBe("10.00 Go");
     expect(textOf("carrier")).toBe("Yas");
     expect(textOf("signal")).toBe("4/5");
     expect(textOf("connectedDevices")).toBe("3");
-    expect(textOf("downloadRate")).toBe("2.4 KB/s");
+    expect(textOf("downloadRate")).toBe("2.4 Ko/s");
   });
 });
 
@@ -593,8 +593,8 @@ describe("the rate sparklines — the current rate beside each line", () => {
   });
 
   it("labels the download line with the model's formatted rate", () => {
-    expect(textOf("downloadRate")).toBe("2.4 KB/s");
-    expect(textOf("uploadRate")).toBe("0 B/s");
+    expect(textOf("downloadRate")).toBe("2.4 Ko/s");
+    expect(textOf("uploadRate")).toBe("0 o/s");
   });
 
   it("puts each rate in the same row as its own sparkline", () => {

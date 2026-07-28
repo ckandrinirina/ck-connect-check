@@ -149,8 +149,8 @@ describe("UsagePoller", () => {
     poller.start();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(poller.title).toBe("5.8G · 29%");
-    expect(titles).toEqual(["5.8G · 29%"]);
+    expect(poller.title).toBe("5.8Go · 29%");
+    expect(titles).toEqual(["5.8Go · 29%"]);
 
     poller.stop();
   });
@@ -165,12 +165,12 @@ describe("UsagePoller", () => {
 
     poller.start();
     await vi.advanceTimersByTimeAsync(0);
-    expect(poller.title).toBe("5.8G · 29%");
+    expect(poller.title).toBe("5.8Go · 29%");
 
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
 
-    expect(poller.title).toBe("5.8G · 29%");
-    expect(titles).toEqual(["5.8G · 29%"]);
+    expect(poller.title).toBe("5.8Go · 29%");
+    expect(titles).toEqual(["5.8Go · 29%"]);
 
     poller.stop();
   });
@@ -186,12 +186,12 @@ describe("UsagePoller", () => {
     poller.start();
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
-    expect(poller.title).toBe("5.8G · 29%");
+    expect(poller.title).toBe("5.8Go · 29%");
 
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
 
     expect(poller.title).toBe("offline");
-    expect(titles).toEqual(["5.8G · 29%", "offline"]);
+    expect(titles).toEqual(["5.8Go · 29%", "offline"]);
 
     poller.stop();
   });
@@ -224,7 +224,7 @@ describe("UsagePoller", () => {
 
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
 
-    expect(poller.title).toBe("9G · 45%");
+    expect(poller.title).toBe("9Go · 45%");
   });
 
   it("resets the failure count so an isolated failure never reaches offline", async () => {
@@ -242,7 +242,7 @@ describe("UsagePoller", () => {
     poller.start();
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
 
-    expect(poller.title).toBe("5.8G · 29%");
+    expect(poller.title).toBe("5.8Go · 29%");
   });
 });
 

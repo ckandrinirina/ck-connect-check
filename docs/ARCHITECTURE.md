@@ -43,13 +43,13 @@ GET /api/webserver/SesTokInfo  →  <SesInfo>SessionID=…</SesInfo>  <TokInfo>�
 Then send `Cookie: <SesInfo>` and `__RequestVerificationToken: <TokInfo>` on each request.
 Responses are XML. A stale or missing session returns `<error><code>125002</code></error>`.
 
-| Endpoint | Fields used |
-|---|---|
-| `/api/monitoring/month_statistics` | `CurrentMonthDownload`, `CurrentMonthUpload`, `MonthDuration`, `MonthLastClearTime` |
-| `/api/monitoring/traffic-statistics` | `CurrentDownloadRate`, `CurrentUploadRate`, `CurrentConnectTime` |
-| `/api/monitoring/status` | `ConnectionStatus`, `SignalIcon`, `maxsignal`, `CurrentNetworkTypeEx`, `CurrentWifiUser` |
-| `/api/net/current-plmn` | `FullName` (carrier — reads `Yas` on this device) |
-| `/api/monitoring/start_date` | `StartDay` (billing cycle start), `DataLimit`, `MonthThreshold` |
+| Endpoint                             | Fields used                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `/api/monitoring/month_statistics`   | `CurrentMonthDownload`, `CurrentMonthUpload`, `MonthDuration`, `MonthLastClearTime`      |
+| `/api/monitoring/traffic-statistics` | `CurrentDownloadRate`, `CurrentUploadRate`, `CurrentConnectTime`                         |
+| `/api/monitoring/status`             | `ConnectionStatus`, `SignalIcon`, `maxsignal`, `CurrentNetworkTypeEx`, `CurrentWifiUser` |
+| `/api/net/current-plmn`              | `FullName` (carrier — reads `Yas` on this device)                                        |
+| `/api/monitoring/start_date`         | `StartDay` (billing cycle start), `DataLimit`, `MonthThreshold`                          |
 
 Two findings that shape the design:
 
@@ -81,6 +81,8 @@ Append-only. One line each, always with the reason.
 - Re-handshake on error `125002` rather than caching a session — sessions expire silently and the handshake costs one cheap request
 - `src/domain/` imports neither Electron nor the network — quota math stays testable without a router present
 - Usage displayed in decimal GB (1000³), not GiB — carriers bill in decimal, and the number must match the user's plan
+- Display units are French octets (`o`, `Ko`, `Mo`, `Go`, `To`) — the app is French-facing, so the screen must read `4.43 Go`; the decimal 1000³ scale is unchanged, only the labels
+- The router's own `DataLimit` strings (`0MB`, `50GB`) keep their English suffixes in `src/hilink/parse.ts` — that is the device's wire format, not our display
 - Router unreachable is a normal state rendered as "offline", never an error dialog or a crash — the app runs unattended in the menu bar
 - `backgroundThrottling: false` on the popover window — Chromium defers work in a hidden renderer, so pushed updates piled up and the panel appeared to refresh only when opened or closed
 - The poll interval is fast while the popover is visible and the configured one while it is hidden — a throughput figure only matters while someone is looking at it, and the router should not be asked twice a second for nothing

@@ -37,21 +37,18 @@ const WARN_SEPARATOR = ` ${TRAY_WARN_MARKER} `;
  */
 const MAX_DISPLAYED_PERCENT = 999;
 
-/** `formatBytes` units shortened to the single letter the menu bar has room for. */
-const UNIT_LETTERS: Record<string, string> = {
-  B: "B",
-  kB: "k",
-  MB: "M",
-  GB: "G",
-  TB: "T",
-};
+/** The octet unit that alone is never rendered with a decimal. */
+const BASE_BYTE_UNIT = "o";
 
 /**
- * The compact tray spelling of a byte count: `5_830_718_387` → `"5.8G"`.
+ * The compact tray spelling of a byte count: `5_830_718_387` → `"5.8Go"`.
  *
  * It reuses {@link formatBytes} so the tray and the popover scale identically —
- * decimal (1000³), never binary — and then trims the result to tray width: one
- * decimal below ten, none above, and whole bytes are never fractional.
+ * decimal (1000³), never binary, in octets — and then trims the result to tray
+ * width: one decimal below ten, none above, and whole octets are never
+ * fractional. The unit itself is kept whole rather than abbreviated further:
+ * `"999Go ⚠ 999%"` is the widest title this can produce, and that is exactly
+ * {@link MAX_TRAY_TITLE_LENGTH} characters.
  */
 function compactBytes(bytes: number): string {
   const [amount, unit] = formatBytes(bytes).split(" ");
@@ -61,14 +58,13 @@ function compactBytes(bytes: number): string {
   }
 
   const value = Number(amount);
-  const letter = UNIT_LETTERS[unit] ?? unit;
 
-  if (unit === "B" || value >= 10) {
-    return `${Math.round(value)}${letter}`;
+  if (unit === BASE_BYTE_UNIT || value >= 10) {
+    return `${Math.round(value)}${unit}`;
   }
 
   // `5.83` reads `5.8`, but `9.00` reads `9` — a trailing `.0` is only noise.
-  return `${value.toFixed(1).replace(/\.0$/, "")}${letter}`;
+  return `${value.toFixed(1).replace(/\.0$/, "")}${unit}`;
 }
 
 /**

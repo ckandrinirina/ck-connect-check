@@ -109,7 +109,7 @@ export interface PopoverModel {
   monthUpload: string;
   monthTotal: string;
   progress: PopoverProgress;
-  /** Live throughput, e.g. `"2.4 KB/s"`. */
+  /** Live throughput, e.g. `"2.4 Ko/s"`. */
   downloadRate: string;
   uploadRate: string;
   /** Devices currently on the router's Wi-Fi, e.g. `"3"`. */

@@ -201,7 +201,7 @@ describe("startMenuBarApp", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // No plan limit in the default config, so the used total stands alone.
-    expect(electron.setTitle).toHaveBeenCalledWith("5.8G");
+    expect(electron.setTitle).toHaveBeenCalledWith("5.8Go");
     app.stop();
   });
 });

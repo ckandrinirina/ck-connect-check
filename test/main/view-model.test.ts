@@ -89,9 +89,9 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("exposes the month download and upload totals", () => {
-    expect(model.monthDownload).toBe("4.43 GB");
-    expect(model.monthUpload).toBe("1.40 GB");
-    expect(model.monthTotal).toBe("5.83 GB");
+    expect(model.monthDownload).toBe("4.43 Go");
+    expect(model.monthUpload).toBe("1.40 Go");
+    expect(model.monthTotal).toBe("5.83 Go");
   });
 
   it("exposes the share of the plan used", () => {
@@ -100,8 +100,8 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("exposes the live download and upload rates", () => {
-    expect(model.downloadRate).toBe("2.4 KB/s");
-    expect(model.uploadRate).toBe("0 B/s");
+    expect(model.downloadRate).toBe("2.4 Ko/s");
+    expect(model.uploadRate).toBe("0 o/s");
   });
 
   it("exposes the connected device count, carrier and signal bars", () => {
@@ -165,7 +165,7 @@ describe("buildPopoverModel — a live reading", () => {
 
   it("describes the dial for a screen reader with both the share and the total", () => {
     expect(model.progress.description).toContain("29%");
-    expect(model.progress.description).toContain("5.83 GB");
+    expect(model.progress.description).toContain("5.83 Go");
   });
 
   it("is not flagged stale and carries no age", () => {
@@ -194,12 +194,12 @@ describe("buildPopoverModel — no plan limit configured", () => {
   });
 
   it("describes the dial with the usage it does know and the limit it does not", () => {
-    expect(model.progress.description).toContain("5.83 GB");
+    expect(model.progress.description).toContain("5.83 Go");
     expect(model.progress.description).toMatch(/limit/i);
   });
 
   it("still reports the usage figures it does know", () => {
-    expect(model.monthTotal).toBe("5.83 GB");
+    expect(model.monthTotal).toBe("5.83 Go");
     expect(model.carrier).toBe("Yas");
   });
 });
@@ -217,8 +217,8 @@ describe("buildPopoverModel — the router is unreachable", () => {
   });
 
   it("carries the last successful reading rather than blanking the figures", () => {
-    expect(model.monthDownload).toBe("4.43 GB");
-    expect(model.monthUpload).toBe("1.40 GB");
+    expect(model.monthDownload).toBe("4.43 Go");
+    expect(model.monthUpload).toBe("1.40 Go");
     expect(model.progress.label).toBe("29%");
     expect(model.carrier).toBe("Yas");
   });
