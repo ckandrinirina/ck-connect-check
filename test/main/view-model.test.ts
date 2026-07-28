@@ -10,6 +10,7 @@ import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
 import type { SyncFailure, SyncState } from "../../src/main/sync.js";
+import type { PlanLimitRefusal } from "../../src/config/config.js";
 import {
   buildPopoverModel,
   type PopoverModel,
@@ -63,6 +64,41 @@ function configWithLimit(limitBytes: number | null): AppConfig {
   return { ...defaultConfig(), planLimitBytes: limitBytes };
 }
 
+/** The snapshot's month counter as one figure — 5.83 Go. */
+const ROUTER_COUNTER = DOWNLOAD_BYTES + UPLOAD_BYTES;
+
+/**
+ * An anchor pinned to the snapshot's own counter, so the delta is zero and
+ * `remainingBytes` reads back exactly as anchored. Everything the dial shows is
+ * then the cap minus this figure, with no router arithmetic in the way.
+ */
+function anchorOf(
+  remainingBytes: number,
+  overrides: Partial<AllowanceAnchor> = {},
+): AllowanceAnchor {
+  return {
+    planLabel: "NET MONTH 200 000",
+    remainingBytes,
+    expiresAt: new Date(2026, 7, 12),
+    routerMonthBytes: ROUTER_COUNTER,
+    routerClearTime: "2026-7-27",
+    syncedAt: SEVEN_HOURS_AGO,
+    ...overrides,
+  };
+}
+
+/** A config carrying both halves the dial needs: the cap and the anchor. */
+function configWith(
+  limitBytes: number | null,
+  anchor?: AllowanceAnchor,
+): AppConfig {
+  return {
+    ...defaultConfig(),
+    planLimitBytes: limitBytes,
+    ...(anchor === undefined ? {} : { allowanceAnchor: anchor }),
+  };
+}
+
 /** A history holding the given `[download, upload]` rates, oldest first. */
 function historyOf(...rates: readonly [number, number][]): RateSample[] {
   const history = createRateHistory(90);
@@ -83,22 +119,29 @@ function leaves(value: unknown): unknown[] {
 }
 
 describe("buildPopoverModel — a live reading", () => {
+  // 20 Go bought, 12 Go left by the carrier's own count → 8 Go consumed. The
+  // router's counter reads 5.83 Go over the same period; the two describe
+  // different months, and the plan figure is the one the panel headlines.
   const model: PopoverModel = buildPopoverModel({
     result: online(),
     lastReading: { snapshot: snapshot(), at: NOW },
-    config: configWithLimit(20_000_000_000),
+    config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
     clock,
   });
 
   it("exposes the month download and upload totals", () => {
     expect(model.monthDownload).toBe("4.43 Go");
     expect(model.monthUpload).toBe("1.40 Go");
-    expect(model.monthTotal).toBe("5.83 Go");
+  });
+
+  it("reports the plan consumed, not the router's own month counter", () => {
+    expect(model.monthTotal).toBe("8.00 Go");
+    expect(model.monthTotal).not.toBe("5.83 Go");
   });
 
   it("exposes the share of the plan used", () => {
     expect(model.progress.available).toBe(true);
-    expect(model.progress.label).toBe("29%");
+    expect(model.progress.label).toBe("40%");
   });
 
   it("exposes the live download and upload rates", () => {
@@ -112,25 +155,28 @@ describe("buildPopoverModel — a live reading", () => {
     expect(model.signal).toBe("4/5");
   });
 
-  it("exposes the days until the billing cycle resets", () => {
-    expect(model.daysUntilReset).toBe("5 days");
+  it("has no billing-cycle countdown to expose", () => {
+    // The router's `StartDay` disagrees with the carrier's own expiry date, and
+    // two answers to "when does this run out" is worse than one.
+    expect(Object.keys(model)).not.toContain("daysUntilReset");
+  });
+
+  it("counts the days the carrier's allowance is still valid for", () => {
+    expect(model.allowance.daysUntilExpiry).toBe("16 days");
   });
 
   it("says a single day in the singular", () => {
     const soon = buildPopoverModel({
-      result: online({
-        billing: {
-          startDay: 28,
-          routerDataLimitBytes: 0,
-          warnThresholdPercent: 90,
-        },
-      }),
+      result: online(),
       lastReading: null,
-      config: configWithLimit(20_000_000_000),
+      config: configWith(
+        20_000_000_000,
+        anchorOf(12_000_000_000, { expiresAt: new Date(2026, 6, 28) }),
+      ),
       clock,
     });
 
-    expect(soon.daysUntilReset).toBe("1 day");
+    expect(soon.allowance.daysUntilExpiry).toBe("1 day");
   });
 
   it("hands the renderer only display strings — never a number to format", () => {
@@ -150,24 +196,24 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("pre-computes the dial's sweep as a share of the ring", () => {
-    expect(model.progress.sweep).toBeCloseTo(0.2915, 4);
+    expect(model.progress.sweep).toBeCloseTo(0.4, 4);
   });
 
-  it("caps the sweep at a full ring when the plan is overrun, but still reports the real share", () => {
+  it("draws a full ring once the carrier says nothing is left", () => {
     const over = buildPopoverModel({
       result: online(),
       lastReading: null,
-      config: configWithLimit(5_000_000_000),
+      config: configWith(20_000_000_000, anchorOf(0)),
       clock,
     });
 
-    expect(over.progress.label).toBe("117%");
+    expect(over.progress.label).toBe("100%");
     expect(over.progress.sweep).toBe(1);
   });
 
   it("describes the dial for a screen reader with both the share and the total", () => {
-    expect(model.progress.description).toContain("29%");
-    expect(model.progress.description).toContain("5.83 Go");
+    expect(model.progress.description).toContain("40%");
+    expect(model.progress.description).toContain("8.00 Go");
   });
 
   it("is not flagged stale and carries no age", () => {
@@ -177,11 +223,67 @@ describe("buildPopoverModel — a live reading", () => {
   });
 });
 
-describe("buildPopoverModel — no plan limit configured", () => {
+describe("buildPopoverModel — the plan limit field", () => {
+  function planLimitOf(
+    limitBytes: number | null,
+    problem?: PlanLimitRefusal,
+  ): PopoverModel["planLimit"] {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWith(limitBytes, anchorOf(12_000_000_000)),
+      planLimitProblem: problem,
+      clock,
+    }).planLimit;
+  }
+
+  it("carries a stored cap as the figure the field shows", () => {
+    expect(planLimitOf(150_000_000_000).value).toBe("150");
+  });
+
+  it("carries an empty field when no cap is stored", () => {
+    expect(planLimitOf(null).value).toBe("");
+  });
+
+  it("says which of the two states the field is in", () => {
+    expect(planLimitOf(null).needsValue).toBe(true);
+    expect(planLimitOf(150_000_000_000).needsValue).toBe(false);
+  });
+
+  it("names its unit rather than leaving the renderer to spell it", () => {
+    expect(planLimitOf(150_000_000_000).unit).toBe("Go");
+  });
+
+  it("carries no complaint when the last entry was fine", () => {
+    expect(planLimitOf(150_000_000_000).error).toBe("");
+  });
+
+  it("words each refusal, so the renderer decides no sentences", () => {
+    const worded = (["blank", "not-a-number", "not-positive"] as const).map(
+      (reason) => planLimitOf(null, reason).error,
+    );
+
+    for (const sentence of worded) {
+      expect(sentence).not.toBe("");
+    }
+
+    // Three different problems get three different sentences: "that did not
+    // work" tells the user nothing they can act on.
+    expect(new Set(worded).size).toBe(3);
+  });
+
+  it("hands the renderer only strings and flags here too", () => {
+    for (const leaf of leaves(planLimitOf(150_000_000_000))) {
+      expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
+    }
+  });
+});
+
+describe("buildPopoverModel — an anchor but no plan limit configured", () => {
   const model = buildPopoverModel({
     result: online(),
     lastReading: null,
-    config: configWithLimit(null),
+    config: configWith(null, anchorOf(12_000_000_000)),
     clock,
   });
 
@@ -191,18 +293,80 @@ describe("buildPopoverModel — no plan limit configured", () => {
     expect(model.progress.sweep).toBe(0);
   });
 
-  it("prompts the user to set a limit", () => {
+  it("prompts the user to set a limit, since that is the missing half", () => {
     expect(model.progress.prompt).toMatch(/limit/i);
   });
 
-  it("describes the dial with the usage it does know and the limit it does not", () => {
-    expect(model.progress.description).toContain("5.83 Go");
+  it("describes the dial by the limit it does not have", () => {
     expect(model.progress.description).toMatch(/limit/i);
   });
 
-  it("still reports the usage figures it does know", () => {
-    expect(model.monthTotal).toBe("5.83 Go");
+  it("shows a dash for the plan consumed — the cap it needs is unset", () => {
+    expect(model.monthTotal).toBe("—");
+  });
+
+  it("still reports the router's own counters and the carrier's figure", () => {
+    expect(model.monthDownload).toBe("4.43 Go");
+    expect(model.monthUpload).toBe("1.40 Go");
+    expect(model.allowance.remaining).toBe("12.00 Go");
     expect(model.carrier).toBe("Yas");
+  });
+});
+
+describe("buildPopoverModel — a plan limit but nothing synced yet", () => {
+  const model = buildPopoverModel({
+    result: online(),
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    clock,
+  });
+
+  it("leaves the dial unavailable rather than drawing the router's counter", () => {
+    expect(model.progress.available).toBe(false);
+    expect(model.progress.label).toBe("—");
+    expect(model.progress.sweep).toBe(0);
+  });
+
+  it("asks for a sync rather than mentioning the limit, which is already set", () => {
+    expect(model.progress.prompt).toMatch(/sync/i);
+    expect(model.progress.prompt).not.toMatch(/limit/i);
+  });
+
+  it("shows a dash for the plan consumed", () => {
+    expect(model.monthTotal).toBe("—");
+  });
+});
+
+describe("buildPopoverModel — the anchor behind the dial has gone stale", () => {
+  // Counter reset under the anchor: the delta is meaningless, so the share is
+  // not something the carrier stands behind any more.
+  const model = buildPopoverModel({
+    result: online({
+      month: {
+        monthDownloadBytes: 400_000_000,
+        monthUploadBytes: 0,
+        monthDurationSeconds: 27_960,
+        monthLastClearTime: "2026-8-1",
+      },
+    }),
+    lastReading: null,
+    config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
+    clock,
+  });
+
+  it("withdraws the dial rather than drawing a share it cannot stand behind", () => {
+    expect(model.progress.available).toBe(false);
+    expect(model.progress.sweep).toBe(0);
+  });
+
+  it("asks for a sync", () => {
+    expect(model.progress.prompt).toMatch(/sync/i);
+  });
+
+  it("keeps showing the last honest figure, marked", () => {
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.stale).toBe(true);
+    expect(model.allowance.remaining).toBe("12.00 Go");
   });
 });
 
@@ -210,7 +374,7 @@ describe("buildPopoverModel — the router is unreachable", () => {
   const model = buildPopoverModel({
     result: OFFLINE,
     lastReading: { snapshot: snapshot(), at: SEVEN_HOURS_AGO },
-    config: configWithLimit(20_000_000_000),
+    config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
     clock,
   });
 
@@ -221,7 +385,7 @@ describe("buildPopoverModel — the router is unreachable", () => {
   it("carries the last successful reading rather than blanking the figures", () => {
     expect(model.monthDownload).toBe("4.43 Go");
     expect(model.monthUpload).toBe("1.40 Go");
-    expect(model.progress.label).toBe("29%");
+    expect(model.progress.label).toBe("40%");
     expect(model.carrier).toBe("Yas");
   });
 
@@ -255,7 +419,7 @@ describe("buildPopoverModel — nothing has been read yet", () => {
     expect(model.monthTotal).toBe("—");
     expect(model.carrier).toBe("—");
     expect(model.connectedDevices).toBe("—");
-    expect(model.daysUntilReset).toBe("—");
+    expect(model.allowance.daysUntilExpiry).toBe("—");
   });
 
   it("leaves the dial unavailable", () => {
@@ -268,23 +432,22 @@ describe("buildPopoverModel — the usage state on the dial", () => {
   const GB = 1_000_000_000;
   const PLAN = 20 * GB;
 
-  /** The model's state for `usedBytes` against a 20 GB plan, unless told otherwise. */
+  /**
+   * The model's state for `usedBytes` of a 20 GB plan, expressed the way the
+   * carrier does — as the volume still left.
+   */
   function stateFor(
     usedBytes: number,
     limitBytes: number | null = PLAN,
     warnThresholdPercent = 90,
   ): string {
     return buildPopoverModel({
-      result: online({
-        month: {
-          monthDownloadBytes: usedBytes,
-          monthUploadBytes: 0,
-          monthDurationSeconds: 27_960,
-          monthLastClearTime: "2026-7-27",
-        },
-      }),
+      result: online(),
       lastReading: null,
-      config: { ...configWithLimit(limitBytes), warnThresholdPercent },
+      config: {
+        ...configWith(limitBytes, anchorOf(PLAN - usedBytes)),
+        warnThresholdPercent,
+      },
       clock,
     }).progress.state;
   }
@@ -299,9 +462,10 @@ describe("buildPopoverModel — the usage state on the dial", () => {
     expect(stateFor(19.9 * GB)).toBe("warn");
   });
 
-  it('is "over" at the limit and beyond', () => {
+  it('is "over" once the whole plan is consumed', () => {
+    // The carrier's remaining is the authority and never goes below zero, so
+    // 100% is as far as the dial can read — there is no overrun to draw.
     expect(stateFor(20 * GB)).toBe("over");
-    expect(stateFor(25 * GB)).toBe("over");
   });
 
   it('is "unknown" with no plan limit, never "ok"', () => {
@@ -318,7 +482,7 @@ describe("buildPopoverModel — the usage state on the dial", () => {
     const model = buildPopoverModel({
       result: null,
       lastReading: null,
-      config: configWithLimit(20_000_000_000),
+      config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
       clock,
     });
 
@@ -329,11 +493,11 @@ describe("buildPopoverModel — the usage state on the dial", () => {
     const model = buildPopoverModel({
       result: OFFLINE,
       lastReading: { snapshot: snapshot(), at: SEVEN_HOURS_AGO },
-      config: configWithLimit(5_000_000_000),
+      config: configWith(20 * GB, anchorOf(0.5 * GB)),
       clock,
     });
 
-    expect(model.progress.state).toBe("over");
+    expect(model.progress.state).toBe("warn");
   });
 });
 
@@ -439,18 +603,13 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
     return buildPopoverModel({
       result,
       lastReading: null,
-      config: {
-        ...configWithLimit(20_000_000_000),
-        ...(anchor === undefined ? {} : { allowanceAnchor: anchor }),
-        planTotalBytes: 200_000_000_000,
-      },
+      config: configWith(200_000_000_000, anchor),
       clock,
     });
   }
 
-  it("computes the share used from the anchor, not from the configured limit", () => {
-    // 200 Go anchored total, 90 Go left → 55%. The configured 20 Go limit would
-    // read as an overrun instead.
+  it("computes the share used from the cap and what the carrier says is left", () => {
+    // 200 Go bought, 90 Go left after the router's 10 Go delta → 55%.
     expect(withAnchor(ANCHOR).progress.label).toBe("55%");
     expect(withAnchor(ANCHOR).progress.available).toBe(true);
   });
@@ -475,10 +634,11 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
     expect(withAnchor(ANCHOR).allowance.note).toBe("");
   });
 
-  it("falls back to the configured limit when there is no anchor", () => {
+  it("has no dial to draw when there is no anchor", () => {
     const model = withAnchor(undefined, online());
 
-    expect(model.progress.label).toBe("29%");
+    expect(model.progress.available).toBe(false);
+    expect(model.progress.label).toBe("—");
     expect(model.allowance.available).toBe(false);
     expect(model.allowance.remaining).toBe("—");
   });
@@ -492,13 +652,14 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
     expect(model.allowance.remaining).toBe("100.00 Go");
   });
 
-  it("falls back to the configured limit for the dial once the anchor is stale", () => {
-    // 4 Go counted against the configured 20 Go limit — 20%, not the 98% the
-    // anchor would have claimed.
+  it("withdraws the dial once the anchor is stale", () => {
+    // The router's own counter is not a substitute: it counts from whenever the
+    // device last cleared itself, which is a different month from the plan's.
     const model = withAnchor(ANCHOR, counter(4_000_000_000, "2026-8-1"));
 
     expect(model.allowance.stale).toBe(true);
-    expect(model.progress.label).toBe("20%");
+    expect(model.progress.available).toBe(false);
+    expect(model.progress.label).toBe("—");
   });
 
   it("marks an exhausted allowance", () => {

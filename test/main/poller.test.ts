@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../../src/config/defaults.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { UsageState } from "../../src/domain/quota.js";
 import { STARTUP_TRAY_TITLE, UsagePoller } from "../../src/main/poller.js";
 
@@ -14,12 +15,27 @@ const POLL_INTERVAL_MS = POLL_INTERVAL_SECONDS * 1_000;
 const ACTIVE_INTERVAL_SECONDS = 2;
 const ACTIVE_INTERVAL_MS = ACTIVE_INTERVAL_SECONDS * 1_000;
 
+/**
+ * A full 20 GB plan anchored against a zero counter, so the router's delta *is*
+ * the consumption: a snapshot counting 5.83 GB leaves 14.17 GB of the plan. The
+ * title and the usage state are read from this, never from the counter itself.
+ */
+const FULL_PLAN_ANCHOR: AllowanceAnchor = {
+  planLabel: "NET MONTH 200 000",
+  remainingBytes: 20 * GB,
+  expiresAt: null,
+  routerMonthBytes: 0,
+  routerClearTime: "2026-7-27",
+  syncedAt: new Date(2026, 6, 27, 10, 0, 0),
+};
+
 const CONFIG: AppConfig = {
   host: "192.168.8.1",
   pollIntervalSeconds: POLL_INTERVAL_SECONDS,
   activePollIntervalSeconds: ACTIVE_INTERVAL_SECONDS,
   warnThresholdPercent: 90,
   planLimitBytes: 20 * GB,
+  allowanceAnchor: FULL_PLAN_ANCHOR,
 };
 
 function snapshot(usedBytes: number): RouterSnapshot {
@@ -423,6 +439,50 @@ describe("UsagePoller — the usage state", () => {
 
     expect(poller.state).toBe("ok");
     expect(states).toEqual(["ok"]);
+
+    poller.stop();
+  });
+
+  it("warns on the plan consumed, not on the router's own counter", async () => {
+    // The counter has run up 19 GB since the device last cleared itself, but the
+    // carrier anchored 18 GB still left of a 20 GB plan a moment ago — 10% used.
+    // Warning here would be warning about the wrong month.
+    const states: UsageState[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_19_GB]),
+      config: {
+        ...CONFIG,
+        allowanceAnchor: {
+          ...FULL_PLAN_ANCHOR,
+          remainingBytes: 18 * GB,
+          routerMonthBytes: 19 * GB,
+        },
+      },
+      onState: (state) => states.push(state),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(poller.state).toBe("ok");
+    expect(states).toEqual(["ok"]);
+
+    poller.stop();
+  });
+
+  it("stays unknown while nothing has been synced, however high the counter", async () => {
+    const states: UsageState[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_25_GB]),
+      config: { ...CONFIG, allowanceAnchor: undefined },
+      onState: (state) => states.push(state),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(poller.state).toBe("unknown");
+    expect(states).toEqual([]);
 
     poller.stop();
   });

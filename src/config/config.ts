@@ -77,6 +77,55 @@ export function gigabytesToBytes(gigabytes: number): number {
   return Math.round(value * BYTES_PER_GIGABYTE);
 }
 
+/**
+ * Why a typed plan size could not be used. Kept as a token rather than a
+ * sentence: the words the user reads are decided in `main/view-model.ts`, with
+ * every other string the panel shows.
+ */
+export type PlanLimitRefusal = "blank" | "not-a-number" | "not-positive";
+
+export type PlanLimitEntry =
+  { ok: true; bytes: number } | { ok: false; reason: PlanLimitRefusal };
+
+/**
+ * A plan size as the user typed it into the panel — `"150"`, `"1.5"` — read as
+ * decimal Go and converted to bytes here, at the boundary. The renderer sends
+ * the characters and nothing else; this is the only place that knows a Go is
+ * 1000³ bytes.
+ *
+ * Zero is refused even though {@link gigabytesToBytes} accepts it: zero is a
+ * storable value but not a plan anyone bought, and a dial measured against it
+ * has nothing to divide by.
+ */
+export function readPlanLimitEntry(text: string): PlanLimitEntry {
+  const trimmed = text.trim();
+
+  if (trimmed === "") {
+    return { ok: false, reason: "blank" };
+  }
+
+  const value = Number(trimmed);
+
+  if (!Number.isFinite(value)) {
+    return { ok: false, reason: "not-a-number" };
+  }
+
+  if (value <= 0) {
+    return { ok: false, reason: "not-positive" };
+  }
+
+  return { ok: true, bytes: gigabytesToBytes(value) };
+}
+
+/**
+ * The inverse, for the field itself: `150_000_000_000` → `"150"`. Bare digits
+ * rather than a formatted size, because it goes back into an input the user
+ * edits — the unit belongs on the label beside it.
+ */
+export function planLimitInGigaoctets(bytes: number): string {
+  return String(Number((bytes / BYTES_PER_GIGABYTE).toFixed(3)));
+}
+
 function readHost(raw: Record<string, unknown>): string {
   if (raw.host === undefined) return DEFAULT_HOST;
 
@@ -285,14 +334,6 @@ function readAllowanceAnchor(
   };
 }
 
-/** The high-water plan total. Absent until something has been anchored. */
-function readPlanTotal(raw: Record<string, unknown>): number | undefined {
-  if (raw.planTotalBytes === undefined || raw.planTotalBytes === null)
-    return undefined;
-
-  return requireNonNegative(raw.planTotalBytes, "planTotalBytes");
-}
-
 /**
  * Validates arbitrary parsed JSON into an {@link AppConfig}, filling absent
  * fields from the defaults. Throws {@link ConfigValidationError} on a value
@@ -310,8 +351,10 @@ export function parseConfig(raw: unknown): AppConfig {
   const pollIntervalSeconds = readPollInterval(record);
   const routerUsername = readCredentialField(record, "routerUsername");
   const routerPasswordBlob = readCredentialField(record, "routerPasswordBlob");
+  // `planTotalBytes` is read by nothing: it held a high-water plan total that
+  // the dial no longer measures against. Files the app wrote still carry it, so
+  // it is dropped on the way through rather than rejected.
   const allowanceAnchor = readAllowanceAnchor(record);
-  const planTotalBytes = readPlanTotal(record);
 
   return {
     host: readHost(record),
@@ -325,7 +368,6 @@ export function parseConfig(raw: unknown): AppConfig {
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
     ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),
-    ...(planTotalBytes === undefined ? {} : { planTotalBytes }),
   };
 }
 

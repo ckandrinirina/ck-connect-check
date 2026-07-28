@@ -31,6 +31,9 @@ export const POPOVER_SYNC_CHANNEL = "popover:sync";
 /** The password prompt's submit, carrying the credential the user typed. */
 export const POPOVER_SAVE_PASSWORD_CHANNEL = "popover:save-password";
 
+/** The plan-size field's submit, carrying the characters typed into it. */
+export const POPOVER_SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
+
 /**
  * The page, as the build leaves it. `npm run build` copies it and its stylesheet
  * into `dist/renderer/`, and that copy is the one the app loads: a packaged
@@ -67,6 +70,8 @@ export interface PopoverOptions {
   onSync?: () => void;
   /** The user submitted the password prompt with a username and a password. */
   onSavePassword?: (credential: RouterCredential) => void;
+  /** The user submitted the plan-size field, with whatever they typed into it. */
+  onSetPlanLimit?: (value: string) => void;
 }
 
 /**
@@ -141,8 +146,17 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onSetPlanLimitMessage(event: IpcMainEvent, payload: unknown): void {
+    // A channel that writes to the config validates its own input rather than
+    // trusting that only our page can reach it.
+    if (fromThisPanel(event) && typeof payload === "string") {
+      options.onSetPlanLimit?.(payload);
+    }
+  }
+
   ipcMain.on(POPOVER_SYNC_CHANNEL, onSyncMessage);
   ipcMain.on(POPOVER_SAVE_PASSWORD_CHANNEL, onSavePasswordMessage);
+  ipcMain.on(POPOVER_SET_PLAN_LIMIT_CHANNEL, onSetPlanLimitMessage);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -255,6 +269,10 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       ipcMain.removeListener(
         POPOVER_SAVE_PASSWORD_CHANNEL,
         onSavePasswordMessage,
+      );
+      ipcMain.removeListener(
+        POPOVER_SET_PLAN_LIMIT_CHANNEL,
+        onSetPlanLimitMessage,
       );
       alive()?.destroy();
       window = null;

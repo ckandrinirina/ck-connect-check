@@ -3,9 +3,9 @@
  *
  * The page runs under `default-src 'none'` with context isolation on, so it has
  * no `require`, no network and no Electron. This script runs beside it in the
- * isolated world and hands it exactly two sends — start a sync, and store a
- * password — and nothing else: no `ipcRenderer`, no channel names, no way to
- * reach a channel this file does not name.
+ * isolated world and hands it exactly three sends — start a sync, store a
+ * password, and set the plan size — and nothing else: no `ipcRenderer`, no
+ * channel names, no way to reach a channel this file does not name.
  *
  * It is a `.cts` on purpose. The rest of the app is ESM, but a preload script is
  * loaded by Electron rather than by Node's ESM loader, so it is emitted as
@@ -20,6 +20,7 @@ import { contextBridge, ipcRenderer } from "electron";
 /** Kept in step with `src/main/popover.ts`, which listens on the same names. */
 const SYNC_CHANNEL = "popover:sync";
 const SAVE_PASSWORD_CHANNEL = "popover:save-password";
+const SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
 
 contextBridge.exposeInMainWorld("popoverBridge", {
   sync(): void {
@@ -32,5 +33,10 @@ contextBridge.exposeInMainWorld("popoverBridge", {
       username: credential.username,
       password: credential.password,
     });
+  },
+  setPlanLimit(value: string): void {
+    // The characters as typed. What a Go is worth in bytes is settled in the
+    // main process, which is also where the refusal is worded.
+    ipcRenderer.send(SET_PLAN_LIMIT_CHANNEL, String(value));
   },
 });

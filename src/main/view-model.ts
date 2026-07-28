@@ -11,11 +11,7 @@
  * to put these strings into the DOM.
  */
 
-import {
-  readAllowanceNow,
-  type AllowanceAnchor,
-  type AllowanceReading,
-} from "../domain/allowance.js";
+import { readPlanUsage, type AllowanceReading } from "../domain/allowance.js";
 import {
   formatBytes,
   formatDuration,
@@ -24,15 +20,16 @@ import {
 } from "../domain/format.js";
 import { peak, type RateSample } from "../domain/history.js";
 import {
-  daysUntilReset,
-  percentUsed,
-  totalUsedBytes,
   systemClock,
   usageState,
   type Clock,
   type UsageState,
 } from "../domain/quota.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
+import {
+  planLimitInGigaoctets,
+  type PlanLimitRefusal,
+} from "../config/config.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { RouterRefusal, SnapshotResult } from "../hilink/client.js";
@@ -46,6 +43,9 @@ import type { RouterSnapshot } from "../hilink/types.js";
 const NO_VALUE = "—";
 
 const MILLISECONDS_PER_SECOND = 1_000;
+
+/** The unit the plan-size field is read in, spelled once. */
+const PLAN_LIMIT_UNIT = "Go";
 
 /** A reading that succeeded, remembered so an unreachable router still has something to show. */
 export interface UsageReading {
@@ -165,6 +165,27 @@ export interface PopoverSync {
   status: string;
 }
 
+/**
+ * The plan-size field beside the dial.
+ *
+ * The cap is the one figure the carrier never states, so it has to be typed in.
+ * The field is always on the panel rather than appearing only when unset: a
+ * plan that changes has to be correctable, and an editor you have to discover
+ * how to reopen is one nobody reopens.
+ */
+export interface PopoverPlanLimit {
+  /** The stored cap as bare Go digits for the input, e.g. `"150"`. Empty when unset. */
+  value: string;
+  /** The unit the field is read in — spelled here, never in the renderer. */
+  unit: string;
+  /** True while no cap is stored, so the field can be shown as the thing to fill in. */
+  needsValue: boolean;
+  /** Why the last entry was refused, as a sentence. Empty when it was not. */
+  error: string;
+  /** The field's accessible name. */
+  description: string;
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   monthDownload: string;
@@ -180,13 +201,13 @@ export interface PopoverModel {
   carrier: string;
   /** Signal strength out of the router's maximum, e.g. `"4/5"`. */
   signal: string;
-  /** Time left in the billing cycle, e.g. `"5 days"`. */
-  daysUntilReset: string;
   freshness: PopoverFreshness;
   /** Recent throughput for the sparklines. */
   history: PopoverHistory;
   /** The carrier's exact remaining volume, carried forward from the last sync. */
   allowance: PopoverAllowance;
+  /** The plan-size field, and whatever the last entry has to answer for. */
+  planLimit: PopoverPlanLimit;
   /** The Sync button's state, and whatever the last press has to say. */
   sync: PopoverSync;
 }
@@ -204,6 +225,8 @@ export interface PopoverInput {
   history?: readonly RateSample[];
   /** Where the Sync button has got to. Idle when the caller has no sync running. */
   sync?: SyncState;
+  /** Why the last typed plan size was refused, if one was. */
+  planLimitProblem?: PlanLimitRefusal | undefined;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -218,44 +241,38 @@ function formatCarrier(carrier: string): string {
   return carrier.trim() === "" ? NO_VALUE : carrier;
 }
 
-function buildProgress(
-  usedBytes: number | null,
+/**
+ * Why there is no dial, in the words the panel shows. Each case names the one
+ * thing the user can do about it — an "unavailable" ring with no instruction is
+ * just a hole in the panel.
+ */
+function dialPrompt(
+  allowance: AllowanceReading | null,
   limitBytes: number | null,
-  warnThresholdPercent: number,
-): PopoverProgress {
-  const percent =
-    usedBytes === null ? null : percentUsed(usedBytes, limitBytes);
-  const state = usageState(percent, warnThresholdPercent);
-
-  const total = usedBytes === null ? NO_VALUE : formatBytes(usedBytes);
-
-  if (percent === null) {
-    return {
-      available: false,
-      label: NO_VALUE,
-      sweep: 0,
-      prompt:
-        usedBytes === null
-          ? "Waiting for the first reading from the router."
-          : "Set a plan limit to see how much of it is left.",
-      description:
-        usedBytes === null
-          ? "No usage read from the router yet"
-          : `${total} used this month, with no plan limit set`,
-      state,
-    };
+): string {
+  if (allowance === null) {
+    return "Sync to read how much of your plan is left.";
+  }
+  if (limitBytes === null) {
+    return "Set a plan limit to see how much of it is left.";
   }
 
-  return {
-    available: true,
-    // The label carries the real share — going over the plan is the one thing
-    // the user must not be shielded from — while the ring stops at full.
-    label: formatPercent(percent),
-    sweep: Math.min(Math.max(percent, 0), 100) / 100,
-    prompt: "",
-    description: `${formatPercent(percent)} of the plan used, ${total} this month`,
-    state,
-  };
+  return "That figure is out of date — sync to refresh the dial.";
+}
+
+/** The same three cases, for a screen reader. */
+function dialDescription(
+  allowance: AllowanceReading | null,
+  limitBytes: number | null,
+): string {
+  if (allowance === null) {
+    return "No allowance synced from the carrier yet";
+  }
+  if (limitBytes === null) {
+    return "No plan limit set, so the share used is unknown";
+  }
+
+  return "The last synced figure can no longer be trusted";
 }
 
 function buildFreshness(
@@ -412,6 +429,31 @@ function syncStatus(state: SyncState): string {
   return "";
 }
 
+/**
+ * One sentence per refusal. "That value is not valid" tells the user nothing
+ * they can act on, whereas an empty box, a typo and a zero each call for
+ * something different.
+ */
+const PLAN_LIMIT_ERROR_TEXT: Record<PlanLimitRefusal, string> = {
+  blank: "Enter the size of your plan in Go.",
+  "not-a-number": "That is not a number — enter the size in Go, like 150.",
+  "not-positive": "A plan has to be larger than zero.",
+};
+
+/** The plan-size field for one stored cap, and whatever the last entry left behind. */
+function buildPlanLimit(
+  limitBytes: number | null,
+  problem: PlanLimitRefusal | undefined,
+): PopoverPlanLimit {
+  return {
+    value: limitBytes === null ? "" : planLimitInGigaoctets(limitBytes),
+    unit: PLAN_LIMIT_UNIT,
+    needsValue: limitBytes === null,
+    error: problem === undefined ? "" : PLAN_LIMIT_ERROR_TEXT[problem],
+    description: "The size of your plan, in Go",
+  };
+}
+
 function buildHistory(samples: readonly RateSample[]): PopoverHistory {
   return {
     download: samples.map((sample) => sample.downloadBytesPerSecond),
@@ -426,72 +468,67 @@ function emptyModel(
   warnThresholdPercent: number,
   history: PopoverHistory,
   sync: PopoverSync,
+  planLimit: PopoverPlanLimit,
 ): PopoverModel {
   return {
     monthDownload: NO_VALUE,
     monthUpload: NO_VALUE,
     monthTotal: NO_VALUE,
-    progress: buildProgress(null, null, warnThresholdPercent),
+    progress: buildDial(null, null, warnThresholdPercent),
     downloadRate: NO_VALUE,
     uploadRate: NO_VALUE,
     connectedDevices: NO_VALUE,
     carrier: NO_VALUE,
     signal: NO_VALUE,
-    daysUntilReset: NO_VALUE,
     freshness,
     history,
     allowance: noAllowance(),
+    planLimit,
     sync,
   };
 }
 
 /**
- * The anchored allowance read against this snapshot's counter, or null when
- * nothing has been synced yet. The anchor lives in the config because it has to
- * survive a quit — the router keeps counting while the app is closed.
- */
-function readAnchored(
-  anchor: AllowanceAnchor | undefined,
-  snapshot: RouterSnapshot,
-  planTotalBytes: number | undefined,
-  clock: Clock,
-): AllowanceReading | null {
-  if (anchor === undefined) return null;
-
-  return readAllowanceNow({
-    anchor,
-    month: snapshot.month,
-    planTotalBytes: planTotalBytes ?? null,
-    clock,
-  });
-}
-
-/**
- * The dial, measured against whichever total can be trusted.
+ * The dial: the plan the user bought, and how much of it the carrier says is
+ * gone. It needs both halves — a trustworthy anchor and a stated cap — and
+ * shows nothing when either is missing.
  *
- * A trustworthy anchor is the carrier's own arithmetic, so it wins over the
- * limit the user typed in. A stale one falls back to that limit rather than
- * drawing a share it cannot stand behind — the marked volume itself stays in
- * {@link PopoverModel.allowance}, where it is labelled as stale.
+ * There is deliberately no fallback to the router's month counter. That counter
+ * runs from whenever the device last cleared itself, so measuring it against the
+ * plan puts two different months in one ring; a prompt is more use than a
+ * percentage of the wrong number.
  */
 function buildDial(
   allowance: AllowanceReading | null,
-  monthUsedBytes: number,
-  config: AppConfig,
+  limitBytes: number | null,
+  warnThresholdPercent: number,
 ): PopoverProgress {
-  if (allowance !== null && allowance.trustworthy) {
-    return buildProgress(
-      allowance.planTotalBytes - allowance.remainingBytes,
-      allowance.planTotalBytes,
-      config.warnThresholdPercent,
-    );
+  const percent = allowance?.percentUsed ?? null;
+  const state = usageState(percent, warnThresholdPercent);
+
+  if (percent === null) {
+    return {
+      available: false,
+      label: NO_VALUE,
+      sweep: 0,
+      prompt: dialPrompt(allowance, limitBytes),
+      description: dialDescription(allowance, limitBytes),
+      state,
+    };
   }
 
-  return buildProgress(
-    monthUsedBytes,
-    config.planLimitBytes,
-    config.warnThresholdPercent,
-  );
+  const used = formatBytes(allowance?.usedBytes ?? 0);
+
+  return {
+    available: true,
+    label: formatPercent(percent),
+    // Clamped for the same reason it always was, though the carrier's own
+    // remaining never goes below zero, so the share never passes 100%.
+    sweep: Math.min(Math.max(percent, 0), 100) / 100,
+    prompt: "",
+    description: `${formatPercent(percent)} of the plan used, ${used} so far`,
+    state,
+  };
 }
 
 /**
@@ -512,6 +549,12 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   const snapshot = live ? result.snapshot : lastReading?.snapshot;
   const freshness = buildFreshness(!live, lastReading, now);
   const history = buildHistory(input.history ?? []);
+  // Independent of the router: the cap is typed in, so the field is on the
+  // panel even before the first reading arrives.
+  const planLimit = buildPlanLimit(
+    config.planLimitBytes,
+    input.planLimitProblem,
+  );
 
   if (snapshot === undefined) {
     return emptyModel(
@@ -520,32 +563,44 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       history,
       // Nothing has been read, so nothing can be stale: no attention to call.
       buildSync(syncState, false),
+      planLimit,
     );
   }
 
-  const { month, traffic, status, carrier, billing } = snapshot;
-  const used = totalUsedBytes(month.monthDownloadBytes, month.monthUploadBytes);
-  const allowance = readAnchored(
+  const { month, traffic, status, carrier } = snapshot;
+  // The same derivation the menu bar reads, so the two cannot disagree.
+  const allowance = readPlanUsage(
     config.allowanceAnchor,
-    snapshot,
-    config.planTotalBytes,
+    month,
+    config.planLimitBytes,
     clock,
   );
 
   return {
+    // Download and upload stay the router's own counters: they are the evidence
+    // behind the delta, and the user can see them move. The total is the plan
+    // figure — a different month from the two lines above it, and the only one
+    // the carrier stands behind.
     monthDownload: formatBytes(month.monthDownloadBytes),
     monthUpload: formatBytes(month.monthUploadBytes),
-    monthTotal: formatBytes(used),
-    progress: buildDial(allowance, used, config),
+    monthTotal:
+      allowance?.usedBytes === undefined || allowance.usedBytes === null
+        ? NO_VALUE
+        : formatBytes(allowance.usedBytes),
+    progress: buildDial(
+      allowance,
+      config.planLimitBytes,
+      config.warnThresholdPercent,
+    ),
     downloadRate: formatRate(traffic.downloadRateBps),
     uploadRate: formatRate(traffic.uploadRateBps),
     connectedDevices: String(status.connectedDevices),
     carrier: formatCarrier(carrier.carrier),
     signal: `${status.signalBars}/${status.maxSignalBars}`,
-    daysUntilReset: formatDays(daysUntilReset(billing.startDay, clock)),
     freshness,
     history,
     allowance: buildAllowance(allowance, now),
+    planLimit,
     // An anchor that can no longer carry the arithmetic is the one thing the
     // button has to call out: the figure on screen is the last honest one.
     sync: buildSync(syncState, allowance !== null && !allowance.trustworthy),

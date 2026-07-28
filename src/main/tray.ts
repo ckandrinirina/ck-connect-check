@@ -8,8 +8,9 @@
  * rendering is capped at {@link MAX_TRAY_TITLE_LENGTH} characters.
  */
 
+import { readPlanUsage } from "../domain/allowance.js";
 import { formatBytes, formatPercent } from "../domain/format.js";
-import { percentUsed, totalUsedBytes, usageState } from "../domain/quota.js";
+import { systemClock, usageState, type Clock } from "../domain/quota.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { SnapshotResult } from "../hilink/client.js";
 
@@ -18,6 +19,13 @@ export const MAX_TRAY_TITLE_LENGTH = 12;
 
 /** An unreachable router is a normal state, not an error — this is how it reads. */
 export const OFFLINE_TRAY_TITLE = "offline";
+
+/**
+ * Shown when there is no share to show — nothing synced, no plan limit set, or
+ * an anchor that has gone stale. The same dash the popover uses for a missing
+ * value, so the two never disagree about what "unknown" looks like.
+ */
+export const NO_TRAY_VALUE = "—";
 
 /** Separates the used total from the percentage: `5.8G · 29%`. */
 const SEPARATOR = " · ";
@@ -31,12 +39,6 @@ export const TRAY_WARN_MARKER = "⚠";
 
 const WARN_SEPARATOR = ` ${TRAY_WARN_MARKER} `;
 
-/**
- * Beyond this the percentage is meaningless (it means the plan limit is wrong)
- * and a longer number would break the width cap, so the display stops here.
- */
-const MAX_DISPLAYED_PERCENT = 999;
-
 /** The octet unit that alone is never rendered with a decimal. */
 const BASE_BYTE_UNIT = "o";
 
@@ -47,7 +49,7 @@ const BASE_BYTE_UNIT = "o";
  * decimal (1000³), never binary, in octets — and then trims the result to tray
  * width: one decimal below ten, none above, and whole octets are never
  * fractional. The unit itself is kept whole rather than abbreviated further:
- * `"999Go ⚠ 999%"` is the widest title this can produce, and that is exactly
+ * `"999Go ⚠ 100%"` is the widest title this can produce, and that is exactly
  * {@link MAX_TRAY_TITLE_LENGTH} characters.
  */
 function compactBytes(bytes: number): string {
@@ -70,28 +72,39 @@ function compactBytes(bytes: number): string {
 /**
  * The menu bar title for one poll result.
  *
- * Online with a plan limit reads `"5.8G · 29%"`; online without one reads the
- * used total alone, because there is no percentage to show until the user sets
- * a limit; offline reads {@link OFFLINE_TRAY_TITLE}.
+ * Both halves come from the same reading the popover's dial does — the plan the
+ * user bought, less what the carrier says is left — so the menu bar and the
+ * panel can never quote different figures. `"8Go · 40%"` reads as "8 Go of the
+ * plan gone, which is 40% of it"; offline reads {@link OFFLINE_TRAY_TITLE}.
+ *
+ * With nothing synced, no plan limit set, or an anchor gone stale, the title is
+ * {@link NO_TRAY_VALUE}. There is deliberately no fallback to the router's own
+ * month counter: a menu bar quoting a figure the panel has withdrawn is worse
+ * than one saying nothing, and the panel explains the gap when it is opened.
  *
  * At or above the configured warn threshold the separator becomes
- * {@link TRAY_WARN_MARKER} — `"18G ⚠ 90%"` — so the menu bar says the plan is
+ * {@link TRAY_WARN_MARKER} — `"18Go ⚠ 90%"` — so the menu bar says the plan is
  * running out without saying it any wider.
  */
 export function buildTrayTitle(
   result: SnapshotResult,
   config: AppConfig,
+  clock: Clock = systemClock,
 ): string {
   if (!result.online) {
     return OFFLINE_TRAY_TITLE;
   }
 
-  const { monthDownloadBytes, monthUploadBytes } = result.snapshot.month;
-  const used = totalUsedBytes(monthDownloadBytes, monthUploadBytes);
-  const percent = percentUsed(used, config.planLimitBytes);
+  const reading = readPlanUsage(
+    config.allowanceAnchor,
+    result.snapshot.month,
+    config.planLimitBytes,
+    clock,
+  );
+  const percent = reading?.percentUsed ?? null;
 
-  if (percent === null) {
-    return compactBytes(used);
+  if (percent === null || reading?.usedBytes == null) {
+    return NO_TRAY_VALUE;
   }
 
   const separator =
@@ -99,5 +112,5 @@ export function buildTrayTitle(
       ? SEPARATOR
       : WARN_SEPARATOR;
 
-  return `${compactBytes(used)}${separator}${formatPercent(Math.min(percent, MAX_DISPLAYED_PERCENT))}`;
+  return `${compactBytes(reading.usedBytes)}${separator}${formatPercent(percent)}`;
 }

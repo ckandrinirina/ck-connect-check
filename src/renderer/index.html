@@ -46,6 +46,34 @@
         <span class="total" data-field="monthTotal">—</span>
         <span class="caption">used this month</span>
         <p class="prompt" data-field="prompt"></p>
+
+        <!--
+          The one figure the carrier never states, so it has to be typed. It
+          stays on the panel rather than appearing only when unset: a plan that
+          changes has to be correctable. The value is filled from the model and
+          the refusal is worded in the main process — this is a field, not a
+          validator.
+        -->
+        <form class="plan-limit" data-plan-limit>
+          <label class="plan-limit-label" for="plan-limit">Plan</label>
+          <input
+            id="plan-limit"
+            class="plan-limit-input"
+            data-plan-limit-input
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="150"
+          />
+          <span class="plan-limit-unit" data-field="planLimitUnit">Go</span>
+          <button class="plan-limit-submit" type="submit">Set</button>
+        </form>
+        <p
+          class="plan-limit-error"
+          data-field="planLimitError"
+          role="status"
+        ></p>
       </div>
     </section>
 
@@ -104,10 +132,6 @@
       <div class="stat">
         <dt>Devices</dt>
         <dd data-field="connectedDevices">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Resets in</dt>
-        <dd data-field="daysUntilReset">—</dd>
       </div>
       <div class="stat">
         <dt>Expires</dt>

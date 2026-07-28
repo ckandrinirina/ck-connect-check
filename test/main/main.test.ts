@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -13,8 +13,10 @@ import type {
   RouterCredential,
   RouterSnapshot,
 } from "../../src/hilink/types.js";
-import { startMenuBarApp } from "../../src/main/main.js";
+import { defaultConfig } from "../../src/config/defaults.js";
+import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
+import { NO_TRAY_VALUE } from "../../src/main/tray.js";
 import type { Popover } from "../../src/main/popover.js";
 import type { PopoverModel } from "../../src/main/view-model.js";
 
@@ -213,8 +215,9 @@ describe("startMenuBarApp", () => {
 
     await vi.advanceTimersByTimeAsync(0);
 
-    // No plan limit in the default config, so the used total stands alone.
-    expect(electron.setTitle).toHaveBeenCalledWith("5.8Go");
+    // A default config has neither a plan limit nor an anchor, so there is no
+    // share to report — and the router's own counter is not a substitute for it.
+    expect(electron.setTitle).toHaveBeenCalledWith(NO_TRAY_VALUE);
     app.stop();
   });
 });
@@ -433,7 +436,7 @@ describe("startMenuBarApp — the allowance sync", () => {
     vi.useRealTimers();
   });
 
-  it("never starts a dialogue from the poll timer, however long it runs", async () => {
+  it("never repeats a dialogue from the poll timer, however long it runs", async () => {
     const router = allowanceRouter(() =>
       Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
     );
@@ -448,8 +451,10 @@ describe("startMenuBarApp — the allowance sync", () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(POLL_MS * 10);
 
-    // The USSD channel is driven by the Sync button and by nothing else.
-    expect(router.dialogues).toBe(0);
+    // An empty config earns exactly one automatic dialogue at launch. After
+    // that the USSD channel belongs to the Sync button and to nothing else —
+    // the poll timer must never turn into a carrier dialogue on a schedule.
+    expect(router.dialogues).toBe(1);
 
     app.stop();
   });
@@ -497,7 +502,10 @@ describe("startMenuBarApp — the allowance sync", () => {
     };
 
     expect(written.allowanceAnchor?.remainingBytes).toBe(145_835_900_000);
-    expect(written.planTotalBytes).toBe(145_835_900_000);
+
+    // The high-water total is not written any more: with one anchor it equalled
+    // that anchor's own remaining, which pinned the dial to 0%.
+    expect(written).not.toHaveProperty("planTotalBytes");
 
     app.stop();
   });
@@ -635,6 +643,333 @@ describe("startMenuBarApp — the allowance sync", () => {
     expect(logged).not.toMatch(/code/i);
 
     warn.mockRestore();
+    app.stop();
+  });
+});
+
+/** The router's clear time in {@link READING}, so an anchor can match or differ. */
+const READING_CLEAR_TIME = "2026-7-27";
+
+/** An anchor whose arithmetic still holds against {@link READING}. */
+const HEALTHY_ANCHOR = {
+  planLabel: "NET MONTH 200 000",
+  remainingBytes: 145_835_900_000,
+  expiresAt: new Date(2099, 0, 1).toISOString(),
+  routerMonthBytes: 1_000_000_000,
+  routerClearTime: READING_CLEAR_TIME,
+  syncedAt: new Date(2026, 6, 27, 10, 0, 0).toISOString(),
+};
+
+/** A config file holding `anchor`, or none at all when it is null. */
+function configHolding(anchor: Record<string, unknown> | null): string {
+  const configPath = scratchConfig();
+
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      ...defaultConfig(),
+      ...(anchor === null ? {} : { allowanceAnchor: anchor }),
+    }),
+  );
+
+  return configPath;
+}
+
+describe("startMenuBarApp — setting the plan limit", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** What the config file on disk holds now. */
+  function storedLimit(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as {
+        planLimitBytes?: unknown;
+      }
+    ).planLimitBytes;
+  }
+
+  it("stores a typed plan size as bytes, not as the figure typed", async () => {
+    const configPath = configHolding(null);
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setPlanLimit("150");
+
+    expect(storedLimit(configPath)).toBe(150_000_000_000);
+
+    app.stop();
+  });
+
+  it("shows the new cap on the dial without the renderer computing it", async () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: configHolding(HEALTHY_ANCHOR),
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).progress.available).toBe(false);
+
+    app.setPlanLimit("150");
+
+    expect(latest(popover).progress.available).toBe(true);
+    expect(latest(popover).planLimit.value).toBe("150");
+
+    app.stop();
+  });
+
+  it("writes nothing and says why when the entry cannot be read", async () => {
+    const configPath = configHolding(null);
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const entry of ["", "abc", "0", "-5"]) {
+      app.setPlanLimit(entry);
+
+      expect(storedLimit(configPath), entry).toBeNull();
+      expect(latest(popover).planLimit.error, entry).not.toBe("");
+    }
+
+    app.stop();
+  });
+
+  it("clears the complaint once a good value follows a bad one", async () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: configHolding(null),
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setPlanLimit("nonsense");
+    app.setPlanLimit("150");
+
+    expect(latest(popover).planLimit.error).toBe("");
+
+    app.stop();
+  });
+
+  it("keeps the cap across a restart", async () => {
+    const configPath = configHolding(null);
+    const first = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover: recordingPopover(),
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    first.setPlanLimit("150");
+    first.stop();
+
+    const popover = recordingPopover();
+    const second = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).planLimit.value).toBe("150");
+
+    second.stop();
+  });
+});
+
+describe("startMenuBarApp — syncing by itself", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Launches against `configPath` and lets the first poll settle. */
+  async function launched(
+    configPath: string,
+    credential: RouterCredential | null = CREDENTIAL,
+    answer: () => Promise<AllowanceResult> = () =>
+      Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+  ): Promise<{
+    router: AllowanceSource & { dialogues: number };
+    popover: RecordingPopover;
+    app: MenuBarApp;
+  }> {
+    const router = allowanceRouter(answer);
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: router,
+      credentials: storeHolding(credential),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { router, popover, app };
+  }
+
+  it("dials the carrier at launch when nothing has ever been synced", async () => {
+    const { router, app } = await launched(configHolding(null));
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("dials at launch when the stored allowance has expired", async () => {
+    const { router, app } = await launched(
+      configHolding({
+        ...HEALTHY_ANCHOR,
+        expiresAt: new Date(2020, 0, 1).toISOString(),
+      }),
+    );
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("dials at launch when the router's counter has been reset under the anchor", async () => {
+    const { router, app } = await launched(
+      configHolding({ ...HEALTHY_ANCHOR, routerClearTime: "2026-8-1" }),
+    );
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("stays quiet when the stored allowance still holds", async () => {
+    // A dialogue costs tens of seconds and a login against a device that locks
+    // the account after five refusals. A healthy anchor is carried forward.
+    const { router, popover, app } = await launched(
+      configHolding(HEALTHY_ANCHOR),
+    );
+
+    expect(router.dialogues).toBe(0);
+    expect(latest(popover).allowance.available).toBe(true);
+
+    app.stop();
+  });
+
+  it("asks for a password rather than dialling when none is stored", async () => {
+    const { router, popover, app } = await launched(configHolding(null), null);
+
+    expect(router.dialogues).toBe(0);
+    expect(latest(popover).sync.needsPassword).toBe(true);
+
+    app.stop();
+  });
+
+  it("waits for a first successful reading, so there is a counter to pin against", async () => {
+    const router = allowanceRouter(() =>
+      Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+    );
+    const app = startMenuBarApp({
+      configPath: configHolding(null),
+      client: scriptedClient([OFFLINE, OFFLINE]),
+      popover: recordingPopover(),
+      allowance: router,
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(POLL_MS * 2);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("reports a failed automatic sync exactly as a failed press, and tries once", async () => {
+    const { router, popover, app } = await launched(
+      configHolding(null),
+      CREDENTIAL,
+      () => Promise.resolve({ ok: false, reason: "busy" }),
+    );
+
+    expect(latest(popover).sync.status).toMatch(/busy/i);
+
+    // Never retried on a timer: the account locks after five refused sign-ins.
+    await vi.advanceTimersByTimeAsync(POLL_MS * 10);
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("refuses a manual press while the automatic dialogue is still running", async () => {
+    let release = (): void => undefined;
+    const pending = new Promise<AllowanceResult>((resolve) => {
+      release = () => {
+        resolve({ ok: true, allowance: CARRIER_ALLOWANCE });
+      };
+    });
+    const router = allowanceRouter(() => pending);
+    const app = startMenuBarApp({
+      configPath: configHolding(null),
+      client: countingClient(),
+      popover: recordingPopover(),
+      allowance: router,
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    // The modem has one USSD channel; the existing busy guard is what protects it.
+    expect(router.dialogues).toBe(1);
+
+    release();
+    await vi.advanceTimersByTimeAsync(0);
     app.stop();
   });
 });

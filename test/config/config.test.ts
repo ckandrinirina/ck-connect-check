@@ -16,6 +16,8 @@ import {
   gigabytesToBytes,
   loadConfig,
   parseConfig,
+  planLimitInGigaoctets,
+  readPlanLimitEntry,
   saveConfig,
 } from "../../src/config/config.js";
 import {
@@ -172,6 +174,74 @@ describe("corrupt config", () => {
 
     expect(result.problem).toBeUndefined();
     expect(result.config).toEqual({ ...defaultConfig(), host: "10.0.0.1" });
+  });
+});
+
+describe("readPlanLimitEntry — a plan size as the user typed it", () => {
+  it("reads a whole number of Go as bytes", () => {
+    expect(readPlanLimitEntry("150")).toEqual({
+      ok: true,
+      bytes: 150_000_000_000,
+    });
+  });
+
+  it("reads a fractional plan size", () => {
+    expect(readPlanLimitEntry("1.5")).toEqual({
+      ok: true,
+      bytes: 1_500_000_000,
+    });
+  });
+
+  it("ignores space around the figure", () => {
+    expect(readPlanLimitEntry("  150  ")).toEqual({
+      ok: true,
+      bytes: 150_000_000_000,
+    });
+  });
+
+  it("refuses an empty entry", () => {
+    expect(readPlanLimitEntry("")).toEqual({ ok: false, reason: "blank" });
+    expect(readPlanLimitEntry("   ")).toEqual({ ok: false, reason: "blank" });
+  });
+
+  it("refuses something that is not a number", () => {
+    // Including the unit: the field is labelled in Go, so the label carries it.
+    for (const entry of ["abc", "150 Go", "1,5", "--3"]) {
+      expect(readPlanLimitEntry(entry), entry).toEqual({
+        ok: false,
+        reason: "not-a-number",
+      });
+    }
+  });
+
+  it("refuses a plan of zero or less", () => {
+    // Zero is a valid stored value but not a plan anyone bought, and a dial
+    // measured against it would divide by nothing.
+    for (const entry of ["0", "-1", "-150"]) {
+      expect(readPlanLimitEntry(entry), entry).toEqual({
+        ok: false,
+        reason: "not-positive",
+      });
+    }
+  });
+});
+
+describe("planLimitInGigaoctets — the field's own spelling", () => {
+  it("spells a whole plan without a decimal point", () => {
+    expect(planLimitInGigaoctets(150_000_000_000)).toBe("150");
+  });
+
+  it("keeps a fractional plan's decimal", () => {
+    expect(planLimitInGigaoctets(1_500_000_000)).toBe("1.5");
+  });
+
+  it("round-trips whatever it spelled", () => {
+    for (const bytes of [150_000_000_000, 1_500_000_000, 20_000_000_000]) {
+      expect(readPlanLimitEntry(planLimitInGigaoctets(bytes))).toEqual({
+        ok: true,
+        bytes,
+      });
+    }
   });
 });
 
@@ -467,15 +537,35 @@ describe("the stored allowance anchor", () => {
   });
 
   it("round-trips an anchor through save and load unchanged", () => {
-    const written: AppConfig = {
-      ...defaultConfig(),
-      allowanceAnchor: ANCHOR,
-      planTotalBytes: 200_000_000_000,
-    };
+    const written: AppConfig = { ...defaultConfig(), allowanceAnchor: ANCHOR };
 
     saveConfig(path(), written);
 
     expect(loadConfig(path()).config).toEqual(written);
+  });
+
+  it("loads a config still carrying the retired high-water total, ignoring it", () => {
+    // Written by every version up to the one that measured the dial against an
+    // inferred total. A config file the app itself wrote must never fail to load.
+    writeFileSync(
+      path(),
+      JSON.stringify({ ...defaultConfig(), planTotalBytes: 200_000_000_000 }),
+    );
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.problem).toBeUndefined();
+    expect(loaded.config).not.toHaveProperty("planTotalBytes");
+  });
+
+  it("ignores a retired high-water total even when it is nonsense", () => {
+    // It is no longer read, so its shape cannot be a reason to reject the file.
+    expect(() =>
+      parseConfig({ ...defaultConfig(), planTotalBytes: "big" }),
+    ).not.toThrow();
+    expect(
+      parseConfig({ ...defaultConfig(), planTotalBytes: -1 }),
+    ).not.toHaveProperty("planTotalBytes");
   });
 
   it("round-trips the expiry date, not a string", () => {
@@ -568,15 +658,6 @@ describe("the stored allowance anchor", () => {
         ...defaultConfig(),
         allowanceAnchor: { ...ANCHOR, remainingBytes: -1 },
       }),
-    ).toThrow(ConfigValidationError);
-  });
-
-  it("rejects a high-water plan total that is not a non-negative number", () => {
-    expect(() =>
-      parseConfig({ ...defaultConfig(), planTotalBytes: "big" }),
-    ).toThrow(ConfigValidationError);
-    expect(() =>
-      parseConfig({ ...defaultConfig(), planTotalBytes: -1 }),
     ).toThrow(ConfigValidationError);
   });
 

@@ -177,12 +177,26 @@ function snapshot(usedBytes: number): RouterSnapshot {
   };
 }
 
-/** Two readings apart, so one pushed payload can be told from the one before it. */
+/**
+ * Two readings apart, so one pushed payload can be told from the one before it.
+ * The cap and the anchor are what give the model a consumed figure at all.
+ */
 function modelUsing(usedBytes: number): PopoverModel {
   return buildPopoverModel({
     result: { online: true, snapshot: snapshot(usedBytes) },
     lastReading: null,
-    config: defaultConfig(),
+    config: {
+      ...defaultConfig(),
+      planLimitBytes: 20 * GB,
+      allowanceAnchor: {
+        planLabel: "NET MONTH 200 000",
+        remainingBytes: 20 * GB - usedBytes,
+        expiresAt: null,
+        routerMonthBytes: usedBytes,
+        routerClearTime: "2026-7-27",
+        syncedAt: new Date(2026, 6, 27, 10, 0, 0),
+      },
+    },
   });
 }
 

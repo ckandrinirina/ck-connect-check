@@ -1,13 +1,15 @@
 /**
- * Quota math: how much of the plan is used, and when the billing cycle
- * restarts. Pure — no I/O, no Electron, no network. "Now" always arrives
- * through an injected {@link Clock} so every reset case is testable.
+ * Quota math: how much of the plan is used, and how close that is to the limit.
+ * Pure — no I/O, no Electron, no network.
  *
  * The percentage returned here is exact. Rounding is a display concern and
  * lives in `format.ts`; thresholds compare against the exact value.
+ *
+ * This module once also derived the billing cycle's restart from the router's
+ * `StartDay`. That went with the panel's "Resets in" tile: the carrier never
+ * confirmed `StartDay`, and its own expiry date — which comes back over USSD and
+ * lives on the allowance reading — is the one that actually governs.
  */
-
-const MILLISECONDS_PER_DAY = 86_400_000;
 
 /** The only source of "now" in the domain — injected so tests can freeze it. */
 export interface Clock {
@@ -81,52 +83,4 @@ export function usageState(
   }
 
   return percent >= warnThresholdPercent ? "warn" : "ok";
-}
-
-/** Days in the given month, where `month` is a 0-based index that may overflow. */
-function daysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-/**
- * The start day pinned into a real date for that month. A `startDay` of 31 in
- * a 30-day month becomes the 30th — the cycle restarts on the last day rather
- * than skipping the month.
- */
-function resetDayOf(year: number, month: number, startDay: number): number {
-  const day = Number.isFinite(startDay) ? Math.floor(startDay) : 1;
-  return Math.min(Math.max(day, 1), daysInMonth(year, month));
-}
-
-function resetAfter(now: Date, startDay: number): Date {
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const thisMonth = resetDayOf(year, month, startDay);
-
-  // Strictly ahead: on the reset day itself the cycle has already restarted,
-  // so the next one is a full cycle away.
-  if (thisMonth > now.getDate()) {
-    return new Date(year, month, thisMonth);
-  }
-  return new Date(year, month + 1, resetDayOf(year, month + 1, startDay));
-}
-
-/**
- * Local midnight of the next billing-cycle restart, derived from `startDay`.
- * The router's `MonthLastClearTime` disagrees with `StartDay` on this device
- * and is treated as advisory only — `startDay` is the source of truth.
- */
-export function nextResetDate(startDay: number, clock: Clock): Date {
-  return resetAfter(clock.now(), startDay);
-}
-
-/** Whole days from today until the next reset. The reset day itself is a full cycle. */
-export function daysUntilReset(startDay: number, clock: Clock): number {
-  const now = clock.now();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  // Rounded, not floored: a daylight-saving shift makes a day 23 or 25 hours long.
-  return Math.round(
-    (resetAfter(now, startDay).getTime() - today.getTime()) /
-      MILLISECONDS_PER_DAY,
-  );
 }

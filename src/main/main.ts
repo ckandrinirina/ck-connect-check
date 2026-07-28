@@ -10,14 +10,19 @@
 
 import { Menu, Tray, app, nativeImage } from "electron";
 
-import { loadConfig, saveConfig } from "../config/config.js";
+import {
+  loadConfig,
+  readPlanLimitEntry,
+  saveConfig,
+  type PlanLimitRefusal,
+} from "../config/config.js";
 import { defaultConfigPath } from "../config/defaults.js";
-import { anchorFrom, planTotalBytes } from "../domain/allowance.js";
+import { anchorFrom, needsAutomaticSync } from "../domain/allowance.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import { RouterClient, type SnapshotResult } from "../hilink/client.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
-import type { Allowance } from "../hilink/types.js";
+import type { Allowance, RouterSnapshot } from "../hilink/types.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import { UsagePoller, type SnapshotSource } from "./poller.js";
 import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
@@ -53,6 +58,12 @@ export interface MenuBarApp {
    * tens of seconds, so it only ever happens because someone asked for it.
    */
   sync(): Promise<void>;
+  /**
+   * Stores a plan size as the panel's field received it. Exposed for the same
+   * reason {@link MenuBarApp.sync} is: it is what the panel does, and a test
+   * can drive it without an Electron window.
+   */
+  setPlanLimit(value: string): void;
   /** Stops polling and releases the tray item. */
   stop(): void;
 }
@@ -92,6 +103,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     createPopover({
       onSync: () => void sync.start(),
       onSavePassword: (credential) => void sync.submitPassword(credential),
+      onSetPlanLimit: (value) => {
+        setPlanLimit(value);
+      },
     });
 
   // The poller only publishes a title, so the popover's figures are gathered
@@ -107,6 +121,11 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // a poll landing mid-dialogue rebuilds the model with the sync still running.
   let syncState: SyncState = { phase: "idle" };
 
+  // Why the last typed plan size was refused, if it was. Held here for the same
+  // reason the sync state is: a poll landing afterwards must rebuild the model
+  // with the complaint still on it.
+  let planLimitProblem: PlanLimitRefusal | undefined;
+
   function refreshPopover(): void {
     popover.setModel(
       buildPopoverModel({
@@ -115,8 +134,40 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         config,
         history: history.samples(),
         sync: syncState,
+        planLimitProblem,
       }),
     );
+  }
+
+  /**
+   * Stores the plan size the user typed, or says why it could not be.
+   *
+   * The renderer sends the characters and converts nothing; the Go-to-bytes
+   * scale and the refusal both belong to `config.ts` and `view-model.ts`
+   * respectively, so this only routes between them.
+   */
+  function setPlanLimit(value: string): void {
+    const entry = readPlanLimitEntry(value);
+
+    if (!entry.ok) {
+      planLimitProblem = entry.reason;
+      refreshPopover();
+
+      return;
+    }
+
+    planLimitProblem = undefined;
+    config.planLimitBytes = entry.bytes;
+
+    try {
+      saveConfig(configPath, config);
+    } catch (error) {
+      // The cap still governs the dial for this run; losing it on quit is
+      // better than refusing the setting outright.
+      console.warn(`could not record the plan limit: ${String(error)}`);
+    }
+
+    refreshPopover();
   }
 
   /**
@@ -134,14 +185,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       return;
     }
 
-    const anchor = anchorFrom(allowance, month);
-    const total = planTotalBytes(anchor, config.planTotalBytes ?? null);
-
-    config.allowanceAnchor = anchor;
-
-    if (total !== null) {
-      config.planTotalBytes = total;
-    }
+    config.allowanceAnchor = anchorFrom(allowance, month);
 
     try {
       saveConfig(configPath, config);
@@ -170,6 +214,34 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     },
   });
 
+  /**
+   * Whether the launch dialogue has already been decided. Set on the first
+   * reading that arrives, whichever way the decision went, so a failed
+   * automatic sync is never retried — the router locks the account after five
+   * refused sign-ins, and a timer that keeps trying would walk it there.
+   */
+  let automaticSyncDecided = false;
+
+  /**
+   * Dials the carrier once at launch, if there is nothing worth showing.
+   *
+   * It waits for a reading because the anchor has to be pinned to a counter,
+   * and there is no counter until the router has answered once. With no
+   * password stored, `sync.start()` asks for one and dials nothing, which is
+   * the same thing a press would do.
+   */
+  function syncAutomaticallyOnce(snapshot: RouterSnapshot): void {
+    if (automaticSyncDecided) {
+      return;
+    }
+
+    automaticSyncDecided = true;
+
+    if (needsAutomaticSync(config.allowanceAnchor, snapshot.month)) {
+      void sync.start();
+    }
+  }
+
   const client: SnapshotSource = {
     async snapshot(): Promise<SnapshotResult> {
       // The panel dismisses itself when the user clicks elsewhere, which the
@@ -181,6 +253,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
       if (result.online) {
         lastReading = { snapshot: result.snapshot, at: systemClock.now() };
+        syncAutomaticallyOnce(result.snapshot);
       }
 
       // Every poll is offered to the history; an offline one records a gap
@@ -238,6 +311,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
   return {
     sync: () => sync.start(),
+    setPlanLimit,
     stop() {
       poller.stop();
       popover.destroy();

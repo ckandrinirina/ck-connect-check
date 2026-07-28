@@ -79,11 +79,19 @@ export interface AllowanceReading {
   staleReason: AllowanceStaleReason | null;
   /** True when the delta has consumed the whole anchored volume. */
   exhausted: boolean;
-  /** The dial's 100%: the highest remaining ever anchored. */
-  planTotalBytes: number;
   /**
-   * Exact share of {@link planTotalBytes} consumed, or null when the anchor is
-   * stale — a caller that gets null falls back to the configured plan limit.
+   * How much of the plan has been consumed: the configured cap minus what is
+   * left, clamped at zero. Null when no cap is configured — without one there
+   * is no total to subtract from, only a remaining volume.
+   *
+   * Never the router's month counter. That counter runs from whenever the
+   * device last cleared itself, which is not the carrier's billing period.
+   */
+  usedBytes: number | null;
+  /**
+   * Exact share of the configured cap consumed. Null when no cap is set, and
+   * null when the anchor is stale — in both cases there is no dial to draw
+   * rather than a figure to guess at.
    */
   percentUsed: number | null;
   /** When the anchor behind this reading was taken. */
@@ -94,8 +102,11 @@ export interface AllowanceNowInput {
   anchor: AllowanceAnchor;
   /** The router's current month counter and clear time. */
   month: MonthStatistics;
-  /** The remembered high-water total; the anchor's own remaining when absent. */
-  planTotalBytes?: number | null;
+  /**
+   * The plan the user bought, in bytes — the dial's 100%. Absent or null until
+   * they state one; the carrier never reports it.
+   */
+  planLimitBytes?: number | null;
   /** Injected so every staleness and expiry case is testable. */
   clock?: Clock;
 }
@@ -123,6 +134,50 @@ function wholeDaysUntil(expiry: Date, now: Date): number {
   return Math.round((midnight(expiry) - midnight(now)) / MILLISECONDS_PER_DAY);
 }
 
+/**
+ * The one derivation of "what the plan looks like right now", shared by
+ * everything that displays it: the menu bar title, the over-limit notification
+ * and the popover's dial all read this and nothing else.
+ *
+ * Null when nothing has ever been synced. A caller that gets null — or a reading
+ * whose {@link AllowanceReading.percentUsed} is null — has no share to show, and
+ * must not substitute the router's month counter: that counter runs from
+ * whenever the device last cleared itself, which is a different period from the
+ * carrier's.
+ */
+export function readPlanUsage(
+  anchor: AllowanceAnchor | undefined,
+  month: MonthStatistics,
+  planLimitBytes: number | null,
+  clock: Clock = systemClock,
+): AllowanceReading | null {
+  if (anchor === undefined) return null;
+
+  return readAllowanceNow({ anchor, month, planLimitBytes, clock });
+}
+
+/**
+ * Whether the app should dial the carrier itself rather than wait to be asked.
+ *
+ * True in exactly the cases where there is nothing worth showing: nothing ever
+ * synced, an allowance the carrier's own expiry date has passed, or an anchor
+ * the router invalidated by restarting its counter. A healthy anchor is carried
+ * forward with no dialogue at all.
+ *
+ * The narrowness is the point. A dialogue costs tens of seconds and a login
+ * against a device that locks the account after five refusals, so this must
+ * never become something that happens on a schedule.
+ */
+export function needsAutomaticSync(
+  anchor: AllowanceAnchor | undefined,
+  month: MonthStatistics,
+  clock: Clock = systemClock,
+): boolean {
+  if (anchor === undefined) return true;
+
+  return !readAllowanceNow({ anchor, month, clock }).trustworthy;
+}
+
 /** Record one USSD reading against the router's counter at this instant. */
 export function anchorFrom(
   allowance: Allowance,
@@ -137,23 +192,6 @@ export function anchorFrom(
     routerClearTime: month.monthLastClearTime,
     syncedAt: clock.now(),
   };
-}
-
-/**
- * The dial's 100%, held separately from any single anchor: the largest
- * remaining volume ever anchored. It must not fall when a later sync anchors a
- * smaller remaining — that is the plan being consumed, not the plan shrinking.
- *
- * Null only when nothing has ever been anchored.
- */
-export function planTotalBytes(
-  anchor: AllowanceAnchor | null,
-  rememberedBytes: number | null,
-): number | null {
-  if (anchor === null) return rememberedBytes;
-  if (rememberedBytes === null) return anchor.remainingBytes;
-
-  return Math.max(anchor.remainingBytes, rememberedBytes);
 }
 
 /**
@@ -199,9 +237,10 @@ export function readAllowanceNow(input: AllowanceNowInput): AllowanceReading {
       : counterOf(month) - anchor.routerMonthBytes;
   const remainingBytes = Math.max(0, anchor.remainingBytes - delta);
 
-  const total =
-    planTotalBytes(anchor, input.planTotalBytes ?? null) ??
-    anchor.remainingBytes;
+  const cap = input.planLimitBytes ?? null;
+  // Clamped: a cap typed in below what the carrier actually granted would
+  // otherwise report a negative consumption.
+  const usedBytes = cap === null ? null : Math.max(0, cap - remainingBytes);
 
   return {
     planLabel: anchor.planLabel,
@@ -212,9 +251,11 @@ export function readAllowanceNow(input: AllowanceNowInput): AllowanceReading {
     trustworthy: staleReason === null,
     staleReason,
     exhausted: remainingBytes === 0,
-    planTotalBytes: total,
+    usedBytes,
     percentUsed:
-      staleReason === null ? percentUsed(total - remainingBytes, total) : null,
+      staleReason === null && usedBytes !== null
+        ? percentUsed(usedBytes, cap)
+        : null,
     syncedAt: anchor.syncedAt,
   };
 }

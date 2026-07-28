@@ -3,24 +3,10 @@ import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../src/config/defaults.js";
 import { formatPercent } from "../../src/domain/format.js";
 import {
-  type Clock,
-  daysUntilReset,
-  nextResetDate,
   percentUsed,
   totalUsedBytes,
   usageState,
 } from "../../src/domain/quota.js";
-
-/** A clock frozen at a local wall-clock instant — every reset case is driven by one. */
-function fixedClock(
-  year: number,
-  month: number,
-  day: number,
-  hour = 9,
-  minute = 30,
-): Clock {
-  return { now: () => new Date(year, month - 1, day, hour, minute) };
-}
 
 const PLAN_20GB = 20_000_000_000;
 const DOWNLOAD = 4_427_475_340;
@@ -122,76 +108,5 @@ describe("usageState", () => {
     // 89.6% rounds to 90% for display but has not reached the threshold.
     expect(formatPercent(89.6)).toBe("90%");
     expect(usageState(89.6, WARN_AT)).toBe("ok");
-  });
-});
-
-describe("nextResetDate", () => {
-  it("returns the coming start day, at local midnight", () => {
-    const reset = nextResetDate(1, fixedClock(2026, 7, 27));
-
-    expect(reset.getFullYear()).toBe(2026);
-    expect(reset.getMonth()).toBe(7); // August
-    expect(reset.getDate()).toBe(1);
-    expect(reset.getHours()).toBe(0);
-    expect(reset.getMinutes()).toBe(0);
-  });
-
-  it("stays in the current month when the start day is still ahead", () => {
-    const reset = nextResetDate(20, fixedClock(2026, 7, 5));
-
-    expect(reset.getMonth()).toBe(6); // July
-    expect(reset.getDate()).toBe(20);
-  });
-
-  it("resets on the last day of a 30-day month when startDay is 31", () => {
-    const reset = nextResetDate(31, fixedClock(2026, 6, 15));
-
-    expect(reset.getMonth()).toBe(5); // June
-    expect(reset.getDate()).toBe(30);
-  });
-
-  it("clamps a startDay of 31 into February", () => {
-    const reset = nextResetDate(31, fixedClock(2026, 2, 10));
-
-    expect(reset.getMonth()).toBe(1); // February
-    expect(reset.getDate()).toBe(28);
-  });
-
-  it("rolls into the next year from December", () => {
-    const reset = nextResetDate(1, fixedClock(2026, 12, 27));
-
-    expect(reset.getFullYear()).toBe(2027);
-    expect(reset.getMonth()).toBe(0);
-    expect(reset.getDate()).toBe(1);
-  });
-
-  it("looks past today when the cycle restarted today", () => {
-    const reset = nextResetDate(1, fixedClock(2026, 7, 1));
-
-    expect(reset.getMonth()).toBe(7); // August
-    expect(reset.getDate()).toBe(1);
-  });
-});
-
-describe("daysUntilReset", () => {
-  it("is 5 on 27 July with a startDay of 1", () => {
-    expect(daysUntilReset(1, fixedClock(2026, 7, 27))).toBe(5);
-  });
-
-  it("ignores the time of day", () => {
-    expect(daysUntilReset(1, fixedClock(2026, 7, 27, 0, 1))).toBe(5);
-    expect(daysUntilReset(1, fixedClock(2026, 7, 27, 23, 59))).toBe(5);
-  });
-
-  it("counts to the clamped last day of a 30-day month for a startDay of 31", () => {
-    expect(daysUntilReset(31, fixedClock(2026, 6, 15))).toBe(15);
-  });
-
-  it("is a full cycle away on the reset day itself", () => {
-    expect(daysUntilReset(1, fixedClock(2026, 7, 1))).toBe(31);
-  });
-
-  it("is 1 the day before the reset", () => {
-    expect(daysUntilReset(1, fixedClock(2026, 7, 31))).toBe(1);
   });
 });

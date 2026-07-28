@@ -32,6 +32,11 @@ export interface PopoverBridge {
   sync(): void;
   /** Hand the entered credential to the Keychain, through the main process. */
   savePassword(credential: { username: string; password: string }): void;
+  /**
+   * Hand the plan size to the main process exactly as typed. The renderer does
+   * not read it, convert it or judge it — that is all decided the other side.
+   */
+  setPlanLimit(value: string): void;
 }
 
 declare global {
@@ -54,7 +59,8 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     downloadRate: model.downloadRate,
     uploadRate: model.uploadRate,
     connectedDevices: model.connectedDevices,
-    daysUntilReset: model.daysUntilReset,
+    planLimitUnit: model.planLimit.unit,
+    planLimitError: model.planLimit.error,
     percent: model.progress.label,
     prompt: model.progress.prompt,
     allowanceRemaining: model.allowance.remaining,
@@ -245,6 +251,14 @@ function fieldValue(selector: string): string {
   return document.querySelector<HTMLInputElement>(selector)?.value ?? "";
 }
 
+function planLimitForm(): HTMLFormElement | null {
+  return document.querySelector<HTMLFormElement>("[data-plan-limit]");
+}
+
+function planLimitInput(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>("[data-plan-limit-input]");
+}
+
 /**
  * Hangs the two listeners off the page, once each.
  *
@@ -292,6 +306,42 @@ function bindControls(): void {
       }
     });
   }
+
+  const planLimit = planLimitForm();
+
+  if (planLimit !== null && planLimit.dataset["bound"] !== "true") {
+    planLimit.dataset["bound"] = "true";
+    planLimit.addEventListener("submit", (event) => {
+      // The page must never navigate: it is the app, not a document.
+      event.preventDefault();
+
+      // Sent exactly as typed. Whether it is a number, and what it is worth in
+      // bytes, are both decided in the main process — the panel's rule is that
+      // the renderer works nothing out for itself.
+      window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
+    });
+  }
+}
+
+/**
+ * Fills the plan-size field from the model, unless the user is in it.
+ *
+ * A poll pushes a fresh model every couple of seconds while the panel is open,
+ * and writing the stored value back over a half-typed one would make the field
+ * impossible to use.
+ */
+function applyPlanLimit(model: PopoverModel): void {
+  const input = planLimitInput();
+
+  if (input === null || document.activeElement === input) {
+    return;
+  }
+
+  input.value = model.planLimit.value;
+  input.setAttribute("aria-label", model.planLimit.description);
+  document.documentElement.dataset["planLimit"] = model.planLimit.needsValue
+    ? "unset"
+    : "set";
 }
 
 /** Puts the sync state on the button, the prompt and the root element. */
@@ -359,6 +409,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   drawSpark("download", download, peak);
   drawSpark("upload", upload, peak);
 
+  applyPlanLimit(model);
   applySync(model);
 };
 

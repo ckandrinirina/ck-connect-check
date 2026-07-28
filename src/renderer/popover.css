@@ -191,6 +191,66 @@ body {
   font-size: 11px;
 }
 
+/* The plan-size field. It sits under the figures rather than in the stat grid
+   because it is the one thing on this panel the user writes to, and a control
+   among read-only tiles reads as a tile. */
+.plan-limit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.plan-limit-label,
+.plan-limit-unit {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.plan-limit-input {
+  width: 4.5em;
+  min-width: 0;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+
+  /* The body forbids selection; a field the user types into cannot. */
+  user-select: text;
+}
+
+/* Nothing is measurable until this is filled in, so an empty field is the one
+   thing on the panel asking to be touched. */
+:root[data-plan-limit="unset"] .plan-limit-input {
+  border-color: var(--accent);
+}
+
+.plan-limit-submit {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+
+.plan-limit-error {
+  margin-top: 4px;
+  color: var(--over);
+  font-size: 11px;
+}
+
+/* Collapsed rather than hidden: an empty line still holds its space open, and
+   the panel must not jump when a refusal appears or clears. */
+.plan-limit-error:empty {
+  display: none;
+}
+
 /* Approaching the plan limit, then past it. The state is decided in the main
    process — nothing here compares a percentage to a threshold. */
 :root[data-usage="warn"] {

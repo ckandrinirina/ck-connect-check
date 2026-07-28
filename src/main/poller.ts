@@ -16,12 +16,8 @@
  */
 
 import type { AppConfig } from "../config/defaults.js";
-import {
-  percentUsed,
-  totalUsedBytes,
-  usageState,
-  type UsageState,
-} from "../domain/quota.js";
+import { readPlanUsage } from "../domain/allowance.js";
+import { usageState, type UsageState } from "../domain/quota.js";
 import type { SnapshotResult } from "../hilink/client.js";
 import { buildTrayTitle } from "./tray.js";
 
@@ -169,12 +165,17 @@ export class UsagePoller {
       this.#consecutiveFailures = 0;
       this.#setTitle(buildTrayTitle(result, this.#config));
 
-      const { monthDownloadBytes, monthUploadBytes } = result.snapshot.month;
-      const used = totalUsedBytes(monthDownloadBytes, monthUploadBytes);
+      // The same reading the title and the panel's dial are built from, so the
+      // notification can never fire against a figure neither of them shows.
+      const reading = readPlanUsage(
+        this.#config.allowanceAnchor,
+        result.snapshot.month,
+        this.#config.planLimitBytes,
+      );
 
       this.#setState(
         usageState(
-          percentUsed(used, this.#config.planLimitBytes),
+          reading?.percentUsed ?? null,
           this.#config.warnThresholdPercent,
         ),
       );

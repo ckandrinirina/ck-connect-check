@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import * as allowanceModule from "../../src/domain/allowance.js";
 import {
   anchorFrom,
-  planTotalBytes,
+  needsAutomaticSync,
   readAllowanceNow,
   type AllowanceAnchor,
 } from "../../src/domain/allowance.js";
@@ -281,80 +282,106 @@ describe("readAllowanceNow — an exhausted allowance", () => {
   });
 });
 
-describe("planTotalBytes", () => {
-  it("is the anchored remaining when nothing has been remembered yet", () => {
-    expect(planTotalBytes(anchor(), null)).toBe(ANCHORED_REMAINING);
+describe("needsAutomaticSync", () => {
+  it("asks when nothing has ever been synced", () => {
+    expect(needsAutomaticSync(undefined, month(ANCHORED_COUNTER), clock)).toBe(
+      true,
+    );
   });
 
-  it("does not fall when a later sync anchors a smaller remaining", () => {
+  it("asks when the carrier's expiry date has passed", () => {
     expect(
-      planTotalBytes(
-        anchor({ remainingBytes: 20_000_000_000 }),
-        ANCHORED_REMAINING,
+      needsAutomaticSync(
+        anchor({ expiresAt: new Date(2026, 6, 1) }),
+        month(ANCHORED_COUNTER),
+        clock,
       ),
-    ).toBe(ANCHORED_REMAINING);
+    ).toBe(true);
   });
 
-  it("rises when a later sync anchors a larger remaining", () => {
+  it("asks when the router restarted its counter under the anchor", () => {
     expect(
-      planTotalBytes(
-        anchor({ remainingBytes: 200_000_000_000 }),
-        ANCHORED_REMAINING,
+      needsAutomaticSync(anchor(), month(ANCHORED_COUNTER, "2026-8-1"), clock),
+    ).toBe(true);
+  });
+
+  it("stays quiet while the anchor still holds", () => {
+    // A dialogue costs tens of seconds and a login against a device that locks
+    // the account after five refusals — a healthy anchor is carried forward.
+    expect(
+      needsAutomaticSync(anchor(), month(ANCHORED_COUNTER + 1_000), clock),
+    ).toBe(false);
+  });
+
+  it("stays quiet for an anchor the carrier gave no expiry date", () => {
+    expect(
+      needsAutomaticSync(
+        anchor({ expiresAt: null }),
+        month(ANCHORED_COUNTER),
+        clock,
       ),
-    ).toBe(200_000_000_000);
-  });
-
-  it("keeps the remembered high-water mark when there is no anchor at all", () => {
-    expect(planTotalBytes(null, ANCHORED_REMAINING)).toBe(ANCHORED_REMAINING);
-  });
-
-  it("is null when nothing has ever been anchored", () => {
-    expect(planTotalBytes(null, null)).toBeNull();
-  });
-
-  it("is the dial's 100% in the reading", () => {
-    const reading = readAllowanceNow({
-      anchor: anchor({ remainingBytes: 20_000_000_000 }),
-      month: month(ANCHORED_COUNTER),
-      planTotalBytes: ANCHORED_REMAINING,
-      clock,
-    });
-
-    expect(reading.planTotalBytes).toBe(ANCHORED_REMAINING);
-  });
-
-  it("falls back to the anchor's own remaining when none is remembered", () => {
-    const reading = readAllowanceNow({
-      anchor: anchor(),
-      month: month(ANCHORED_COUNTER),
-      clock,
-    });
-
-    expect(reading.planTotalBytes).toBe(ANCHORED_REMAINING);
+    ).toBe(false);
   });
 });
 
-describe("readAllowanceNow — the share of the allowance used", () => {
-  it("measures the delta against the high-water plan total", () => {
+describe("the high-water plan total", () => {
+  it("is gone — the dial's 100% is the cap the user set, not one inferred", () => {
+    // With a single anchor the high-water mark *is* that anchor's remaining, so
+    // a dial measured against it reads 0% by construction after a first sync.
+    expect(allowanceModule).not.toHaveProperty("planTotalBytes");
+  });
+});
+
+describe("readAllowanceNow — the share of the plan used", () => {
+  it("measures what is left against the cap the user configured", () => {
     const reading = readAllowanceNow({
-      anchor: anchor({ remainingBytes: 100_000_000_000 }),
-      month: month(ANCHORED_COUNTER + 10_000_000_000),
-      planTotalBytes: 200_000_000_000,
+      anchor: anchor({ remainingBytes: 90_000_000_000 }),
+      month: month(ANCHORED_COUNTER),
+      planLimitBytes: 200_000_000_000,
       clock,
     });
 
-    // 200 Go total, 90 Go left → 110 Go used.
+    // 200 Go bought, 90 Go left → 110 Go used.
     expect(reading.remainingBytes).toBe(90_000_000_000);
+    expect(reading.usedBytes).toBe(110_000_000_000);
     expect(reading.percentUsed).toBeCloseTo(55, 9);
   });
 
-  it("is 0% on a freshly anchored full allowance", () => {
+  it("reads the screenshot's case as consumed, not as untouched", () => {
+    // The bug: 150 Go bought with 143.82 Go left drew an empty ring, because the
+    // denominator was the anchored remaining itself.
     const reading = readAllowanceNow({
-      anchor: anchor(),
+      anchor: anchor({ remainingBytes: 143_820_000_000 }),
       month: month(ANCHORED_COUNTER),
+      planLimitBytes: 150_000_000_000,
       clock,
     });
 
+    expect(reading.usedBytes).toBe(6_180_000_000);
+    expect(reading.percentUsed).toBeCloseTo(4.12, 9);
+  });
+
+  it("counts the router's delta on top of the anchored consumption", () => {
+    const reading = readAllowanceNow({
+      anchor: anchor({ remainingBytes: 100_000_000_000 }),
+      month: month(ANCHORED_COUNTER + 10_000_000_000),
+      planLimitBytes: 200_000_000_000,
+      clock,
+    });
+
+    expect(reading.remainingBytes).toBe(90_000_000_000);
+    expect(reading.usedBytes).toBe(110_000_000_000);
+  });
+
+  it("is 0% when the whole cap is still there", () => {
+    const reading = readAllowanceNow({
+      anchor: anchor({ remainingBytes: 200_000_000_000 }),
+      month: month(ANCHORED_COUNTER),
+      planLimitBytes: 200_000_000_000,
+      clock,
+    });
+
+    expect(reading.usedBytes).toBe(0);
     expect(reading.percentUsed).toBe(0);
   });
 
@@ -362,16 +389,46 @@ describe("readAllowanceNow — the share of the allowance used", () => {
     const reading = readAllowanceNow({
       anchor: anchor({ remainingBytes: 2_000_000_000 }),
       month: month(ANCHORED_COUNTER + 9_000_000_000),
+      planLimitBytes: 200_000_000_000,
       clock,
     });
 
     expect(reading.percentUsed).toBe(100);
   });
 
-  it("is null when the anchor is not trustworthy, so the caller falls back", () => {
+  it("clamps consumption at zero when the carrier states more than the cap", () => {
+    // A cap typed in too low, or a recharge the user has not accounted for.
+    // Negative consumption is not a thing the panel can honestly draw.
+    const reading = readAllowanceNow({
+      anchor: anchor({ remainingBytes: 200_000_000_000 }),
+      month: month(ANCHORED_COUNTER),
+      planLimitBytes: 150_000_000_000,
+      clock,
+    });
+
+    expect(reading.usedBytes).toBe(0);
+    expect(reading.percentUsed).toBe(0);
+  });
+
+  it("reports no share and no consumption when no cap is configured", () => {
+    const reading = readAllowanceNow({
+      anchor: anchor(),
+      month: month(ANCHORED_COUNTER),
+      clock,
+    });
+
+    // The carrier's own figure survives — only the share of a plan nobody has
+    // stated is unavailable.
+    expect(reading.remainingBytes).toBe(ANCHORED_REMAINING);
+    expect(reading.usedBytes).toBeNull();
+    expect(reading.percentUsed).toBeNull();
+  });
+
+  it("is null when the anchor is not trustworthy, so no dial is drawn", () => {
     const reading = readAllowanceNow({
       anchor: anchor(),
       month: month(400_000_000),
+      planLimitBytes: 200_000_000_000,
       clock,
     });
 

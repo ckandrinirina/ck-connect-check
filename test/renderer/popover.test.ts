@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { PlanLimitRefusal } from "../../src/config/config.js";
 import { defaultConfig, type AppConfig } from "../../src/config/defaults.js";
 import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { SyncFailure, SyncState } from "../../src/main/sync.js";
@@ -102,7 +103,13 @@ function configWithLimit(limitBytes: number | null): AppConfig {
   return { ...defaultConfig(), planLimitBytes: limitBytes };
 }
 
-/** A live model for `usedBytes` against a 20 GB plan, unless told otherwise. */
+/**
+ * A live model for `usedBytes` against a 20 GB plan, unless told otherwise.
+ *
+ * The dial is measured from the carrier's own remaining volume, so consumption
+ * is expressed here the way the carrier states it — an anchor holding what is
+ * left, pinned to the same counter the snapshot reports so no delta applies.
+ */
 function modelUsing(
   usedBytes: number,
   limitBytes: number | null = 20 * GB,
@@ -110,7 +117,28 @@ function modelUsing(
   return buildPopoverModel({
     result: { online: true, snapshot: snapshot(usedBytes) },
     lastReading: null,
-    config: configWithLimit(limitBytes),
+    config: {
+      ...configWithLimit(limitBytes),
+      allowanceAnchor: {
+        planLabel: "NET MONTH 200 000",
+        remainingBytes: Math.max(0, (limitBytes ?? 20 * GB) - usedBytes),
+        expiresAt: new Date(2026, 7, 12),
+        routerMonthBytes: usedBytes,
+        routerClearTime: "2026-7-27",
+        syncedAt: NOW,
+      },
+    },
+    clock,
+  });
+}
+
+/** A live model whose last plan-limit entry was refused for `reason`. */
+function modelRefusing(reason: PlanLimitRefusal): PopoverModel {
+  return buildPopoverModel({
+    result: { online: true, snapshot: snapshot(10 * GB) },
+    lastReading: null,
+    config: configWithLimit(null),
+    planLimitProblem: reason,
     clock,
   });
 }
@@ -300,17 +328,19 @@ describe("the usage dial — the sweep", () => {
     expect(sweep().whole).toBeCloseTo(circumference(), 2);
   });
 
-  it("stops at the whole ring past the plan rather than wrapping round again", () => {
+  it("stops at the whole ring once the plan is spent rather than wrapping round", () => {
+    // The carrier's remaining never goes below zero, so 100% is the ceiling —
+    // there is no overrun the dial could be asked to draw.
     apply(modelUsing(24 * GB));
 
     expect(sweepFraction()).toBeCloseTo(1, 3);
     expect(sweep().drawn).toBeLessThanOrEqual(sweep().whole);
   });
 
-  it("still reports the real share past the plan, however full the ring is", () => {
+  it("reads 100% once the plan is spent", () => {
     apply(modelUsing(24 * GB));
 
-    expect(textOf("percent")).toBe("120%");
+    expect(textOf("percent")).toBe("100%");
   });
 
   it("shrinks the ring back when usage is read against a larger plan", () => {
@@ -392,8 +422,10 @@ describe("the usage dial — the accessible label", () => {
 
     const label = dial().getAttribute("aria-label") ?? "";
 
-    expect(label).toContain("5.00 Go");
+    // Without a cap there is no consumed figure to name — the share of a plan
+    // nobody has stated is the thing that is missing, and the thing to say.
     expect(label).toMatch(/limit/i);
+    expect(label).not.toMatch(/\d+(\.\d+)?\s*[GMK]?o\b/);
   });
 
   it("is announced as one image rather than as loose shapes", () => {
@@ -435,11 +467,15 @@ describe("the popover page", () => {
     // around the dial, ~56px for the allowance strip and its rule, 23px of rule
     // and spacing above the sparklines, ~160px for the three-row stats grid
     // with its own rule and ~46px for the sync row — call it 330px, rounded up
-    // to 340 so a stray line of text does not silently overrun. Anything that
+    // to 350 so a stray line of text does not silently overrun. Anything that
     // outgrows what is left pushes the panel past POPOVER_HEIGHT and raises a
     // scrollbar, which a popover has no room for. The password prompt is
     // `hidden` until it is needed, so it costs nothing here.
-    const CHROME_HEIGHT = 340;
+    //
+    // The plan-size field and its refusal line sit in the column beside the
+    // dial, not under it, so they are free until that column outgrows the
+    // dial's own height — which is what the extra 10px covers.
+    const CHROME_HEIGHT = 350;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const SPARK_ROWS = 2;
@@ -463,6 +499,47 @@ describe("the popover page", () => {
     expect(textOf("signal")).toBe("4/5");
     expect(textOf("connectedDevices")).toBe("3");
     expect(textOf("downloadRate")).toBe("2.4 Ko/s");
+  });
+});
+
+describe("the stat tiles", () => {
+  /** Every tile's term, in the order the panel lays them out. */
+  function tileTerms(): string[] {
+    return [...document.querySelectorAll(".stat dt")].map(
+      (term) => term.textContent?.trim() ?? "",
+    );
+  }
+
+  it("no longer offers a billing-cycle countdown", () => {
+    // It came from the router's `StartDay`, which the carrier never confirmed
+    // and which disagreed with the expiry date sitting two tiles away.
+    apply(modelUsing(10 * GB));
+
+    expect(tileTerms()).not.toContain("Resets in");
+    expect(document.body.textContent).not.toContain("Resets in");
+    expect(document.querySelector('[data-field="daysUntilReset"]')).toBeNull();
+  });
+
+  it("keeps the carrier's own expiry, which is the figure that governs", () => {
+    apply(modelUsing(10 * GB));
+
+    expect(tileTerms()).toContain("Valid for");
+    expect(textOf("allowanceDaysLeft")).not.toBe("");
+  });
+
+  it("lays out an odd number of tiles without leaving an empty one", () => {
+    apply(modelUsing(10 * GB));
+
+    const tiles = [...document.querySelectorAll(".stat")];
+
+    expect(tiles).toHaveLength(5);
+
+    // Every tile still carries both halves — a term and a value bound to the
+    // model. A cell left behind by the removal would show up as a missing one.
+    for (const tile of tiles) {
+      expect(tile.querySelector("dt")?.textContent?.trim()).toBeTruthy();
+      expect(tile.querySelector("dd[data-field]")).not.toBeNull();
+    }
   });
 });
 
@@ -718,11 +795,16 @@ function modelSyncing(
 interface FakeBridge {
   sync: ReturnType<typeof vi.fn>;
   savePassword: ReturnType<typeof vi.fn>;
+  setPlanLimit: ReturnType<typeof vi.fn>;
 }
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
 function stubBridge(): FakeBridge {
-  const bridge: FakeBridge = { sync: vi.fn(), savePassword: vi.fn() };
+  const bridge: FakeBridge = {
+    sync: vi.fn(),
+    savePassword: vi.fn(),
+    setPlanLimit: vi.fn(),
+  };
 
   window.popoverBridge = bridge;
 
@@ -999,6 +1081,120 @@ describe("the password prompt", () => {
     );
 
     expect(password.value).toBe("");
+  });
+});
+
+describe("the plan limit field", () => {
+  let bridge: FakeBridge;
+
+  function form(): HTMLFormElement {
+    const element =
+      document.querySelector<HTMLFormElement>("[data-plan-limit]");
+
+    if (element === null) {
+      throw new Error("the panel has no plan limit field");
+    }
+
+    return element;
+  }
+
+  function input(): HTMLInputElement {
+    const element = document.querySelector<HTMLInputElement>(
+      "[data-plan-limit-input]",
+    );
+
+    if (element === null) {
+      throw new Error("the plan limit field has no input");
+    }
+
+    return element;
+  }
+
+  function submit(typed: string): void {
+    input().value = typed;
+    form().dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+  }
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+  });
+
+  it("sends what was typed, without working out what it means", () => {
+    // The renderer converts nothing: `150` goes over as `150`, and the main
+    // process is the one place that knows a Go is 1000³ bytes.
+    submit("150");
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+
+  it("sends a refusable entry too, rather than judging it itself", () => {
+    // The sentence the user reads is decided in the main process, like every
+    // other string on this panel — so even nonsense makes the trip.
+    for (const typed of ["", "abc", "0", "-5"]) {
+      bridge.setPlanLimit.mockClear();
+      submit(typed);
+
+      expect(bridge.setPlanLimit, typed).toHaveBeenCalledWith(typed);
+    }
+  });
+
+  it("never navigates on submit — the page is the app", () => {
+    const event = new window.Event("submit", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    form().dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("shows the stored cap so it can be corrected rather than retyped", () => {
+    apply(modelUsing(10 * GB, 150 * GB));
+
+    expect(input().value).toBe("150");
+  });
+
+  it("leaves the field empty while no cap is stored", () => {
+    apply(modelUsing(10 * GB, null));
+
+    expect(input().value).toBe("");
+  });
+
+  it("does not overwrite what is being typed when a poll lands", () => {
+    // A poll pushes a fresh model every couple of seconds while the panel is
+    // open. Writing the stored value back over a half-typed one would make the
+    // field unusable.
+    input().focus();
+    input().value = "15";
+
+    apply(modelUsing(10 * GB, 150 * GB));
+
+    expect(input().value).toBe("15");
+  });
+
+  it("shows the reason an entry was refused", () => {
+    apply(modelRefusing("not-a-number"));
+
+    expect(textOf("planLimitError")).not.toBe("");
+  });
+
+  it("says nothing when there is nothing to complain about", () => {
+    expect(textOf("planLimitError")).toBe("");
+  });
+
+  it("is reachable without a mouse and says what it is for", () => {
+    expect(input().tabIndex).toBeGreaterThanOrEqual(0);
+
+    const name =
+      input().getAttribute("aria-label") ??
+      document.querySelector(`label[for="${input().id}"]`)?.textContent ??
+      "";
+
+    expect(name.trim()).not.toBe("");
   });
 });
 
