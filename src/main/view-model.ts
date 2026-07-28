@@ -11,18 +11,31 @@
  * to put these strings into the DOM.
  */
 
-import { formatBytes, formatDuration, formatPercent, formatRate } from '../domain/format.js';
-import { daysUntilReset, percentUsed, totalUsedBytes, systemClock, type Clock } from '../domain/quota.js';
-import type { AppConfig } from '../config/defaults.js';
-import type { SnapshotResult } from '../hilink/client.js';
-import type { RouterSnapshot } from '../hilink/types.js';
+import {
+  formatBytes,
+  formatDuration,
+  formatPercent,
+  formatRate,
+} from "../domain/format.js";
+import {
+  daysUntilReset,
+  percentUsed,
+  totalUsedBytes,
+  systemClock,
+  usageState,
+  type Clock,
+  type UsageState,
+} from "../domain/quota.js";
+import type { AppConfig } from "../config/defaults.js";
+import type { SnapshotResult } from "../hilink/client.js";
+import type { RouterSnapshot } from "../hilink/types.js";
 
 /**
  * Shown wherever there is nothing to show — no reading yet, or no plan limit.
  * Matches the dash `../domain/format.js` returns for an unknown value, so a
  * missing field looks the same however it went missing.
  */
-const NO_VALUE = '—';
+const NO_VALUE = "—";
 
 const MILLISECONDS_PER_SECOND = 1_000;
 
@@ -36,10 +49,10 @@ export interface UsageReading {
 /**
  * The progress bar, or the reason there is not one.
  *
- * T-08 adds a `state: UsageState` field here (`"ok" | "warn" | "over" |
- * "unknown"`) so the bar can be coloured by how close the user is to the limit.
- * Nothing in this file decides that today: the exact percentage is available
- * from `percentUsed`, and no threshold is compared anywhere below.
+ * The `state` field is how close the user is to the plan limit, decided in
+ * `../domain/quota.js` against the exact percentage. The renderer does not
+ * compare it to anything — it puts it on the root element and lets the
+ * stylesheet colour the bar.
  */
 export interface PopoverProgress {
   /** False when no plan limit is configured — there is no bar to draw. */
@@ -50,6 +63,8 @@ export interface PopoverProgress {
   fillWidth: string;
   /** What to tell the user instead of a bar. Empty when the bar is available. */
   prompt: string;
+  /** How the bar should read: `"ok"`, `"warn"`, `"over"`, or `"unknown"`. */
+  state: UsageState;
 }
 
 /** How current the figures are. An unreachable router is stale, never an error. */
@@ -94,26 +109,33 @@ export interface PopoverInput {
 
 /** `"5 days"`, `"1 day"` — the countdown never reads `"1 days"`. */
 function formatDays(days: number): string {
-  return `${days} day${days === 1 ? '' : 's'}`;
+  return `${days} day${days === 1 ? "" : "s"}`;
 }
 
 /** Empty carrier names are normal on this device; they read as a dash, not as blank. */
 function formatCarrier(carrier: string): string {
-  return carrier.trim() === '' ? NO_VALUE : carrier;
+  return carrier.trim() === "" ? NO_VALUE : carrier;
 }
 
-function buildProgress(usedBytes: number | null, limitBytes: number | null): PopoverProgress {
-  const percent = usedBytes === null ? null : percentUsed(usedBytes, limitBytes);
+function buildProgress(
+  usedBytes: number | null,
+  limitBytes: number | null,
+  warnThresholdPercent: number,
+): PopoverProgress {
+  const percent =
+    usedBytes === null ? null : percentUsed(usedBytes, limitBytes);
+  const state = usageState(percent, warnThresholdPercent);
 
   if (percent === null) {
     return {
       available: false,
       label: NO_VALUE,
-      fillWidth: '0%',
+      fillWidth: "0%",
       prompt:
         usedBytes === null
-          ? 'Waiting for the first reading from the router.'
-          : 'Set a plan limit to see how much of it is left.',
+          ? "Waiting for the first reading from the router."
+          : "Set a plan limit to see how much of it is left.",
+      state,
     };
   }
 
@@ -123,31 +145,41 @@ function buildProgress(usedBytes: number | null, limitBytes: number | null): Pop
     // the user must not be shielded from — while the bar stops at full.
     label: formatPercent(percent),
     fillWidth: `${Math.min(Math.max(percent, 0), 100).toFixed(1)}%`,
-    prompt: '',
+    prompt: "",
+    state,
   };
 }
 
-function buildFreshness(stale: boolean, reading: UsageReading | null, now: Date): PopoverFreshness {
+function buildFreshness(
+  stale: boolean,
+  reading: UsageReading | null,
+  now: Date,
+): PopoverFreshness {
   if (!stale) {
-    return { stale: false, age: NO_VALUE, label: 'Live' };
+    return { stale: false, age: NO_VALUE, label: "Live" };
   }
 
   if (reading === null) {
-    return { stale: true, age: NO_VALUE, label: 'Waiting for the router' };
+    return { stale: true, age: NO_VALUE, label: "Waiting for the router" };
   }
 
-  const age = formatDuration((now.getTime() - reading.at.getTime()) / MILLISECONDS_PER_SECOND);
+  const age = formatDuration(
+    (now.getTime() - reading.at.getTime()) / MILLISECONDS_PER_SECOND,
+  );
 
   return { stale: true, age, label: `Updated ${age} ago` };
 }
 
 /** The model shown before the first reading, and whenever every reading has been lost. */
-function emptyModel(freshness: PopoverFreshness): PopoverModel {
+function emptyModel(
+  freshness: PopoverFreshness,
+  warnThresholdPercent: number,
+): PopoverModel {
   return {
     monthDownload: NO_VALUE,
     monthUpload: NO_VALUE,
     monthTotal: NO_VALUE,
-    progress: buildProgress(null, null),
+    progress: buildProgress(null, null, warnThresholdPercent),
     downloadRate: NO_VALUE,
     uploadRate: NO_VALUE,
     connectedDevices: NO_VALUE,
@@ -175,7 +207,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   const freshness = buildFreshness(!live, lastReading, clock.now());
 
   if (snapshot === undefined) {
-    return emptyModel(freshness);
+    return emptyModel(freshness, config.warnThresholdPercent);
   }
 
   const { month, traffic, status, carrier, billing } = snapshot;
@@ -185,7 +217,11 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     monthDownload: formatBytes(month.monthDownloadBytes),
     monthUpload: formatBytes(month.monthUploadBytes),
     monthTotal: formatBytes(used),
-    progress: buildProgress(used, config.planLimitBytes),
+    progress: buildProgress(
+      used,
+      config.planLimitBytes,
+      config.warnThresholdPercent,
+    ),
     downloadRate: formatRate(traffic.downloadRateBps),
     uploadRate: formatRate(traffic.uploadRateBps),
     connectedDevices: String(status.connectedDevices),
