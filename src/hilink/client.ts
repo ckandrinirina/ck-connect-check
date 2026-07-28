@@ -5,8 +5,22 @@
  *
  * Endpoints are fetched in order on a single session. A 125002 anywhere means
  * the session expired, which costs one fresh handshake and one full retry.
+ *
+ * The monitoring endpoints need no login, so `snapshot()` works with no
+ * credential at all. `login()` adds an authenticated session alongside that
+ * anonymous one, which the protected `POST` endpoints need.
  */
 
+import {
+  LOGIN_ENDPOINT,
+  LOGOUT_ENDPOINT,
+  ROLLING_TOKEN_HEADER,
+  SESSION_COOKIE_HEADER,
+  loginRefusal,
+  loginRequestXml,
+  logoutRequestXml,
+  readLoginReply,
+} from "./login.js";
 import {
   isStaleSessionError,
   parseCurrentPlmn,
@@ -17,7 +31,12 @@ import {
   parseTrafficStatistics,
 } from "./parse.js";
 import { SessionStore, sessionHeaders } from "./session.js";
-import type { LoginResult, RouterCredential, RouterSnapshot } from "./types.js";
+import type {
+  LoginResult,
+  OfflineReason,
+  RouterCredential,
+  RouterSnapshot,
+} from "./types.js";
 
 const SES_TOK_INFO = "/api/webserver/SesTokInfo";
 const MONTH_STATISTICS = "/api/monitoring/month_statistics";
@@ -29,8 +48,11 @@ const START_DATE = "/api/monitoring/start_date";
 /** Every network call carries a timeout; there is no unbounded await. */
 const DEFAULT_TIMEOUT_MS = 5_000;
 
+/** What HiLink expects on a `POST`, even though the body is XML. */
+const POST_CONTENT_TYPE = "application/x-www-form-urlencoded; charset=UTF-8";
+
 /** Why a poll produced no snapshot. All four render as "offline". */
-export type OfflineReason = "unreachable" | "timeout" | "session" | "error";
+export type { OfflineReason } from "./types.js";
 
 export type SnapshotResult =
   | { online: true; snapshot: RouterSnapshot }
@@ -65,6 +87,12 @@ class RouterHttpError extends Error {
     super(`${url}: router answered HTTP ${status}`);
     this.name = "RouterHttpError";
   }
+}
+
+/** One reply, body and headers — logins read their new session off the headers. */
+interface RouterResponse {
+  body: string;
+  headers: Headers;
 }
 
 function offlineReason(
@@ -118,14 +146,55 @@ export class RouterClient {
     }
   }
 
-  /** Sign in. Stub — T-17 RED. */
-  async login(_credential: RouterCredential): Promise<LoginResult> {
-    throw new Error("not implemented");
+  /**
+   * Sign in, so the protected `POST` endpoints stop answering 100003. Resolves
+   * to a failed result rather than rejecting — including for a wrong password.
+   *
+   * Exactly one `POST /api/user/login` goes out per call: the router locks the
+   * account after five consecutive failures, so nothing here retries.
+   */
+  async login(credential: RouterCredential): Promise<LoginResult> {
+    try {
+      const handshake = await this.#session.handshake();
+      const response = await this.#post(
+        LOGIN_ENDPOINT,
+        sessionHeaders(handshake),
+        loginRequestXml(credential, handshake.token),
+      );
+      this.#session.authenticate(
+        readLoginReply(response.body, {
+          setCookie: response.headers.get(SESSION_COOKIE_HEADER) ?? undefined,
+          rollingToken: response.headers.get(ROLLING_TOKEN_HEADER) ?? undefined,
+        }),
+      );
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: loginRefusal(error) ?? offlineReason(error, "session"),
+      };
+    }
   }
 
-  /** Sign out. Stub — T-17 RED. */
+  /**
+   * Sign out and forget the authenticated session. The local session is dropped
+   * whatever the router answers — a logout it refuses still leaves us signed out.
+   */
   async logout(): Promise<void> {
-    throw new Error("not implemented");
+    if (!this.#session.isAuthenticated) {
+      return;
+    }
+    try {
+      await this.#post(
+        LOGOUT_ENDPOINT,
+        sessionHeaders(await this.#session.current()),
+        logoutRequestXml(),
+      );
+    } catch {
+      // A refused or unanswered logout changes nothing: the session goes anyway.
+    } finally {
+      this.#session.clear();
+    }
   }
 
   async #collect(): Promise<RouterSnapshot> {
@@ -142,6 +211,22 @@ export class RouterClient {
   }
 
   async #get(path: string, headers: Record<string, string>): Promise<string> {
+    return (await this.#request(path, { method: "GET", headers })).body;
+  }
+
+  async #post(
+    path: string,
+    headers: Record<string, string>,
+    body: string,
+  ): Promise<RouterResponse> {
+    return await this.#request(path, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": POST_CONTENT_TYPE },
+      body,
+    });
+  }
+
+  async #request(path: string, init: RequestInit): Promise<RouterResponse> {
     const url = new URL(path, this.#baseUrl).toString();
     const controller = new AbortController();
     let timedOut = false;
@@ -151,11 +236,11 @@ export class RouterClient {
     }, this.#timeoutMs);
 
     try {
-      const response = await fetch(url, { headers, signal: controller.signal });
+      const response = await fetch(url, { ...init, signal: controller.signal });
       if (!response.ok) {
         throw new RouterHttpError(url, response.status);
       }
-      return await response.text();
+      return { body: await response.text(), headers: response.headers };
     } catch (error) {
       if (timedOut) {
         throw new RouterTimeoutError(url, this.#timeoutMs);
