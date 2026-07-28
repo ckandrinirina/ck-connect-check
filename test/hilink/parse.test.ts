@@ -86,6 +86,22 @@ describe("parseStatus", () => {
     expect(typeof parsed.connectedDevices).toBe("number");
   });
 
+  it("reads the network type as the code the router states", () => {
+    // Left as a number here: which generation `101` means is a question for
+    // `src/domain/`, not for the boundary that reads the reply.
+    expect(parsed.networkTypeCode).toBe(101);
+    expect(typeof parsed.networkTypeCode).toBe("number");
+  });
+
+  it("refuses a status reply with no network type, like any missing field", () => {
+    const withoutType = fixture("status").replace(
+      "<CurrentNetworkTypeEx>101</CurrentNetworkTypeEx>",
+      "",
+    );
+
+    expect(() => parseStatus(withoutType)).toThrow(/CurrentNetworkTypeEx/);
+  });
+
   it("reports connection status 901 as connected", () => {
     expect(parsed.connected).toBe(true);
   });

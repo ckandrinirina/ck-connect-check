@@ -21,14 +21,52 @@
     <header class="header">
       <div class="network">
         <span class="carrier" data-field="carrier">—</span>
-        <span class="signal" title="Signal bars">
-          <span class="signal-icon" aria-hidden="true"></span>
-          <span data-field="signal">—</span>
+        <!--
+          Four bars, filled to the level the router reports. They are markup
+          rather than SVG for the reason the dial is not: a dial's geometry
+          comes from the model and is redrawn, whereas these four never change
+          shape — only which of them are filled. The count is fixed here and
+          the level is scaled onto it by `popover.ts`, so the router's own
+          maximum never has to match the panel's.
+        -->
+        <span
+          class="signal-bars"
+          data-signal
+          role="img"
+          aria-label="No signal reading yet"
+        >
+          <span class="signal-bar" data-filled="false"></span>
+          <span class="signal-bar" data-filled="false"></span>
+          <span class="signal-bar" data-filled="false"></span>
+          <span class="signal-bar" data-filled="false"></span>
         </span>
+        <!--
+          The slot the `5/5` text left. Bars at full strength on a 2G fallback
+          are not the same connection as bars at full strength on LTE, and the
+          bars alone cannot say which.
+        -->
+        <span class="network-type" data-field="networkType">—</span>
       </div>
       <span class="freshness" data-field="freshness"
         >Waiting for the router</span
       >
+      <!--
+        The one control on the panel, in the row the eye reaches first. USSD
+        takes tens of seconds and holds carrier-side state, so it is only ever
+        driven from here — never by the poll timer. Its status line stays at the
+        foot of the panel: the step names arrive over tens of seconds and run to
+        several lines, and a header that grew and shrank mid-sync would push the
+        dial down while it is being read.
+      -->
+      <button
+        class="sync-button"
+        type="button"
+        data-sync
+        data-attention="false"
+        aria-label="Sync the allowance with the carrier"
+      >
+        Sync
+      </button>
     </header>
 
     <section class="usage">
@@ -144,21 +182,11 @@
     </dl>
 
     <!--
-      The one control on the panel. USSD takes tens of seconds and holds
-      carrier-side state, so it is only ever driven from here — never by the
-      poll timer. The status line is a live region: the step names arriving in
-      it are the proof the panel has not frozen.
+      What the dialogue is doing, reported where there is room for it to run to
+      several lines. A live region: the step names arriving in it are the proof
+      the panel has not frozen. The button that starts it is in the header.
     -->
     <footer class="sync">
-      <button
-        class="sync-button"
-        type="button"
-        data-sync
-        data-attention="false"
-        aria-label="Sync the allowance with the carrier"
-      >
-        Sync
-      </button>
       <p class="sync-status" data-field="syncStatus" role="status"></p>
     </footer>
 

@@ -75,7 +75,10 @@ const GB = 1_000_000_000;
 const NOW = new Date(2026, 6, 27, 17, 46, 0);
 const clock: Clock = { now: () => NOW };
 
-function snapshot(usedBytes: number): RouterSnapshot {
+function snapshot(
+  usedBytes: number,
+  signal: { bars: number; max: number } = { bars: 4, max: 5 },
+): RouterSnapshot {
   return {
     month: {
       monthDownloadBytes: usedBytes,
@@ -90,9 +93,10 @@ function snapshot(usedBytes: number): RouterSnapshot {
     },
     status: {
       connected: true,
-      signalBars: 4,
-      maxSignalBars: 5,
+      signalBars: signal.bars,
+      maxSignalBars: signal.max,
       connectedDevices: 3,
+      networkTypeCode: 101,
     },
     carrier: { carrier: "Yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
@@ -456,7 +460,9 @@ describe("the usage dial — repeated updates", () => {
 
 describe("the popover page", () => {
   it("no longer draws the month as a flat bar", () => {
-    expect(INDEX_HTML).not.toContain("data-fill");
+    // The attribute, not the prefix: the signal bars carry `data-filled`, which
+    // is a different element answering a different question.
+    expect(INDEX_HTML).not.toContain("data-fill=");
     expect(POPOVER_CSS).not.toMatch(/\.bar(-fill)?\s*[,{]/);
   });
 
@@ -496,9 +502,187 @@ describe("the popover page", () => {
 
     expect(textOf("monthTotal")).toBe("10.00 Go");
     expect(textOf("carrier")).toBe("Yas");
-    expect(textOf("signal")).toBe("4/5");
     expect(textOf("connectedDevices")).toBe("3");
     expect(textOf("downloadRate")).toBe("2.4 Ko/s");
+  });
+});
+
+describe("the signal bars", () => {
+  /** A live model whose router reports `bars` out of `max`. */
+  function modelWithSignal(bars: number, max: number): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB, { bars, max }) },
+      lastReading: null,
+      config: configWithLimit(20 * GB),
+      clock,
+    });
+  }
+
+  function bars(): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>(".signal-bar")];
+  }
+
+  function filled(): number {
+    return bars().filter((bar) => bar.dataset["filled"] === "true").length;
+  }
+
+  function group(): HTMLElement {
+    const host = document.querySelector<HTMLElement>("[data-signal]");
+
+    if (host === null) {
+      throw new Error("the header has no signal bars");
+    }
+
+    return host;
+  }
+
+  it("draws four bars, whatever scale the router counts on", () => {
+    apply(modelWithSignal(4, 5));
+
+    expect(bars()).toHaveLength(4);
+  });
+
+  // The router counts to five and the panel draws four, so the level is scaled
+  // rather than copied: one bar of five is still something rather than nothing,
+  // and only a full five fills the last one.
+  const LEVELS: { bars: number; max: number; filled: number }[] = [
+    { bars: 0, max: 5, filled: 0 },
+    { bars: 1, max: 5, filled: 1 },
+    { bars: 3, max: 5, filled: 2 },
+    { bars: 5, max: 5, filled: 4 },
+  ];
+
+  for (const level of LEVELS) {
+    it(`fills ${String(level.filled)} of four at ${String(level.bars)} of ${String(level.max)}`, () => {
+      apply(modelWithSignal(level.bars, level.max));
+
+      // The count is asserted alongside, so a level of zero cannot pass by
+      // there being no bars on the page at all.
+      expect(bars()).toHaveLength(4);
+      expect(filled()).toBe(level.filled);
+    });
+  }
+
+  it("no longer prints the level as text beside the icon", () => {
+    apply(modelWithSignal(4, 5));
+
+    expect(document.querySelector('[data-field="signal"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("4/5");
+  });
+
+  it("says the level out loud for a screen reader", () => {
+    apply(modelWithSignal(4, 5));
+
+    expect(group().getAttribute("aria-label")).toBe("Signal 4 of 5");
+    // Four spans that mean one thing between them, so they are announced as
+    // one image rather than as four empty boxes.
+    expect(group().getAttribute("role")).toBe("img");
+  });
+
+  it("re-labels itself when the level changes", () => {
+    apply(modelWithSignal(4, 5));
+    apply(modelWithSignal(2, 5));
+
+    expect(group().getAttribute("aria-label")).toBe("Signal 2 of 5");
+    expect(filled()).toBe(2);
+  });
+
+  it("draws empty bars rather than dividing by a scale of zero", () => {
+    expect(() => {
+      apply(modelWithSignal(0, 0));
+    }).not.toThrow();
+
+    expect(bars()).toHaveLength(4);
+    expect(filled()).toBe(0);
+  });
+
+  it("draws empty bars before the router has answered at all", () => {
+    apply(
+      buildPopoverModel({
+        result: null,
+        lastReading: null,
+        config: configWithLimit(20 * GB),
+        clock,
+      }),
+    );
+
+    expect(filled()).toBe(0);
+    expect(group().getAttribute("aria-label")).toBe("No signal reading yet");
+  });
+
+  it("dims the filled bars once the figures are stale", () => {
+    expect(POPOVER_CSS).toMatch(
+      /:root\[data-stale="true"\]\s+\.signal-bar\[data-filled="true"\]\s*\{[^}]*\}/,
+    );
+  });
+
+  it("no longer carries the flat square the bars replaced", () => {
+    expect(POPOVER_CSS).not.toContain(".signal-icon");
+    expect(INDEX_HTML).not.toContain("signal-icon");
+  });
+});
+
+describe("the network type", () => {
+  /** A live model whose router reports network-type code `code`. */
+  function modelOnNetwork(code: number): PopoverModel {
+    return buildPopoverModel({
+      result: {
+        online: true,
+        snapshot: { ...snapshot(10 * GB), status: statusOn(code) },
+      },
+      lastReading: null,
+      config: configWithLimit(20 * GB),
+      clock,
+    });
+  }
+
+  function statusOn(code: number): RouterSnapshot["status"] {
+    return { ...snapshot(10 * GB).status, networkTypeCode: code };
+  }
+
+  it("shows the generation beside the bars", () => {
+    apply(modelOnNetwork(101));
+
+    expect(textOf("networkType")).toBe("4G");
+  });
+
+  it("sits in the header, next to the signal bars", () => {
+    apply(modelOnNetwork(101));
+
+    const slot = document.querySelector('[data-field="networkType"]');
+
+    if (slot === null) {
+      throw new Error("the header has no network-type slot");
+    }
+
+    expect(slot.closest(".header")).not.toBeNull();
+    expect(slot.closest(".network")).not.toBeNull();
+  });
+
+  it("shows an unmapped code rather than blanking the slot", () => {
+    apply(modelOnNetwork(999));
+
+    expect(textOf("networkType")).toBe("Type 999");
+  });
+
+  it("shows a dash before the router has answered at all", () => {
+    apply(
+      buildPopoverModel({
+        result: null,
+        lastReading: null,
+        config: configWithLimit(20 * GB),
+        clock,
+      }),
+    );
+
+    expect(textOf("networkType")).toBe("—");
+  });
+
+  it("follows the link down to 2G rather than freezing on the last one", () => {
+    apply(modelOnNetwork(101));
+    apply(modelOnNetwork(1));
+
+    expect(textOf("networkType")).toBe("2G");
   });
 });
 
@@ -1195,6 +1379,105 @@ describe("the plan limit field", () => {
       "";
 
     expect(name.trim()).not.toBe("");
+  });
+});
+
+describe("the Sync button — where it sits on the panel", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  function header(): HTMLElement {
+    const element = document.querySelector<HTMLElement>(".header");
+
+    if (element === null) {
+      throw new Error("the panel has no header");
+    }
+
+    return element;
+  }
+
+  function syncStatus(): HTMLElement {
+    const element = document.querySelector<HTMLElement>(
+      '[data-field="syncStatus"]',
+    );
+
+    if (element === null) {
+      throw new Error("the panel has no sync status line");
+    }
+
+    return element;
+  }
+
+  it("is in the header, where the panel is looked at first", () => {
+    expect(syncButton().closest(".header")).toBe(header());
+  });
+
+  it("leaves the status line at the foot, below the stat tiles", () => {
+    const stats = document.querySelector(".stats");
+
+    if (stats === null) {
+      throw new Error("the panel has no stat tiles");
+    }
+
+    expect(syncStatus().closest(".header")).toBeNull();
+    // Document order: the tiles come first, the line the steps arrive on after.
+    expect(
+      stats.compareDocumentPosition(syncStatus()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("does not grow the header while a dialogue fills the status line", () => {
+    apply(modelSyncing({ phase: "running", step: "asking-carrier" }, ANCHOR));
+
+    // jsdom has no layout engine, so this is the rule rather than a
+    // measurement: the one element that grows during a sync is outside the
+    // header, and the header cannot wrap onto a second line for anything else.
+    expect(header().querySelector('[data-field="syncStatus"]')).toBeNull();
+    expect(syncStatus().textContent).not.toBe("");
+    expect(POPOVER_CSS).not.toMatch(/\.header\s*\{[^}]*flex-wrap:\s*wrap/);
+  });
+
+  it("keeps a long carrier name from pushing it out of the row", () => {
+    // The button holds its width and the name gives way — the other way round
+    // would put the one control on the panel off the edge of it.
+    expect(POPOVER_CSS).toMatch(/\.sync-button\s*\{[^}]*flex:\s*none/);
+    expect(POPOVER_CSS).toMatch(/\.carrier\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(POPOVER_CSS).toMatch(/\.network\s*\{[^}]*min-width:\s*0/);
+  });
+
+  it("still highlights itself in the new position when the anchor is stale", () => {
+    apply(modelSyncing({ phase: "idle" }, ANCHOR, "2026-8-1"));
+
+    expect(syncButton().dataset["attention"]).toBe("true");
+    // The rule is on the button, not on the footer it used to live in.
+    expect(POPOVER_CSS).toMatch(
+      /\.sync-button\[data-attention="true"\]\s*\{[^}]*\}/,
+    );
+  });
+
+  it("is reached before the plan-size field, as the header is read first", () => {
+    const focusable = [
+      ...document.querySelectorAll<HTMLElement>("button, input"),
+    ];
+    const planLimit = document.querySelector<HTMLInputElement>(
+      "[data-plan-limit-input]",
+    );
+
+    if (planLimit === null) {
+      throw new Error("the panel has no plan limit field");
+    }
+
+    expect(focusable.indexOf(syncButton())).toBeGreaterThanOrEqual(0);
+    expect(focusable.indexOf(syncButton())).toBeLessThan(
+      focusable.indexOf(planLimit),
+    );
+  });
+
+  it("keeps the accessible name it had in the footer", () => {
+    expect(syncButton().getAttribute("aria-label")).toMatch(/sync/i);
   });
 });
 

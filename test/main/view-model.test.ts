@@ -47,6 +47,8 @@ function snapshot(overrides: Partial<RouterSnapshot> = {}): RouterSnapshot {
       signalBars: 4,
       maxSignalBars: 5,
       connectedDevices: 3,
+      // LTE, the code this device reports.
+      networkTypeCode: 101,
     },
     carrier: { carrier: "Yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
@@ -149,10 +151,27 @@ describe("buildPopoverModel — a live reading", () => {
     expect(model.uploadRate).toBe("0 o/s");
   });
 
-  it("exposes the connected device count, carrier and signal bars", () => {
+  it("exposes the connected device count and carrier", () => {
     expect(model.connectedDevices).toBe("3");
     expect(model.carrier).toBe("Yas");
-    expect(model.signal).toBe("4/5");
+  });
+
+  it("hands the signal over as numbers, so the renderer can draw bars with it", () => {
+    // A `"4/5"` string is a figure where an icon was promised: it can be read
+    // but not drawn. The level and the scale it is out of go over separately.
+    expect(model.signalBars).toBe(4);
+    expect(model.maxSignalBars).toBe(5);
+    expect(Object.keys(model)).not.toContain("signal");
+  });
+
+  it("still words the signal itself, so the renderer spells no sentence", () => {
+    expect(model.signalDescription).toBe("Signal 4 of 5");
+  });
+
+  it("names the network the router is attached to", () => {
+    // The snapshot reports code 101. Which generation that is has already been
+    // decided in `src/domain/` — the model carries the answer, not the code.
+    expect(model.networkType).toBe("4G");
   });
 
   it("has no billing-cycle countdown to expose", () => {
@@ -180,10 +199,12 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("hands the renderer only display strings — never a number to format", () => {
-    // Two exceptions, both geometry rather than text: the sparkline history and
-    // the dial's sweep. Everything the user *reads* is a string.
+    // The exceptions are all geometry rather than text: the sparkline history,
+    // the dial's sweep, and the signal level, which is a count of bars to fill
+    // rather than something to read. Everything the user *reads* is a string.
+    const geometryFields = ["history", "signalBars", "maxSignalBars"];
     const displayed = Object.entries(model).filter(
-      ([field]) => field !== "history",
+      ([field]) => !geometryFields.includes(field),
     );
 
     for (const leaf of leaves(Object.fromEntries(displayed))) {
@@ -425,6 +446,18 @@ describe("buildPopoverModel — nothing has been read yet", () => {
   it("leaves the dial unavailable", () => {
     expect(model.progress.available).toBe(false);
     expect(model.progress.sweep).toBe(0);
+  });
+
+  it("has no signal to report rather than claiming a level of zero out of zero", () => {
+    expect(model.signalBars).toBe(0);
+    expect(model.maxSignalBars).toBe(0);
+    expect(model.signalDescription).toBe("No signal reading yet");
+  });
+
+  it("shows a dash for the network type rather than guessing at one", () => {
+    // "No service" would be a claim about the link. Nothing has been read, so
+    // the slot gets the same placeholder every other unknown field gets.
+    expect(model.networkType).toBe("—");
   });
 });
 

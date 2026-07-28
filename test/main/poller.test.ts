@@ -56,6 +56,7 @@ function snapshot(usedBytes: number): RouterSnapshot {
       signalBars: 4,
       maxSignalBars: 5,
       connectedDevices: 3,
+      networkTypeCode: 101,
     },
     carrier: { carrier: "Yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },

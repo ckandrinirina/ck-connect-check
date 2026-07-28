@@ -19,6 +19,7 @@ import {
   formatRate,
 } from "../domain/format.js";
 import { peak, type RateSample } from "../domain/history.js";
+import { networkTypeLabel } from "../domain/network-type.js";
 import {
   systemClock,
   usageState,
@@ -199,8 +200,24 @@ export interface PopoverModel {
   connectedDevices: string;
   /** Network name, e.g. `"Yas"`. */
   carrier: string;
-  /** Signal strength out of the router's maximum, e.g. `"4/5"`. */
-  signal: string;
+  /**
+   * Signal strength as the router counts it, and the scale it counts on — the
+   * other exception to the no-numbers rule, alongside {@link PopoverHistory}
+   * and the dial's sweep. The header draws four bars whatever the router's own
+   * maximum is, so it needs the level as a share to scale rather than as text
+   * to print; `"4/5"` can be read but not drawn. 0 of 0 before the first
+   * reading, which is no signal rather than an empty one.
+   */
+  signalBars: number;
+  maxSignalBars: number;
+  /** The bars' accessible name: `"Signal 4 of 5"`, or the state before one. */
+  signalDescription: string;
+  /**
+   * The radio behind those bars: `"4G"`, `"2G"`, `"No service"`, or the bare
+   * code when no table covers it. Five bars on a 2G fallback are not five bars
+   * on LTE, and the bars alone cannot say which.
+   */
+  networkType: string;
   freshness: PopoverFreshness;
   /** Recent throughput for the sparklines. */
   history: PopoverHistory;
@@ -239,6 +256,20 @@ function formatDays(days: number): string {
 /** Empty carrier names are normal on this device; they read as a dash, not as blank. */
 function formatCarrier(carrier: string): string {
   return carrier.trim() === "" ? NO_VALUE : carrier;
+}
+
+/** What the bars are called before there is a reading behind them. */
+const NO_SIGNAL_DESCRIPTION = "No signal reading yet";
+
+/**
+ * The bars' accessible name. A scale of zero is a router that has not said
+ * anything yet rather than a connection at its worst, so it reads as the
+ * former — the same distinction the dial draws between 0% and no dial.
+ */
+function signalDescription(bars: number, maxBars: number): string {
+  return maxBars <= 0
+    ? NO_SIGNAL_DESCRIPTION
+    : `Signal ${String(bars)} of ${String(maxBars)}`;
 }
 
 /**
@@ -479,7 +510,12 @@ function emptyModel(
     uploadRate: NO_VALUE,
     connectedDevices: NO_VALUE,
     carrier: NO_VALUE,
-    signal: NO_VALUE,
+    signalBars: 0,
+    maxSignalBars: 0,
+    signalDescription: NO_SIGNAL_DESCRIPTION,
+    // Not "No service": that is a claim about the link, and nothing has been
+    // read yet. An unknown field looks the same however it went missing.
+    networkType: NO_VALUE,
     freshness,
     history,
     allowance: noAllowance(),
@@ -596,7 +632,13 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     uploadRate: formatRate(traffic.uploadRateBps),
     connectedDevices: String(status.connectedDevices),
     carrier: formatCarrier(carrier.carrier),
-    signal: `${status.signalBars}/${status.maxSignalBars}`,
+    signalBars: status.signalBars,
+    maxSignalBars: status.maxSignalBars,
+    signalDescription: signalDescription(
+      status.signalBars,
+      status.maxSignalBars,
+    ),
+    networkType: networkTypeLabel(status.networkTypeCode),
     freshness,
     history,
     allowance: buildAllowance(allowance, now),

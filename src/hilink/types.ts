@@ -55,6 +55,12 @@ export interface RouterStatus {
   signalBars: number;
   maxSignalBars: number;
   connectedDevices: number;
+  /**
+   * `CurrentNetworkTypeEx` — the radio the router is attached to, as the bare
+   * code it states. `101` is LTE on this device. What that is worth calling is
+   * decided in `../domain/network-type.js`; the boundary only reads it.
+   */
+  networkTypeCode: number;
 }
 
 /** `/api/net/current-plmn` — the network we are attached to. */

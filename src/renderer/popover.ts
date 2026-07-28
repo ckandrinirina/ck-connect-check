@@ -5,10 +5,11 @@
  * There is no arithmetic here, no formatting and no knowledge of bytes — every
  * value arrives from `buildPopoverModel` already spelled the way it appears on
  * screen. The exceptions are geometry: the dial's sweep, which is multiplied by
- * that ring's circumference, and the sparklines' samples, which are plotted
- * against the model's own peak. Only the renderer knows how big its shapes are,
- * so only the renderer can turn a share into a coordinate — but the scale still
- * comes from the model rather than being derived from the series here.
+ * that ring's circumference; the sparklines' samples, plotted against the
+ * model's own peak; and the signal level, scaled onto however many bars the
+ * header draws. Only the renderer knows how big its shapes are, so only the
+ * renderer can turn a share into a coordinate — but the scale still comes from
+ * the model rather than being derived here.
  *
  * The main process pushes updates by calling {@link Window.applyPopoverModel}.
  * One global entry point rather than an IPC channel: there is a single message,
@@ -51,7 +52,7 @@ declare global {
 function fieldsOf(model: PopoverModel): Record<string, string> {
   return {
     carrier: model.carrier,
-    signal: model.signal,
+    networkType: model.networkType,
     freshness: model.freshness.label,
     monthTotal: model.monthTotal,
     monthDownload: model.monthDownload,
@@ -239,6 +240,39 @@ function drawSpark(
   sparkLine(host).setAttribute("points", enough ? pointsFor(values, peak) : "");
 }
 
+/**
+ * How many bars the header draws. Fixed here rather than taken from the router:
+ * the panel's own shape is a renderer fact, and a device that counted to seven
+ * would otherwise redraw the header. The router's level is scaled onto it, the
+ * same bargain the dial's sweep makes with the ring's circumference.
+ */
+const SIGNAL_BAR_COUNT = 4;
+
+/**
+ * Fills the bars to the level the model reports.
+ *
+ * A maximum of zero is the router having said nothing yet rather than a
+ * connection at its worst, so it fills none instead of dividing by it.
+ */
+function applySignal(model: PopoverModel): void {
+  const host = document.querySelector<HTMLElement>("[data-signal]");
+
+  if (host === null) {
+    return;
+  }
+
+  host.setAttribute("aria-label", model.signalDescription);
+
+  const filled =
+    model.maxSignalBars > 0
+      ? Math.round((model.signalBars / model.maxSignalBars) * SIGNAL_BAR_COUNT)
+      : 0;
+
+  host.querySelectorAll<HTMLElement>(".signal-bar").forEach((bar, index) => {
+    bar.dataset["filled"] = String(index < filled);
+  });
+}
+
 function syncButton(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>("[data-sync]");
 }
@@ -409,6 +443,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   drawSpark("download", download, peak);
   drawSpark("upload", upload, peak);
 
+  applySignal(model);
   applyPlanLimit(model);
   applySync(model);
 };

@@ -298,6 +298,7 @@ export function parseStatus(xml: string): RouterStatus {
     signalBars: requireNumber(fields, "SignalIcon", endpoint),
     maxSignalBars: requireNumber(fields, "maxsignal", endpoint),
     connectedDevices: requireNumber(fields, "CurrentWifiUser", endpoint),
+    networkTypeCode: requireNumber(fields, "CurrentNetworkTypeEx", endpoint),
   };
 }
 

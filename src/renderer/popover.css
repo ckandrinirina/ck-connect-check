@@ -64,18 +64,25 @@ body {
   user-select: none;
 }
 
+/*
+  Carrier and signal on the left, then the freshness marker and the Sync button
+  pushed to the right. Centred rather than baseline-aligned now that the row
+  holds a control: a button's baseline sits inside its padding, which would lift
+  it out of line with the text beside it.
+*/
 .header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
 
+/* Takes the slack, so everything after it sits against the right edge. */
 .network {
   display: flex;
-  align-items: baseline;
+  flex: 1 1 auto;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -87,19 +94,53 @@ body {
   text-overflow: ellipsis;
 }
 
-.signal {
+/*
+  Four bars of ascending height, aligned on their feet so the rise reads as a
+  rise. The row sits on the header's baseline like the text beside it.
+*/
+.signal-bars {
   display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+
+.signal-bar {
+  width: 3px;
+  border-radius: 1px;
+
+  /* An empty bar is still a bar: it shows the level the signal is not at. */
+  background: var(--line);
+}
+
+.signal-bar[data-filled="true"] {
+  background: var(--accent);
+}
+
+/*
+  The generation behind the bars. It sits in the header at the same weight as
+  the freshness marker — a qualifier on the bars, not a headline of its own.
+*/
+.network-type {
+  flex: none;
   color: var(--muted);
   font-size: 11px;
 }
 
-.signal-icon {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  background: var(--accent);
+.signal-bar:nth-child(1) {
+  height: 4px;
+}
+
+.signal-bar:nth-child(2) {
+  height: 6px;
+}
+
+.signal-bar:nth-child(3) {
+  height: 8px;
+}
+
+.signal-bar:nth-child(4) {
+  height: 10px;
 }
 
 .freshness {
@@ -113,7 +154,8 @@ body {
   --text: var(--muted);
 }
 
-:root[data-stale="true"] .signal-icon {
+/* The level is real, just not current — so the bars stay, dimmed. */
+:root[data-stale="true"] .signal-bar[data-filled="true"] {
   background: var(--muted);
 }
 
@@ -442,10 +484,8 @@ body {
 
 /* The Sync row: one button and the line it reports through. Same rule and
    rhythm as the sections above it. */
+/* A line with no button above it any more — the control moved to the header. */
 .sync {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
@@ -453,7 +493,7 @@ body {
 
 .sync-button {
   flex: none;
-  padding: 4px 12px;
+  padding: 3px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
