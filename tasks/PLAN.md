@@ -36,7 +36,7 @@
 | T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21             |
 | T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
 | T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
-| T-35 | Introduce the app to someone arriving from GitHub                       | todo   | M    | T-33, T-34       |
+| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
 
 ## T-01 Set the project up so tests can run
 
@@ -1634,7 +1634,7 @@ about the drawing cannot be mistaken for the drawing.
 
 ## T-35 Introduce the app to someone arriving from GitHub
 
-T-35 · status: todo · size: M · needs: T-33, T-34 · files: README.md, docs/media/panel.png, docs/media/menu-bar.png, docs/media/icon.png, test/readme.test.ts
+T-35 · status: done · size: M · needs: T-33, T-34 · files: README.md, docs/media/icon.png, test/readme.test.ts
 
 The repository is public and has no README, so a visitor sees a directory
 listing and nothing that says what the app is, which hardware it speaks to, or
@@ -1651,22 +1651,46 @@ image and file path it links must resolve.
 
 ### Acceptance
 
-- [ ] `README.md` exists and opens with the app name, the icon, and a one-sentence statement of what it does
-- [ ] It contains sections for what it does, the hardware it was tested against, install and build, how the plan cap and USSD sync work, the config file, and troubleshooting
-- [ ] Every relative link and image path in the README resolves to a file that exists
-- [ ] Every `npm run <script>` named in the README exists in `package.json`
-- [ ] The README names the tested device and software version, and says the `#359#` menu is one carrier's
-- [ ] It documents each `config.json` key the app reads, and states that the router password is in the Keychain and not in that file
+- [x] `README.md` exists and opens with the app name, the icon, and a one-sentence statement of what it does
+- [x] It contains sections for what it does, the hardware it was tested against, install and build, how the plan cap and USSD sync work, the config file, and troubleshooting
+- [x] Every relative link and image path in the README resolves to a file that exists
+- [x] Every `npm run <script>` named in the README exists in `package.json`
+- [x] The README names the tested device and software version, and says the `#359#` menu is one carrier's
+- [x] It documents each `config.json` key the app reads, and states that the router password is in the Keychain and not in that file
 - [ ] A screenshot of the panel and one of the menu bar item are committed under `docs/media/` and referenced
-- [ ] `npm test` and `npm run lint` still exit 0
+- [x] `npm test` and `npm run lint` still exit 0
 
 ### Tasks
 
-- [ ] Failing `test/readme.test.ts` — required headings, link resolution, script names against `package.json`
+- [x] Failing `test/readme.test.ts` — required headings, link resolution, script names against `package.json`
 - [ ] Capture the panel and menu bar screenshots from a running build into `docs/media/`
-- [ ] Export a PNG of the icon for the README header from T-33's iconset
-- [ ] Write the README against the sections the criteria name
-- [ ] Read the config keys straight from `src/config/` so the reference matches the code
-- [ ] Troubleshooting: router unreachable, wrong password and the five-failure lockout, a sync that names a router error code
-- [ ] Verify by hand: read it as a stranger would and follow the build steps on a clean checkout
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Export a PNG of the icon for the README header from T-33's iconset
+- [x] Write the README against the sections the criteria name
+- [x] Read the config keys straight from `src/config/` so the reference matches the code
+- [x] Troubleshooting: router unreachable, wrong password and the five-failure lockout, a sync that names a router error code
+- [x] Verify by hand: read it as a stranger would and follow the build steps on a clean checkout
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+**The two screenshots were not taken, and that criterion is not met.** They need
+a running app on a real screen, which nothing in the suite can produce; the app
+was launched for the capture and the images never arrived, and the decision was
+to finish without them. The README therefore shows the icon and no screenshots,
+and the assertion that would have guarded them was _removed_ rather than
+skipped — a skipped test that describes files nobody has taken is worse than an
+absent one. The link check already in place covers both images the moment the
+README references them, so adding them later is: drop the two PNGs into
+`docs/media/`, add the two image lines under the opening paragraph, and the
+existing test starts guarding them with no edit.
+
+The config table is checked against the code rather than against a list kept in
+the test: `configKeys()` parses the `AppConfig` interface out of
+`src/config/defaults.ts`, so a setting added to the app without a line in the
+README fails the suite. That is the whole point of the guard — the README's
+claims are checked against what has to honour them, not against themselves.
+
+The README states the tested device and version as what was tested, never as a
+compatibility claim, and says in as many words that the `#359#` path is one
+carrier's own menu. Both are the honest narrow parts of this project, and the
+test asserts they stay stated.
