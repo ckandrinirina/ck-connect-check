@@ -262,7 +262,7 @@ describe("buildPopoverModel — nothing has been read yet", () => {
   });
 });
 
-describe("buildPopoverModel — the usage state on the progress bar", () => {
+describe("buildPopoverModel — the usage state on the dial", () => {
   const GB = 1_000_000_000;
   const PLAN = 20 * GB;
 

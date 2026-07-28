@@ -15,6 +15,10 @@
   --over: #ff453a;
   --track: rgb(0 0 0 / 8%);
 
+  /* The dial's diameter, and the arc colour the usage state swaps out below. */
+  --dial-size: 104px;
+  --dial: var(--accent);
+
   color-scheme: light dark;
 }
 
@@ -107,72 +111,107 @@ body {
 }
 
 .usage {
-  padding: 14px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0 6px;
 }
 
-.usage-total {
+.dial {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--dial-size);
+  height: var(--dial-size);
+}
+
+.dial-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dial-track,
+.dial-arc {
+  fill: none;
+  stroke-width: 9;
+}
+
+.dial-track {
+  stroke: var(--track);
+}
+
+.dial-arc {
+  stroke: var(--dial);
+
+  /* Butt caps, so a sweep of nothing draws nothing rather than a stray dot. */
+  stroke-linecap: butt;
+
+  /* The length is the model's business; the colour is the usage state's. */
+  transition:
+    stroke-dasharray 240ms ease-out,
+    stroke 240ms ease-out;
+}
+
+.dial-value {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.usage-figures {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .total {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.4px;
 }
 
-.percent {
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.bar {
-  overflow: hidden;
-  height: 6px;
-  margin-top: 10px;
-  border-radius: 3px;
-  background: var(--track);
-}
-
-.bar-fill {
-  width: 0%;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--accent);
-
-  /* The width is the model's business; the colour is the usage state's. */
-  transition:
-    width 240ms ease-out,
-    background 240ms ease-out;
-}
-
-/* Approaching the plan limit, then past it. The state is decided in the main
-   process — nothing here compares a percentage to a threshold. */
-:root[data-usage="warn"] .bar-fill {
-  background: var(--warn);
-}
-
-:root[data-usage="over"] .bar-fill {
-  background: var(--over);
-}
-
-:root[data-usage="warn"] .percent,
-:root[data-usage="over"] .percent {
-  color: var(--text);
-}
-
-.prompt {
-  margin-top: 8px;
+.caption {
   color: var(--muted);
   font-size: 11px;
 }
 
-/* With no plan limit there is nothing to fill, so the track gives way to the prompt. */
-:root[data-limit="unset"] .bar,
-:root[data-limit="unset"] .percent {
+.prompt {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Approaching the plan limit, then past it. The state is decided in the main
+   process — nothing here compares a percentage to a threshold. */
+:root[data-usage="warn"] {
+  --dial: var(--warn);
+}
+
+:root[data-usage="over"] {
+  --dial: var(--over);
+}
+
+:root[data-usage="warn"] .dial-value,
+:root[data-usage="over"] .dial-value {
+  color: var(--dial);
+}
+
+/* With no plan limit there is no share to draw or name, so the ring reads as
+   an empty outline and the prompt takes the caption's place. */
+:root[data-limit="unset"] {
+  --dial: var(--muted);
+}
+
+:root[data-limit="unset"] .dial-track {
+  stroke-dasharray: 2 6;
+  stroke-width: 4;
+}
+
+:root[data-limit="unset"] .dial-value,
+:root[data-limit="unset"] .caption {
   display: none;
 }
 

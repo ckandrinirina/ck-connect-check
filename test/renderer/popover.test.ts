@@ -136,18 +136,31 @@ function arc(): SVGCircleElement {
   return element;
 }
 
-/** The arc's drawn length and the full sweep it is measured against. */
+/**
+ * The arc's drawn length and the full sweep it is measured against — the dash
+ * and the gap the renderer wrote, both rounded the same way, so the two are
+ * comparable without a rounding allowance. That the gap really is the ring's
+ * circumference is asserted separately.
+ */
 function sweep(): { drawn: number; whole: number } {
   const dashArray = arc().getAttribute("stroke-dasharray") ?? "";
-  const [drawn, gap] = dashArray.split(/[\s,]+/).map(Number);
+  const [drawn, whole] = dashArray.split(/[\s,]+/).map(Number);
 
-  if (drawn === undefined || gap === undefined || Number.isNaN(drawn)) {
+  if (
+    drawn === undefined ||
+    whole === undefined ||
+    Number.isNaN(drawn) ||
+    Number.isNaN(whole)
+  ) {
     throw new Error(`the arc has no usable stroke-dasharray: "${dashArray}"`);
   }
 
-  const radius = Number(arc().getAttribute("r"));
+  return { drawn, whole };
+}
 
-  return { drawn, whole: 2 * Math.PI * radius };
+/** The circumference of the circle the arc is stroked around. */
+function circumference(): number {
+  return 2 * Math.PI * Number(arc().getAttribute("r"));
 }
 
 /** The share of the ring the arc covers, 0 to 1. */
@@ -186,6 +199,12 @@ describe("the usage dial — the sweep", () => {
     apply(modelUsing(20 * GB));
 
     expect(sweepFraction()).toBeCloseTo(1, 3);
+  });
+
+  it("measures the sweep against the ring's own circumference", () => {
+    apply(modelUsing(20 * GB));
+
+    expect(sweep().whole).toBeCloseTo(circumference(), 2);
   });
 
   it("stops at the whole ring past the plan rather than wrapping round again", () => {
