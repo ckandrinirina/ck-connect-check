@@ -1,0 +1,201 @@
+/*
+ * The popover's appearance. Colours are declared once as custom properties and
+ * flipped by `prefers-color-scheme`, so the panel follows the macOS appearance
+ * the user has chosen without the main process being told about it.
+ */
+
+:root {
+  --bg: #f6f6f7;
+  --panel: #ffffff;
+  --text: #1c1c1e;
+  --muted: #6d6d72;
+  --line: rgb(0 0 0 / 10%);
+  --accent: #0a84ff;
+  --warn: #ff9f0a;
+  --over: #ff453a;
+  --track: rgb(0 0 0 / 8%);
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e20;
+    --panel: #2a2a2d;
+    --text: #f2f2f7;
+    --muted: #9a9aa0;
+    --line: rgb(255 255 255 / 12%);
+    --accent: #0a84ff;
+    --warn: #ffa726;
+    --over: #ff6961;
+    --track: rgb(255 255 255 / 12%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  padding: 14px 16px 16px;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    13px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    "Helvetica Neue",
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+
+  /* A popover is dismissed by clicking away, never dragged or selected. */
+  cursor: default;
+  user-select: none;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.network {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.carrier {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.signal-icon {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.freshness {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Stale figures are dimmed as a whole: the numbers are real, just not current. */
+:root[data-stale="true"] body {
+  --text: var(--muted);
+}
+
+:root[data-stale="true"] .signal-icon {
+  background: var(--muted);
+}
+
+.usage {
+  padding: 14px 0 4px;
+}
+
+.usage-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.total {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+.percent {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.bar {
+  overflow: hidden;
+  height: 6px;
+  margin-top: 10px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.bar-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+
+  /* The width is the model's business; the colour is the usage state's. */
+  transition:
+    width 240ms ease-out,
+    background 240ms ease-out;
+}
+
+/* Approaching the plan limit, then past it. The state is decided in the main
+   process — nothing here compares a percentage to a threshold. */
+:root[data-usage="warn"] .bar-fill {
+  background: var(--warn);
+}
+
+:root[data-usage="over"] .bar-fill {
+  background: var(--over);
+}
+
+:root[data-usage="warn"] .percent,
+:root[data-usage="over"] .percent {
+  color: var(--text);
+}
+
+.prompt {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* With no plan limit there is nothing to fill, so the track gives way to the prompt. */
+:root[data-limit="unset"] .bar,
+:root[data-limit="unset"] .percent {
+  display: none;
+}
+
+:root[data-limit="set"] .prompt {
+  display: none;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.stat dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.stat dd {
+  margin: 1px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+}
