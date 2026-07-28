@@ -226,6 +226,65 @@ body {
   display: none;
 }
 
+/* The carrier's own figure. Ruled off like every other section, so it reads as
+   one more band of the panel rather than as a box bolted on. */
+.allowance {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.allowance-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.allowance-remaining {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.allowance-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.allowance-plan {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.allowance-synced {
+  flex: none;
+}
+
+/* The re-sync marker. Colour is the second signal here, never the only one —
+   the sentence itself says the figure can no longer be trusted. */
+.allowance-note {
+  margin-top: 2px;
+  color: var(--warn);
+  font-size: 11px;
+}
+
+/* Nothing synced yet: the strip has no figure to show, so it says so instead. */
+:root[data-allowance="none"] .allowance-meta,
+:root[data-allowance="none"] .allowance-figure .caption {
+  display: none;
+}
+
+:root[data-allowance="stale"] .allowance-remaining {
+  color: var(--muted);
+}
+
 /* Live throughput: a label, the shape of the last few minutes, and the current
    figure. Two rows on one shared scale, so their heights are comparable. */
 .rates {
@@ -319,4 +378,96 @@ body {
   margin: 1px 0 0;
   font-size: 14px;
   font-weight: 500;
+}
+
+/* The Sync row: one button and the line it reports through. Same rule and
+   rhythm as the sections above it. */
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.sync-button {
+  flex: none;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: default;
+}
+
+.sync-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A stale figure is the one case where the button asks to be pressed. The
+   wording in `.allowance-note` says why; this only makes it findable. */
+.sync-button[data-attention="true"] {
+  border-color: var(--warn);
+  background: var(--warn);
+  color: #1c1c1e;
+}
+
+.sync-button:disabled {
+  opacity: 55%;
+}
+
+.sync-status {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* The first-run password prompt. Hidden through the `hidden` attribute rather
+   than a class, so it costs no height until the panel asks for it. */
+.password-prompt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.password-prompt[hidden] {
+  display: none;
+}
+
+.password-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.password-input {
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+
+  /* The body forbids selection; a field the user types into cannot. */
+  user-select: text;
+}
+
+.password-submit {
+  grid-column: 1 / -1;
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 500;
+  cursor: default;
 }

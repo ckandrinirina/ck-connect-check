@@ -1,11 +1,20 @@
+import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SnapshotResult } from "../../src/hilink/client.js";
-import type { RouterSnapshot } from "../../src/hilink/types.js";
+import type {
+  AllowanceResult,
+  SnapshotResult,
+} from "../../src/hilink/client.js";
+import type {
+  Allowance,
+  RouterCredential,
+  RouterSnapshot,
+} from "../../src/hilink/types.js";
 import { startMenuBarApp } from "../../src/main/main.js";
+import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import type { Popover } from "../../src/main/popover.js";
 import type { PopoverModel } from "../../src/main/view-model.js";
 
@@ -36,6 +45,10 @@ vi.mock("electron", () => {
     Menu: { buildFromTemplate: electron.buildFromTemplate },
     Tray,
     nativeImage: { createEmpty: vi.fn(() => ({ empty: true })) },
+    // The panel's own channels are exercised in `test/main/popover.test.ts`;
+    // here they only have to exist, for the tests that let `main.ts` build a
+    // real popover.
+    ipcMain: { on: vi.fn(), removeListener: vi.fn() },
   };
 });
 
@@ -360,6 +373,211 @@ describe("startMenuBarApp — polling while the panel is open", () => {
 
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(client.calls).toBe(settled + 1);
+
+    app.stop();
+  });
+});
+
+const CREDENTIAL: RouterCredential = { username: "admin", password: "hunter2" };
+
+const CARRIER_ALLOWANCE: Allowance = {
+  planLabel: "NET MONTH 200 000",
+  remainingBytes: 145_835_900_000,
+  expiresAt: new Date(2026, 7, 12),
+};
+
+/** A fresh config directory per test, so one sync's anchor never leaks into another. */
+function scratchConfig(): string {
+  return join(mkdtempSync(join(tmpdir(), "ck-connect-check-")), "config.json");
+}
+
+/** A credential store backed by a variable rather than by the Keychain. */
+function storeHolding(credential: RouterCredential | null): CredentialStore {
+  let held = credential;
+
+  return {
+    load: () => held,
+    save: (entered) => {
+      held = entered;
+
+      return { ok: true };
+    },
+  };
+}
+
+/** A router whose USSD answer is scripted, and which counts every dialogue. */
+function allowanceRouter(
+  answer: () => Promise<AllowanceResult>,
+): AllowanceSource & { dialogues: number } {
+  const router = {
+    dialogues: 0,
+    login: () => Promise.resolve({ ok: true as const }),
+    readAllowance: () => {
+      router.dialogues += 1;
+
+      return answer();
+    },
+    logout: () => Promise.resolve(),
+  };
+
+  return router;
+}
+
+describe("startMenuBarApp — the allowance sync", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("never starts a dialogue from the poll timer, however long it runs", async () => {
+    const router = allowanceRouter(() =>
+      Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+    );
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: countingClient(),
+      popover: recordingPopover(),
+      allowance: router,
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(POLL_MS * 10);
+
+    // The USSD channel is driven by the Sync button and by nothing else.
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("anchors the carrier's figure and shows it in the panel", async () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(latest(popover).allowance.remaining).toBe("145.84 Go");
+    expect(latest(popover).allowance.expires).toBe("12/08/2026");
+    expect(latest(popover).sync.busy).toBe(false);
+
+    app.stop();
+  });
+
+  it("writes the anchor to the config so it survives a quit", async () => {
+    const configPath = scratchConfig();
+    const app = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover: recordingPopover(),
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    const written = JSON.parse(readFileSync(configPath, "utf8")) as {
+      allowanceAnchor?: { remainingBytes: number };
+      planTotalBytes?: number;
+    };
+
+    expect(written.allowanceAnchor?.remainingBytes).toBe(145_835_900_000);
+    expect(written.planTotalBytes).toBe(145_835_900_000);
+
+    app.stop();
+  });
+
+  it("keeps polling while a dialogue is in flight, so the panel never freezes", async () => {
+    const popover = recordingPopover();
+    let release = (): void => undefined;
+    const pending = new Promise<AllowanceResult>((resolve) => {
+      release = () => resolve({ ok: false, reason: "timeout" });
+    });
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: scriptedClient([
+        readingAt(1_000),
+        readingAt(2_000),
+        readingAt(3_000),
+      ]),
+      popover,
+      allowance: allowanceRouter(() => pending),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const running = app.sync();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).sync.busy).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    // The sparklines and the dial are still being fed while the sync waits.
+    expect(latest(popover).history.download).toEqual([1_000, 2_000, 3_000]);
+    expect(latest(popover).sync.busy).toBe(true);
+
+    release();
+    await running;
+    app.stop();
+  });
+
+  it("asks for a password instead of dialling when none is stored", async () => {
+    const popover = recordingPopover();
+    const router = allowanceRouter(() =>
+      Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+    );
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: countingClient(),
+      popover,
+      allowance: router,
+      credentials: storeHolding(null),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(latest(popover).sync.needsPassword).toBe(true);
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("renders the reason when the carrier dialogue fails", async () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: false, reason: "busy" }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(latest(popover).sync.status).toMatch(/busy/i);
+    expect(latest(popover).allowance.available).toBe(false);
 
     app.stop();
   });

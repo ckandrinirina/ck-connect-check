@@ -11,18 +11,25 @@
  * not cost a renderer process.
  */
 
-import { BrowserWindow } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 
-import type { Rectangle, Tray } from "electron";
+import type { IpcMainEvent, Rectangle, Tray } from "electron";
 
+import type { RouterCredential } from "../hilink/types.js";
 import type { PopoverModel } from "./view-model.js";
 
 /** Wide enough for a rate and its unit on one line without wrapping. */
 export const POPOVER_WIDTH = 320;
 
 /** Tall enough for the whole layout, so nothing ever scrolls. */
-export const POPOVER_HEIGHT = 380;
+export const POPOVER_HEIGHT = 520;
+
+/** The panel asking for a sync. Renderer → main, and nothing travels back. */
+export const POPOVER_SYNC_CHANNEL = "popover:sync";
+
+/** The password prompt's submit, carrying the credential the user typed. */
+export const POPOVER_SAVE_PASSWORD_CHANNEL = "popover:save-password";
 
 /**
  * The page lives beside its stylesheet in `src/renderer/`, and this module sits
@@ -35,11 +42,49 @@ function defaultHtmlPath(): string {
   );
 }
 
+/**
+ * The compiled preload script. `tsc` emits it beside the compiled renderer, so
+ * unlike the page — which is read straight from `src/` — this path always points
+ * into `dist/`; the same relative walk finds it from `src/main/` under Vitest
+ * and from `dist/main/` after a build.
+ */
+function defaultPreloadPath(): string {
+  return fileURLToPath(
+    new URL("../../dist/renderer/preload.cjs", import.meta.url),
+  );
+}
+
 export interface PopoverOptions {
   /** Path to the page. Injected so tests never touch the filesystem. */
   htmlPath?: string;
+  /** Path to the preload bridge. Injected for the same reason. */
+  preloadPath?: string;
   width?: number;
   height?: number;
+  /** The user pressed Sync. The panel starts nothing itself. */
+  onSync?: () => void;
+  /** The user submitted the password prompt with a username and a password. */
+  onSavePassword?: (credential: RouterCredential) => void;
+}
+
+/**
+ * A credential out of a renderer message, or null when the payload is not one.
+ *
+ * The page is ours and its CSP lets nothing else run in it, but a channel that
+ * reaches the Keychain validates its own input rather than trusting that.
+ */
+function readCredential(payload: unknown): RouterCredential | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const { username, password } = payload as Record<string, unknown>;
+
+  if (typeof username !== "string" || typeof password !== "string") {
+    return null;
+  }
+
+  return { username, password };
 }
 
 export interface Popover {
@@ -57,6 +102,7 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   const width = options.width ?? POPOVER_WIDTH;
   const height = options.height ?? POPOVER_HEIGHT;
   const htmlPath = options.htmlPath ?? defaultHtmlPath();
+  const preloadPath = options.preloadPath ?? defaultPreloadPath();
 
   let window: BrowserWindow | null = null;
   let model: PopoverModel | null = null;
@@ -64,6 +110,37 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   function alive(): BrowserWindow | null {
     return window !== null && !window.isDestroyed() ? window : null;
   }
+
+  /**
+   * `ipcMain` is process-wide, so every message is checked against this
+   * panel's own page before it is acted on.
+   */
+  function fromThisPanel(event: IpcMainEvent): boolean {
+    const open = alive();
+
+    return open !== null && event.sender === open.webContents;
+  }
+
+  function onSyncMessage(event: IpcMainEvent): void {
+    if (fromThisPanel(event)) {
+      options.onSync?.();
+    }
+  }
+
+  function onSavePasswordMessage(event: IpcMainEvent, payload: unknown): void {
+    if (!fromThisPanel(event)) {
+      return;
+    }
+
+    const credential = readCredential(payload);
+
+    if (credential !== null) {
+      options.onSavePassword?.(credential);
+    }
+  }
+
+  ipcMain.on(POPOVER_SYNC_CHANNEL, onSyncMessage);
+  ipcMain.on(POPOVER_SAVE_PASSWORD_CHANNEL, onSavePasswordMessage);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -102,6 +179,9 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        // The one way the page can talk back: a bridge exposing two sends and
+        // nothing else. Without it the panel could render but never sync.
+        preload: preloadPath,
         // The window is hidden rather than destroyed between opens, and Chromium
         // throttles a hidden renderer — the pushes below would then queue up and
         // only run on the next `show`, leaving an open panel frozen. Keep the
@@ -167,6 +247,13 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       push();
     },
     destroy(): void {
+      // `ipcMain` outlives the window, so the subscriptions have to be given
+      // back explicitly or a destroyed panel keeps answering for the next one.
+      ipcMain.removeListener(POPOVER_SYNC_CHANNEL, onSyncMessage);
+      ipcMain.removeListener(
+        POPOVER_SAVE_PASSWORD_CHANNEL,
+        onSavePasswordMessage,
+      );
       alive()?.destroy();
       window = null;
     },
