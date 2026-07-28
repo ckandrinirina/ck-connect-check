@@ -352,6 +352,97 @@ describe("poll interval validation", () => {
   });
 });
 
+describe("router credential fields", () => {
+  const BLOB = "ZW5jcnlwdGVkLWJsb2I=";
+
+  it("accepts a config carrying no credential fields at all", () => {
+    const parsed = parseConfig({ host: "10.0.0.1" });
+
+    expect(parsed).not.toHaveProperty("routerUsername");
+    expect(parsed).not.toHaveProperty("routerPasswordBlob");
+  });
+
+  it("keeps a stored username and encrypted blob", () => {
+    const parsed = parseConfig({
+      ...defaultConfig(),
+      routerUsername: "admin",
+      routerPasswordBlob: BLOB,
+    });
+
+    expect(parsed.routerUsername).toBe("admin");
+    expect(parsed.routerPasswordBlob).toBe(BLOB);
+  });
+
+  it("round-trips the credential fields through save and load", () => {
+    saveConfig(path(), {
+      ...defaultConfig(),
+      routerUsername: "admin",
+      routerPasswordBlob: BLOB,
+    });
+
+    expect(loadConfig(path()).config).toEqual({
+      ...defaultConfig(),
+      routerUsername: "admin",
+      routerPasswordBlob: BLOB,
+    });
+  });
+
+  it("writes neither key when no credential is stored", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(readFileSync(path(), "utf8")).not.toContain("routerPasswordBlob");
+  });
+
+  it("rejects a credential blob that is not a string", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), routerPasswordBlob: 42 }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({ ...defaultConfig(), routerPasswordBlob: { blob: BLOB } }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({ ...defaultConfig(), routerPasswordBlob: null }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("names routerPasswordBlob on the rejection", () => {
+    try {
+      parseConfig({ ...defaultConfig(), routerPasswordBlob: 42 });
+      expect.unreachable("expected a ConfigValidationError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).field).toBe("routerPasswordBlob");
+    }
+  });
+
+  it("rejects an empty credential blob, which is no credential at all", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), routerPasswordBlob: "   " }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("rejects a username that is not a non-empty string", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), routerUsername: 7 }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({ ...defaultConfig(), routerUsername: "" }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("falls back to the defaults when a stored blob is invalid", () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({ ...defaultConfig(), routerPasswordBlob: 42 }),
+    );
+
+    const result = loadConfig(path());
+
+    expect(result.config).toEqual(defaultConfig());
+    expect(result.problem).toContain("routerPasswordBlob");
+  });
+});
+
 describe("injected config path", () => {
   it("reads and writes only the path it is given", () => {
     const real = defaultConfigPath();
