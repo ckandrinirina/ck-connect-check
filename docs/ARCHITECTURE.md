@@ -205,6 +205,11 @@ Append-only. One line each, always with the reason.
 - The "Resets in" countdown is gone — it was derived from the router's `StartDay`, which disagrees with the carrier's own expiry date, and "Valid for" states the date that actually governs the allowance
 - A `planTotalBytes` left in an existing `config.json` is ignored on load rather than rejected — the app wrote that key itself, so a file it produced must never be a file it refuses to start from
 - The dial's share cannot pass 100% — consumption is the cap minus the carrier's remaining, and that remaining never goes below zero, so an overrun is not a state the ring can be asked to draw
+- Signal strength is four filled bars, not a coloured square plus a `5/5` string — an icon that looks the same at one bar as at five is decoration, and once the bars carry the level the text beside them is a second answer to the same question
+- The signal bars are markup, not SVG — the dial and sparklines are drawn because their geometry comes from the model, whereas four bars never change shape and only change which of them are filled
+- `CurrentNetworkTypeEx` is mapped to a label in `src/domain/`, not in `src/hilink/` — the code-to-name table is carrier-agnostic constants, and the router boundary's job ends at turning the string into a number
+- An unmapped network-type code is shown as the code itself rather than hidden or guessed — the same reason an unrecognised error code is carried to the surface with its number
+- The Sync button moves to the header but its status line stays at the foot of the panel — the steps of a dialogue that takes tens of seconds are several lines that arrive over time, and a header that grew and shrank mid-sync would push the dial down while it is being read
 
 ## Conventions
 

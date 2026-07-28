@@ -31,6 +31,9 @@
 | T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25             |
 | T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21             |
 | T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25             |
+| T-30 | Draw the signal as real bars instead of a coloured square               | todo   | S    | T-07             |
+| T-31 | Say which network the router is actually on                             | todo   | S    | T-30             |
+| T-32 | Put Sync where the panel is looked at first                             | todo   | S    | T-21             |
 
 ## T-01 Set the project up so tests can run
 
@@ -1325,3 +1328,111 @@ anything.
 
 The view-model's "single day in the singular" test moved onto the allowance's
 "Valid for" figure, which is now `formatDays`' only caller.
+
+## T-30 Draw the signal as real bars instead of a coloured square
+
+T-30 · status: todo · size: S · needs: T-07 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+The top bar's `.signal-icon` is a 9px square filled with the accent colour. It carries no
+information at all — it is the same square at one bar as at five — so the strength is
+readable only from the `5/5` text beside it, which is a figure where an icon was promised.
+
+It becomes four ascending bars, filled to the router's level. The bars then say what the
+text said, so the `5/5` string goes with it; T-31 puts the network type in the slot it
+leaves. The renderer needs the level as numbers rather than the formatted `"5/5"` string,
+so the view model carries `signalBars` and `maxSignalBars` and drops `signal`. The bars
+are markup, not SVG — four spans whose fill is a `data-` attribute — because a fixed shape
+that never changes geometry has nothing to gain from being redrawn.
+
+Stale and offline states keep the behaviour the square had: dimmed to `--muted` when the
+figures are stale, and empty bars when there is no reading at all.
+
+### Acceptance
+
+- [ ] `PopoverModel` exposes `signalBars` and `maxSignalBars` as numbers and no longer has `signal`
+- [ ] With no snapshot, both are `0` and the rendered bars are all unfilled
+- [ ] The header renders exactly four bars, and the number filled matches `round(signalBars / maxSignalBars * 4)`, asserted at 0, 1, 3 and 5 of 5
+- [ ] The `5/5` text is gone from `index.html` and from the renderer's field map
+- [ ] The bar group carries an accessible label stating the level (e.g. `Signal 5 of 5`)
+- [ ] `:root[data-stale="true"]` dims the filled bars, asserted against the stylesheet's selector
+- [ ] `maxSignalBars` of `0` from the router renders as unfilled rather than dividing by zero
+
+### Tasks
+
+- [ ] Failing test: the popover model carries numeric `signalBars`/`maxSignalBars` and no `signal`
+- [ ] Failing test: the rendered header contains four bars with the expected filled count at each level
+- [ ] Failing test: a zero `maxSignalBars` renders unfilled and throws nothing
+- [ ] Replace `signal` with the two numbers in `src/main/view-model.ts`
+- [ ] Replace the icon span with a four-bar group in `index.html` and fill it from the model in `popover.ts`
+- [ ] Style the bars in `popover.css` — ascending heights, filled vs empty, stale dimming
+- [ ] Verify by hand against the live router: the bars match the level the router reports
+
+## T-31 Say which network the router is actually on
+
+T-31 · status: todo · size: S · needs: T-30 · files: src/hilink/parse.ts, src/hilink/types.ts, src/domain/network-type.ts, src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/hilink/parse.test.ts, test/domain/network-type.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+T-30 leaves the slot beside the bars empty. `/api/monitoring/status` already answers
+`CurrentNetworkTypeEx` — a numeric code, `101` for LTE on this device — and it is the one
+fact the top bar is missing: bars at 5/5 on a 2G fallback are not the same connection as
+bars at 5/5 on LTE.
+
+The code is parsed at the router boundary like every other numeric field, and mapped to a
+short label (`4G`, `3G`, `2G`) in `src/domain/` — the mapping is a table of carrier-agnostic
+constants and belongs with the pure code, not in the client. An unknown code is rendered as
+the bare code rather than guessed at or hidden, for the same reason an unrecognised error
+code is carried to the surface with its number.
+
+### Acceptance
+
+- [ ] `RouterStatus` carries `networkTypeCode` as a number, parsed from `CurrentNetworkTypeEx`
+- [ ] A status reply missing the field fails at the boundary like every other required field
+- [ ] `src/domain/network-type.ts` maps codes to labels, asserted for LTE (`101`), a 3G code, a 2G code and `0`
+- [ ] An unmapped code renders as the code itself, prefixed so it reads as a code and not a label
+- [ ] The header shows the label beside the signal bars, asserted against the rendered DOM
+- [ ] With no snapshot the slot shows the same em-dash placeholder every other empty field uses
+- [ ] `src/domain/network-type.ts` imports neither Electron nor the network
+
+### Tasks
+
+- [ ] Failing test: `parse.ts` reads `CurrentNetworkTypeEx` into `networkTypeCode`
+- [ ] Failing test: the code-to-label map answers correctly for LTE, 3G, 2G, unknown and zero
+- [ ] Failing test: the rendered header shows the label next to the bars
+- [ ] Parse the field and add it to the status type
+- [ ] Write `src/domain/network-type.ts` with the mapping table
+- [ ] Carry the label through the view model and render it in the header slot
+- [ ] Verify by hand against the live router: the label matches what the router's own web UI reports
+
+## T-32 Put Sync where the panel is looked at first
+
+T-32 · status: todo · size: S · needs: T-21 · files: src/renderer/index.html, src/renderer/popover.css, test/renderer/popover.test.ts
+
+The Sync button sits in a footer under five stat tiles, which is the last place the eye
+reaches on a panel whose whole point is the figure at the top. It moves into the header
+row, beside the freshness marker.
+
+The status line does not follow it. Those are the step names arriving during a dialogue
+that takes tens of seconds — a live region several lines long — and a header that grows
+and shrinks while a sync runs would push the dial down mid-read. It stays where the footer
+was, as a line with no button above it.
+
+This is layout only: the button's id, handlers, disabled state and `data-attention`
+behaviour are unchanged, and the tests that cover them must keep passing untouched.
+
+### Acceptance
+
+- [ ] The Sync button is a child of `.header` in the rendered DOM
+- [ ] The status line is not in `.header`, and still sits below the stat tiles
+- [ ] Every existing sync test passes with no change to its assertions
+- [ ] `data-attention="true"` still highlights the button in its new position
+- [ ] The button keeps its `aria-label` and stays reachable by keyboard in header order
+- [ ] The header does not change height when the status line fills with text, asserted against the layout rules
+- [ ] The carrier name still truncates with an ellipsis rather than pushing the button out of the row
+
+### Tasks
+
+- [ ] Failing test: the Sync button is inside the header and the status line is not
+- [ ] Failing test: a long carrier name truncates and the button stays in the row
+- [ ] Move the button markup into `.header`, leaving the status line where the footer was
+- [ ] Restyle in `popover.css` — header row spacing, the status line without its button
+- [ ] Confirm the existing sync tests pass with no edits
+- [ ] Verify by hand: press Sync from the header and watch the steps arrive below without the panel shifting
