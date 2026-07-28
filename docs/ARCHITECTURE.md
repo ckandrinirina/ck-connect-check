@@ -82,6 +82,10 @@ Append-only. One line each, always with the reason.
 - `src/domain/` imports neither Electron nor the network — quota math stays testable without a router present
 - Usage displayed in decimal GB (1000³), not GiB — carriers bill in decimal, and the number must match the user's plan
 - Router unreachable is a normal state rendered as "offline", never an error dialog or a crash — the app runs unattended in the menu bar
+- `backgroundThrottling: false` on the popover window — Chromium defers work in a hidden renderer, so pushed updates piled up and the panel appeared to refresh only when opened or closed
+- The poll interval is fast while the popover is visible and the configured one while it is hidden — a throughput figure only matters while someone is looking at it, and the router should not be asked twice a second for nothing
+- Throughput history is a fixed-size in-memory ring buffer, dropped on quit — a sparkline needs the last few minutes, and "no history database" still holds for anything longer
+- Charts are inline SVG built in the renderer from plain numbers — the page runs under `default-src 'none'`, so no chart library can be loaded, and a sparkline is a polyline
 
 ## Conventions
 

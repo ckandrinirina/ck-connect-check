@@ -11,6 +11,11 @@
 | T-07 | Show the details when the menu bar item is clicked | done | M | T-06 |
 | T-08 | Warn when usage approaches or passes the limit | done | S | T-04, T-06 |
 | T-09 | Launch the app on login without a Dock icon | done | S | T-06 |
+| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | todo | S | T-07 |
+| T-11 | Refresh quickly while the panel is open and slowly while it is shut | todo | S | T-10 |
+| T-12 | Remember the last few minutes of throughput | todo | S | T-03 |
+| T-13 | Show the month's usage as a dial instead of a bar | todo | M | T-10 |
+| T-14 | Show download and upload rates as live sparklines | todo | M | T-12, T-13 |
 
 ## T-01 Set the project up so tests can run
 
@@ -254,3 +259,122 @@ gitignored.
 
 The packaging and Dock-icon criteria are verified by launching the built app by hand —
 the test suite covers the login-item wrapper only. Record the result here when done.
+
+## T-10 Keep the open panel refreshing instead of freezing until it is reopened
+
+T-10 · status: todo · size: S · needs: T-07 · files: src/main/popover.ts, test/main/popover.test.ts
+
+The panel currently looks like it only updates when it is opened and closed. `setModel`
+does push on every poll, but the popover's `BrowserWindow` is created with Chromium's
+default `backgroundThrottling`, so a hidden renderer defers the injected script and the
+queued updates only run when the window is shown again. The window is also hidden rather
+than destroyed, so this state persists for the whole session after the first open.
+
+### Acceptance
+- [ ] The popover window is created with `backgroundThrottling: false` in its `webPreferences`
+- [ ] `setModel` called while the window exists but is hidden still reaches `webContents.executeJavaScript` — it is not deferred to the next `show`
+- [ ] `setModel` called before the window has ever been created stores the model and pushes it on `did-finish-load`, with no error
+- [ ] Two `setModel` calls in a row push twice; the second is not swallowed
+- [ ] The pushed payload is the newest model, never a stale one
+
+### Tasks
+- [ ] Failing tests with a fake `BrowserWindow` asserting a push happens while `isVisible()` is false
+- [ ] Failing test asserting `backgroundThrottling: false` is passed at construction
+- [ ] Set `backgroundThrottling: false` and confirm `push()` runs off `alive()`, not off visibility
+- [ ] Manual check: open the panel, leave it open, watch a value change without touching it
+
+## T-11 Refresh quickly while the panel is open and slowly while it is shut
+
+T-11 · status: todo · size: S · needs: T-10 · files: src/main/poller.ts, src/main/main.ts, src/config/defaults.ts, test/main/poller.test.ts, test/config/defaults.test.ts
+
+A 30-second interval is right for a menu bar title and far too slow for a live rate. The
+poller gains a second, shorter interval used while the popover is visible; opening the
+panel switches to it and takes a reading immediately rather than waiting out the pending
+timer.
+
+### Acceptance
+- [ ] `AppConfig` carries `activePollIntervalSeconds`, defaulting to 2, alongside the existing `pollIntervalSeconds`
+- [ ] An out-of-range or non-numeric `activePollIntervalSeconds` in the config file falls back to the default, exactly like the existing fields
+- [ ] `poller.setActive(true)` schedules subsequent polls at the active interval; `setActive(false)` returns to `pollIntervalSeconds`
+- [ ] `setActive(true)` cancels the pending timer and polls immediately instead of waiting for it to elapse
+- [ ] `setActive(true)` called twice in a row triggers one extra immediate poll, not two
+- [ ] Two polls never overlap: the next is still scheduled only after the previous settles
+- [ ] Showing the popover puts the poller in active mode and hiding it leaves active mode
+
+### Tasks
+- [ ] Failing tests on fake timers for interval switching, the immediate poll, and no overlap
+- [ ] Failing test for the new config field and its fallback
+- [ ] Add `activePollIntervalSeconds` to defaults and config validation
+- [ ] Add `setActive` to `UsagePoller` with the pending timer cancelled and rescheduled
+- [ ] Wire `show` / `hide` in `main.ts` to `setActive`
+
+## T-12 Remember the last few minutes of throughput
+
+T-12 · status: todo · size: S · needs: T-03 · files: src/domain/history.ts, src/main/main.ts, src/main/view-model.ts, test/domain/history.test.ts, test/main/view-model.test.ts
+
+A sparkline needs a series, and the router only reports an instant. A fixed-size ring
+buffer in the main process holds the recent download and upload rates. It is pure, lives
+in `src/domain/`, and is never written to disk — the "no history database" decision still
+stands for anything longer than the panel's own window.
+
+### Acceptance
+- [ ] `createRateHistory(capacity)` keeps at most `capacity` samples and drops the oldest first
+- [ ] Samples are returned oldest-first, so a chart can read them left to right
+- [ ] Each sample holds `downloadBytesPerSecond`, `uploadBytesPerSecond` and the time it was taken
+- [ ] An offline poll records no sample — a gap is not a zero
+- [ ] `peak(samples)` returns the largest rate across both series, and 0 for an empty history
+- [ ] The popover model exposes the samples and the peak, so the renderer scales without re-deriving them
+- [ ] The history survives the popover being closed and reopened
+
+### Tasks
+- [ ] Failing tests for capacity, eviction order, offline gaps, and `peak` on an empty history
+- [ ] `src/domain/history.ts` — pure ring buffer, no I/O and no Electron
+- [ ] Record a sample on every online poll in `main.ts`
+- [ ] Extend `PopoverModel` with the series and its peak
+
+## T-13 Show the month's usage as a dial instead of a bar
+
+T-13 · status: todo · size: M · needs: T-10 · files: src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, src/main/view-model.ts, test/renderer/popover.test.ts, test/main/view-model.test.ts
+
+The flat progress bar becomes a circular arc with the percentage at its centre and the
+absolute figures beside it. Drawn as inline SVG built from numbers already in the model —
+the page's `default-src 'none'` CSP rules out loading any chart library.
+
+### Acceptance
+- [ ] The arc's stroke-dash length is proportional to the percentage used: 0% draws nothing, 100% draws the full sweep
+- [ ] Above 100% the arc is drawn full and not wrapped around a second time
+- [ ] With no plan limit configured the dial renders in an "unset" style with no percentage, and the prompt to set a limit still shows
+- [ ] The dial's colour follows the usage state — `ok`, `warn`, `over` and `unset` are visually distinct
+- [ ] The dial carries an accessible label stating the percentage and the absolute usage
+- [ ] Applying a model twice updates the existing SVG rather than appending a second one
+- [ ] The panel still fits `POPOVER_HEIGHT` with no scrollbar
+
+### Tasks
+- [ ] Failing renderer tests for the sweep at 0%, 50%, 100% and 120%, and for the unset state
+- [ ] Replace the bar markup with an SVG dial in `index.html`
+- [ ] Render the arc in `popover.ts` from the model's percentage and state
+- [ ] Style the four states in `popover.css`
+- [ ] Delete the bar styles left unused
+
+## T-14 Show download and upload rates as live sparklines
+
+T-14 · status: todo · size: M · needs: T-12, T-13 · files: src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, test/renderer/popover.test.ts
+
+Two stacked sparklines replace the "Down now" and "Up now" text figures: the shape shows
+what a single number cannot, and the current value stays as a label beneath. Both share one
+vertical scale so the two series are comparable at a glance.
+
+### Acceptance
+- [ ] Each sparkline renders one SVG polyline with one point per sample in the model
+- [ ] Download and upload share a single vertical scale derived from the model's peak
+- [ ] An all-zero history renders a flat line at the baseline, not a divide-by-zero or an empty element
+- [ ] Fewer than two samples renders the empty state, not a broken path
+- [ ] The current rate is shown as text beside each sparkline, formatted by the existing rate formatter
+- [ ] Applying a model twice replaces the points rather than accumulating them
+- [ ] Offline renders the sparklines in a stale style, keeping the last known shape rather than blanking it
+
+### Tasks
+- [ ] Failing renderer tests for point count, shared scale, all-zero, single-sample and repeated apply
+- [ ] Add the two sparkline elements to `index.html` and drop the two rate `<dd>` stats
+- [ ] Build the polyline points in `popover.ts` from samples and peak
+- [ ] Style both series and the stale state in `popover.css`
