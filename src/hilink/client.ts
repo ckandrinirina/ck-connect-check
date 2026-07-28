@@ -31,6 +31,11 @@ import {
   parseTrafficStatistics,
 } from "./parse.js";
 import { SessionStore, sessionHeaders } from "./session.js";
+import {
+  UssdDialogue,
+  type AllowanceResult,
+  type UssdOptions,
+} from "./ussd.js";
 import type {
   LoginResult,
   OfflineReason,
@@ -53,6 +58,9 @@ const POST_CONTENT_TYPE = "application/x-www-form-urlencoded; charset=UTF-8";
 
 /** Why a poll produced no snapshot. All four render as "offline". */
 export type { OfflineReason } from "./types.js";
+
+/** The USSD dialogue's own result and failure vocabulary — see `./ussd.ts`. */
+export type { AllowanceResult, UssdFailure, UssdOptions } from "./ussd.js";
 
 export type SnapshotResult =
   | { online: true; snapshot: RouterSnapshot }
@@ -115,6 +123,7 @@ export class RouterClient {
   readonly #baseUrl: string;
   readonly #timeoutMs: number;
   readonly #session: SessionStore;
+  readonly #ussd: UssdDialogue;
 
   constructor(options: RouterClientOptions) {
     this.#baseUrl = options.baseUrl;
@@ -122,6 +131,19 @@ export class RouterClient {
     this.#session = new SessionStore(async () =>
       parseSesTokInfo(await this.#get(SES_TOK_INFO, {})),
     );
+    this.#ussd = new UssdDialogue({
+      get: async (path) =>
+        await this.#get(path, sessionHeaders(await this.#session.current())),
+      post: async (path, body) =>
+        (
+          await this.#post(
+            path,
+            sessionHeaders(await this.#session.current()),
+            body,
+          )
+        ).body,
+      transportReason: (error) => offlineReason(error, "session"),
+    });
   }
 
   /**
@@ -195,6 +217,17 @@ export class RouterClient {
     } finally {
       this.#session.clear();
     }
+  }
+
+  /**
+   * Ask the carrier for the exact remaining allowance over USSD. Resolves to a
+   * reason rather than rejecting, exactly like {@link RouterClient.snapshot}.
+   *
+   * Only ever driven by an explicit Sync press: a dialogue takes tens of seconds
+   * and holds carrier-side state, so the poll loop must never call this.
+   */
+  async readAllowance(options: UssdOptions = {}): Promise<AllowanceResult> {
+    return await this.#ussd.readAllowance(options);
   }
 
   async #collect(): Promise<RouterSnapshot> {
