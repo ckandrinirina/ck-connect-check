@@ -15,7 +15,7 @@
 | T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10             |
 | T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03             |
 | T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10             |
-| T-14 | Show download and upload rates as live sparklines                       | todo   | M    | T-12, T-13       |
+| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13       |
 
 ## T-01 Set the project up so tests can run
 
@@ -494,7 +494,7 @@ arithmetic, not a rendered result. Hand-checked at roughly 335px tall.
 
 ## T-14 Show download and upload rates as live sparklines
 
-T-14 · status: todo · size: M · needs: T-12, T-13 · files: src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, test/renderer/popover.test.ts
+T-14 · status: done · size: M · needs: T-12, T-13 · files: src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, test/renderer/popover.test.ts
 
 Two stacked sparklines replace the "Down now" and "Up now" text figures: the shape shows
 what a single number cannot, and the current value stays as a label beneath. Both share one
@@ -502,17 +502,47 @@ vertical scale so the two series are comparable at a glance.
 
 ### Acceptance
 
-- [ ] Each sparkline renders one SVG polyline with one point per sample in the model
-- [ ] Download and upload share a single vertical scale derived from the model's peak
-- [ ] An all-zero history renders a flat line at the baseline, not a divide-by-zero or an empty element
-- [ ] Fewer than two samples renders the empty state, not a broken path
-- [ ] The current rate is shown as text beside each sparkline, formatted by the existing rate formatter
-- [ ] Applying a model twice replaces the points rather than accumulating them
-- [ ] Offline renders the sparklines in a stale style, keeping the last known shape rather than blanking it
+- [x] Each sparkline renders one SVG polyline with one point per sample in the model
+- [x] Download and upload share a single vertical scale derived from the model's peak
+- [x] An all-zero history renders a flat line at the baseline, not a divide-by-zero or an empty element
+- [x] Fewer than two samples renders the empty state, not a broken path
+- [x] The current rate is shown as text beside each sparkline, formatted by the existing rate formatter
+- [x] Applying a model twice replaces the points rather than accumulating them
+- [x] Offline renders the sparklines in a stale style, keeping the last known shape rather than blanking it
 
 ### Tasks
 
-- [ ] Failing renderer tests for point count, shared scale, all-zero, single-sample and repeated apply
-- [ ] Add the two sparkline elements to `index.html` and drop the two rate `<dd>` stats
-- [ ] Build the polyline points in `popover.ts` from samples and peak
-- [ ] Style both series and the stale state in `popover.css`
+- [x] Failing renderer tests for point count, shared scale, all-zero, single-sample and repeated apply
+- [x] Add the two sparkline elements to `index.html` and drop the two rate `<dd>` stats
+- [x] Build the polyline points in `popover.ts` from samples and peak
+- [x] Style both series and the stale state in `popover.css`
+
+### Notes
+
+`SPARK_MINIMUM_SAMPLES = 2`; below that the host carries `data-empty="true"`, `points` is
+cleared, and CSS hides the line so the baseline axis shows rather than a stub path. The
+divide-by-zero guard is `peak > 0 ? value / peak : 0`, so an all-zero history flattens onto
+the baseline instead of throwing. Offline needs no special data handling — offline polls
+record no sample, so the history is simply unchanged and the same shape redraws in a muted
+stale style.
+
+Two decisions beyond the criteria, both easy to revert. **Upload got its own colour**
+(`--up`, green `#30d158` light / `#32d74b` dark) rather than sharing `--accent` with download,
+because two identically-coloured lines were hard to tell apart; change `[data-spark="upload"]
+.spark-line` to `var(--accent)` to undo. And `.stats` spacing was tightened (margin-top 16→12,
+padding-top 14→10) to buy 8px for the new rates block, which also made the two ruled sections
+under the dial share one gap.
+
+T-13's panel-fit test was updated, not loosened: its `CHROME_HEIGHT` of 240 described a layout
+with a 3-row stats grid and no rates section, so it had become factually wrong. It is now 220
+against real chrome of ~209, and the assertion additionally budgets `--spark-height` × 2 plus
+the row gap — 104 + 44 + 6 + 220 = 374 ≤ 380. QA checked that arithmetic independently. Full
+content measures ~363px, leaving ~17px of slack.
+
+**Not machine-verified:** `preserveAspectRatio="none"` and `vector-effect="non-scaling-stroke"`
+keep the 100×24 user-unit box stretching to the row width without the stroke thickening, and
+jsdom can render neither. Line weight and the 22px row height rest on a human eye. The height
+budget above is arithmetic, not a measurement.
+
+The SVGs are `aria-hidden="true"`; the formatted rate text beside each line is what a screen
+reader announces.
