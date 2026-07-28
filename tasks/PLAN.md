@@ -34,6 +34,9 @@
 | T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07             |
 | T-31 | Say which network the router is actually on                             | done   | S    | T-30             |
 | T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21             |
+| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
+| T-34 | Put the signal glyph next to the number in the menu bar                 | todo   | M    | T-33, T-30       |
+| T-35 | Introduce the app to someone arriving from GitHub                       | todo   | M    | T-33, T-34       |
 
 ## T-01 Set the project up so tests can run
 
@@ -1480,3 +1483,159 @@ sits inside its own padding, which lifted it out of line with the text beside
 it once it joined the row. `.network` took `flex: 1 1 auto` so the freshness
 marker and the button sit against the right edge rather than being spread by
 `justify-content`.
+
+## T-33 Give the app a mark of its own in Finder and the Dock
+
+T-33 · status: done · size: M · needs: — · files: assets/icon.svg, scripts/render-svg.mjs, scripts/make-icon.mjs, assets/icon.iconset/\*.png, assets/icon.icns, package.json, eslint.config.js, docs/ARCHITECTURE.md, test/assets/icon.test.ts
+
+The packaged bundle currently carries Electron's default icon, so a built
+`ck-connect-check.app` is indistinguishable from every other unbranded Electron
+app in Finder. The mark is the panel's own language: a ring whose sweep reads as
+consumed share, with the signal bars set inside it.
+
+`scripts/render-svg.mjs` is the shared rasteriser — it opens an offscreen
+Electron `BrowserWindow` at a given pixel size, loads an SVG, captures the page
+and writes a PNG. T-34 reuses it, so it takes the source path, the size and the
+destination as arguments and knows nothing about which artwork it is drawing.
+
+`scripts/make-icon.mjs` drives it across the ten sizes an `.iconset` needs, then
+calls `iconutil -c icns`. Both the PNGs and the `.icns` are committed: packaging
+must never depend on the rasteriser having been run first.
+
+### Acceptance
+
+- [x] `assets/icon.svg` exists, is a square `viewBox`, and contains no raster `<image>` element
+- [x] `npm run icon` writes all ten `.iconset` PNGs at 16, 32, 32, 64, 128, 256, 256, 512, 512 and 1024 pixels, each square, verified with `sips -g pixelWidth -g pixelHeight`
+- [x] `npm run icon` produces `assets/icon.icns`, confirmed to contain the 16, 32, 128, 256 and 512 point sizes — by converting the archive back out, not by `iconutil -l`, which does not exist. See Notes.
+- [x] Running `npm run icon` twice leaves every generated file byte-identical — the rasterisation is deterministic
+- [x] `package.json` sets `config.forge.packagerConfig.icon` to a path that resolves to an existing file on disk
+- [x] The forge `ignore` list matches `assets/` and `scripts/`, so neither reaches the asar
+- [x] `npm test` and `npm run lint` still exit 0
+
+### Tasks
+
+- [x] Failing `test/assets/icon.test.ts` — asserts the SVG's shape, the resolved `packagerConfig.icon` path, the ignore entries, and the generated file set and dimensions
+- [x] Write `assets/icon.svg` — the ring sweep, the bars inside it, on a rounded macOS-style squircle field
+- [x] `scripts/render-svg.mjs` — offscreen `BrowserWindow`, `capturePage`, PNG out, one size per invocation
+- [x] `scripts/make-icon.mjs` — the ten sizes into `assets/icon.iconset/`, then `iconutil -c icns`
+- [x] Add the `icon` script to `package.json` and point `packagerConfig.icon` at `assets/icon.icns`
+- [x] Extend the forge `ignore` list with `^/assets$` and `^/scripts$`
+- [x] Commit the generated `.iconset` PNGs and the `.icns`
+- [x] Verify by hand: `npm run package`, then confirm the built `.app` shows the mark in Finder — the Dock half does not apply. See Notes.
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+`iconutil -l` does not exist — the tool takes `--convert`, `--output` and
+nothing else. The acceptance criterion's intent is met the documented way
+instead: the test converts the built `.icns` back out to an `.iconset` in a
+temp directory and reads the point sizes off the filenames, which proves what
+the archive actually contains rather than what it was asked to contain.
+
+Three things about driving Electron as a rasteriser cost a run each, and are
+worth knowing before T-34 reuses `render-svg.mjs`:
+
+- **`await app.whenReady()` at the top level of an ESM main entry deadlocks.**
+  `ready` is emitted only once the main module has finished evaluating, so the
+  await waits on an event that is waiting on the await. `app.on("ready", …)`
+  is the form that works. Nothing is drawn and nothing is printed.
+- **Destroying the last window quits the app.** Each size is captured in its own
+  window, so the list empties between sizes and the default `window-all-closed`
+  handler ends the run after the first PNG — exit code 0, no error.
+  `configureDeterministicRendering()` now registers an empty handler.
+- **`--force-device-scale-factor=1` has to be a real command-line argument.**
+  Chromium resolves the display scale while initialising the screen, before the
+  main module is evaluated, so `app.commandLine.appendSwitch` is too late and a
+  Retina display silently returns captures at twice the size requested.
+
+`npm run icon`, and therefore `npm test`, launches a GUI Electron process. A
+sandboxed shell blocks that launch and the run hangs with no output.
+
+The manual step asked for the mark in the Dock during launch. It cannot be
+there: T-09 set `LSUIElement`, so this is a menu bar agent with no Dock
+presence at all. Finder, Get Info and Spotlight are where the mark shows, and
+that is where it was signed off. The packaged bundle's
+`Contents/Resources/electron.icns` is byte-identical to `assets/icon.icns`,
+and `CFBundleIconFile` names it.
+
+## T-34 Put the signal glyph next to the number in the menu bar
+
+T-34 · status: todo · size: M · needs: T-33, T-30 · files: assets/tray/bars-0.svg … bars-4.svg, assets/tray/\*.png, scripts/make-tray-icons.mjs, src/main/tray-icon.ts, src/main/tray.ts, src/main/main.ts, package.json, test/main/tray-icon.test.ts
+
+`main.ts:100` builds the tray from `nativeImage.createEmpty()`, so the menu bar
+shows a bare number with nothing identifying it. The glyph added here is the
+four bars, and it changes with the level the router reports — a tray image that
+looked the same at one bar as at five would be the decoration T-30 removed from
+the panel.
+
+Five artworks, one per filled count from none to four, rasterised at 16 and 32
+pixels through T-33's `render-svg.mjs`. They are template images: macOS recolours
+them for light, dark and selected menu bars, which is the only way a tray icon
+looks right in all three.
+
+`src/main/tray-icon.ts` owns the mapping from a snapshot's bar count to an image,
+loads the five once at startup, and is pure enough to test without a tray — the
+Electron call it needs is `nativeImage.createFromPath`, which the test stubs.
+
+### Acceptance
+
+- [ ] Five bar artworks exist and `npm run icon` rasterises each at 16 and 32 pixels
+- [ ] Every generated tray PNG is square and its filename ends `Template` or `Template@2x`, the macOS convention `nativeImage` recognises
+- [ ] `trayImageFor(bars)` answers a distinct image path for each of 0, 1, 2, 3 and 4 filled bars
+- [ ] `trayImageFor` clamps out-of-range input — a negative count and a count above the maximum both resolve to an existing path, never `undefined`
+- [ ] A snapshot whose `maxSignalBars` is 0 resolves to the empty-bars image and throws nothing
+- [ ] Every image handed to the tray has `setTemplateImage(true)` applied
+- [ ] The tray is set from a real image at startup rather than `nativeImage.createEmpty()`
+- [ ] The image is only reassigned when the bar count actually changes, not on every poll
+- [ ] The tray title still fits under 12 characters alongside the glyph
+- [ ] `npm test` and `npm run lint` still exit 0
+
+### Tasks
+
+- [ ] Failing `test/main/tray-icon.test.ts` — the mapping, the clamping, the template flag, the change-only reassignment
+- [ ] Draw `assets/tray/bars-0.svg` … `bars-4.svg`, sized for a 16-point menu bar
+- [ ] `scripts/make-tray-icons.mjs` over T-33's renderer, wired into the `icon` script
+- [ ] `src/main/tray-icon.ts` — load the five, map a bar count to one, apply the template flag
+- [ ] Replace `nativeImage.createEmpty()` in `main.ts` and set the image from the snapshot in `tray.ts`
+- [ ] Make sure the packaged app can find the images — they sit outside the asar, like the panel's assets in T-22
+- [ ] Verify by hand: watch the glyph in a light and a dark menu bar, and confirm it follows the signal level
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-35 Introduce the app to someone arriving from GitHub
+
+T-35 · status: todo · size: M · needs: T-33, T-34 · files: README.md, docs/media/panel.png, docs/media/menu-bar.png, docs/media/icon.png, test/readme.test.ts
+
+The repository is public and has no README, so a visitor sees a directory
+listing and nothing that says what the app is, which hardware it speaks to, or
+how to build it. This writes that page.
+
+It has to be honest about the narrow part: the router side was verified against
+one device, a Huawei B310s-22 on `21.333.01.00.00`, and the `#359#` USSD path is
+one carrier's menu. Both are stated as what was tested rather than as a
+compatibility claim.
+
+The test that accompanies it is a documentation-rot guard: every npm script the
+README tells a reader to run must exist in `package.json`, and every relative
+image and file path it links must resolve.
+
+### Acceptance
+
+- [ ] `README.md` exists and opens with the app name, the icon, and a one-sentence statement of what it does
+- [ ] It contains sections for what it does, the hardware it was tested against, install and build, how the plan cap and USSD sync work, the config file, and troubleshooting
+- [ ] Every relative link and image path in the README resolves to a file that exists
+- [ ] Every `npm run <script>` named in the README exists in `package.json`
+- [ ] The README names the tested device and software version, and says the `#359#` menu is one carrier's
+- [ ] It documents each `config.json` key the app reads, and states that the router password is in the Keychain and not in that file
+- [ ] A screenshot of the panel and one of the menu bar item are committed under `docs/media/` and referenced
+- [ ] `npm test` and `npm run lint` still exit 0
+
+### Tasks
+
+- [ ] Failing `test/readme.test.ts` — required headings, link resolution, script names against `package.json`
+- [ ] Capture the panel and menu bar screenshots from a running build into `docs/media/`
+- [ ] Export a PNG of the icon for the README header from T-33's iconset
+- [ ] Write the README against the sections the criteria name
+- [ ] Read the config keys straight from `src/config/` so the reference matches the code
+- [ ] Troubleshooting: router unreachable, wrong password and the five-failure lockout, a sync that names a router error code
+- [ ] Verify by hand: read it as a stranger would and follow the build steps on a clean checkout
+- [ ] Update the `files:` line above to reflect everything actually touched
