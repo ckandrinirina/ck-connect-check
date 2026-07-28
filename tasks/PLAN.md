@@ -26,11 +26,11 @@
 | T-22 | Make the packaged app find its own panel                                | done   | S    | T-21             |
 | T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21             |
 | T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23             |
-| T-25 | Measure the dial against the plan the user actually bought              | todo   | M    | T-21             |
-| T-26 | Make the menu bar agree with the panel                                  | todo   | S    | T-25             |
-| T-27 | Let the plan cap be typed into the panel                                | todo   | M    | T-25             |
-| T-28 | Sync by itself when there is nothing trustworthy to show                | todo   | S    | T-21             |
-| T-29 | Drop the reset countdown the carrier never agreed with                  | todo   | S    | T-25             |
+| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21             |
+| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25             |
+| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25             |
+| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21             |
+| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25             |
 
 ## T-01 Set the project up so tests can run
 
@@ -1039,7 +1039,7 @@ not: a retry of a login POST is a second login attempt, and five of those lock t
 
 ## T-25 Measure the dial against the plan the user actually bought
 
-T-25 · status: todo · size: M · needs: T-21 · files: src/domain/allowance.ts, src/main/view-model.ts, src/main/main.ts, src/config/defaults.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts, docs/ARCHITECTURE.md
+T-25 · status: done · size: M · needs: T-21 · files: src/domain/allowance.ts, src/main/view-model.ts, src/main/main.ts, src/config/defaults.ts, src/config/config.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts, test/config/config.test.ts, test/main/main.test.ts, test/main/popover.test.ts, test/renderer/popover.test.ts, docs/ARCHITECTURE.md
 
 The panel currently shows two numbers that describe different things and calls them one
 story: `10.17 Go used this month` is the router's month counter, while `143.82 Go left`
@@ -1060,34 +1060,59 @@ config field it persists in `main.ts` — is what produced the bug, so it goes w
 
 ### Acceptance
 
-- [ ] `readAllowanceNow` takes the configured cap and reports `usedBytes` as `cap − remainingBytes`, clamped at zero
-- [ ] `percentUsed` on the reading is measured against the configured cap, not against any anchored remaining
-- [ ] A reading with cap 150 Go and remaining 143.82 Go reports 6.18 Go used and 4% — the screenshot's case no longer reads 0%
-- [ ] A reading whose anchor is stale reports `percentUsed` as null, unchanged from today
-- [ ] `readAllowanceNow` with no cap configured reports `percentUsed` as null and still reports `remainingBytes`
-- [ ] `monthTotal` in the popover model is the anchored used figure, not `totalUsedBytes` of the router's counter
-- [ ] `monthDownload` and `monthUpload` still show the router's raw counters — they are the delta's evidence and stay visible
-- [ ] With an anchor present and no cap set, the dial is unavailable and the prompt reads as an instruction to set a limit
-- [ ] With no anchor at all, the dial is unavailable and the prompt asks for a sync rather than mentioning a limit
-- [ ] With a trustworthy anchor and a cap, the dial's `sweep` and `label` both derive from `cap − remainingNow`
-- [ ] `planTotalBytes()` is gone from `src/domain/allowance.ts`, and `AppConfig.planTotalBytes` is no longer written by `main.ts`
-- [ ] A config file still carrying a `planTotalBytes` key loads without error and ignores it
+- [x] `readAllowanceNow` takes the configured cap and reports `usedBytes` as `cap − remainingBytes`, clamped at zero
+- [x] `percentUsed` on the reading is measured against the configured cap, not against any anchored remaining
+- [x] A reading with cap 150 Go and remaining 143.82 Go reports 6.18 Go used and 4% — the screenshot's case no longer reads 0%
+- [x] A reading whose anchor is stale reports `percentUsed` as null, unchanged from today
+- [x] `readAllowanceNow` with no cap configured reports `percentUsed` as null and still reports `remainingBytes`
+- [x] `monthTotal` in the popover model is the anchored used figure, not `totalUsedBytes` of the router's counter
+- [x] `monthDownload` and `monthUpload` still show the router's raw counters — they are the delta's evidence and stay visible
+- [x] With an anchor present and no cap set, the dial is unavailable and the prompt reads as an instruction to set a limit
+- [x] With no anchor at all, the dial is unavailable and the prompt asks for a sync rather than mentioning a limit
+- [x] With a trustworthy anchor and a cap, the dial's `sweep` and `label` both derive from `cap − remainingNow`
+- [x] `planTotalBytes()` is gone from `src/domain/allowance.ts`, and `AppConfig.planTotalBytes` is no longer written by `main.ts`
+- [x] A config file still carrying a `planTotalBytes` key loads without error and ignores it
 
 ### Tasks
 
-- [ ] Failing test: `readAllowanceNow` with cap 150 Go and remaining 143.82 Go yields `usedBytes` 6.18 Go and `percentUsed` ~4; with no cap, `percentUsed` is null
-- [ ] Failing test: `buildPopoverModel` reports `monthTotal` as the anchored used figure while `monthDownload`/`monthUpload` stay the router's counters
-- [ ] Failing test: the three dial cases — no anchor, anchor without cap, anchor with cap — produce the sync prompt, the limit prompt, and a real percentage
-- [ ] Failing test: a config record containing `planTotalBytes` loads and the field is absent from the parsed config
-- [ ] Replace `AllowanceNowInput.planTotalBytes` with the configured cap, and add `usedBytes` to `AllowanceReading`
-- [ ] Delete `planTotalBytes()` and the high-water bookkeeping in `main.ts`; drop the config field and its reader
-- [ ] Rewrite `buildDial` to take the reading and the cap, and route `monthTotal` through the reading
-- [ ] Verify by hand: with the real anchor and a 150 Go cap, confirm the ring and the percentage agree with `cap − remaining`
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing test: `readAllowanceNow` with cap 150 Go and remaining 143.82 Go yields `usedBytes` 6.18 Go and `percentUsed` ~4; with no cap, `percentUsed` is null
+- [x] Failing test: `buildPopoverModel` reports `monthTotal` as the anchored used figure while `monthDownload`/`monthUpload` stay the router's counters
+- [x] Failing test: the three dial cases — no anchor, anchor without cap, anchor with cap — produce the sync prompt, the limit prompt, and a real percentage
+- [x] Failing test: a config record containing `planTotalBytes` loads and the field is absent from the parsed config
+- [x] Replace `AllowanceNowInput.planTotalBytes` with the configured cap, and add `usedBytes` to `AllowanceReading`
+- [x] Delete `planTotalBytes()` and the high-water bookkeeping in `main.ts`; drop the config field and its reader
+- [x] Rewrite `buildDial` to take the reading and the cap, and route `monthTotal` through the reading
+- [x] Verify by hand: with the real anchor and a 150 Go cap, confirm the ring and the percentage agree with `cap − remaining`
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+Two cases the criteria did not settle, decided during the build:
+
+- **A stale anchor with a cap set draws no dial** and prompts for a sync. It does
+  not fall back to the router's month counter, which is the arithmetic this task
+  exists to remove. The last honest remaining volume still shows in the allowance
+  section, marked stale.
+- **`monthTotal` reads as a dash** whenever either half is missing — no anchor, or
+  no cap. Download and upload keep showing the router's own counters beside it, so
+  the evidence behind the delta stays on screen.
+
+The dial's share can no longer pass 100%: consumption is `cap − remaining` and the
+carrier's remaining never goes below zero. The overrun tests — a 117% label, a
+"over at 25 GB" state — were removed rather than adapted, because the state they
+described is now unreachable. `usageState` still reports `"over"`, at exactly 100%.
+
+`buildDial` takes the cap and the warn threshold rather than the whole `AppConfig`;
+`emptyModel` has no config to hand it.
+
+Four test files beyond the two planned needed rewriting, since they built models
+through the router-counter path: `test/config/config.test.ts`,
+`test/main/main.test.ts`, `test/main/popover.test.ts` and
+`test/renderer/popover.test.ts`.
 
 ## T-26 Make the menu bar agree with the panel
 
-T-26 · status: todo · size: S · needs: T-25 · files: src/main/tray.ts, src/main/poller.ts, src/main/view-model.ts, test/main/tray.test.ts, test/main/poller.test.ts
+T-26 · status: done · size: S · needs: T-25 · files: src/main/tray.ts, src/main/poller.ts, src/main/view-model.ts, src/domain/allowance.ts, test/main/tray.test.ts, test/main/poller.test.ts, test/main/main.test.ts
 
 The tray title and the over-limit notification are computed in two more places that never
 learned about the anchor: `tray.ts:91` and `poller.ts:177` both divide the router's month
@@ -1100,26 +1125,45 @@ definition in this app, and it lives in `src/domain/`.
 
 ### Acceptance
 
-- [ ] The tray title's percentage is derived from the anchored reading whenever a trustworthy anchor and a cap are present
-- [ ] The tray falls back to its current dash — not to the router counter — when there is no anchor or no cap
-- [ ] The warn/over notification threshold is evaluated against the same figure as the tray title
-- [ ] Given one snapshot, config and anchor, the tray's percentage and the popover model's `progress.label` are asserted equal in a test
-- [ ] The tray title still stays under 12 characters, asserted by the existing test
-- [ ] `percentUsed(routerMonthBytes, planLimitBytes)` appears nowhere in `src/main/`
+- [x] The tray title's percentage is derived from the anchored reading whenever a trustworthy anchor and a cap are present
+- [x] The tray falls back to its current dash — not to the router counter — when there is no anchor or no cap
+- [x] The warn/over notification threshold is evaluated against the same figure as the tray title
+- [x] Given one snapshot, config and anchor, the tray's percentage and the popover model's `progress.label` are asserted equal in a test
+- [x] The tray title still stays under 12 characters, asserted by the existing test
+- [x] `percentUsed(routerMonthBytes, planLimitBytes)` appears nowhere in `src/main/`
 
 ### Tasks
 
-- [ ] Failing test: tray title and `buildPopoverModel(...).progress.label` agree for a trustworthy anchor with a cap
-- [ ] Failing test: with no anchor, the tray shows its no-value title rather than a router-counter percentage
-- [ ] Failing test: the notification threshold fires on the anchored percentage, not the router counter's
-- [ ] Extract the shared "percentage to show" derivation so tray, poller and view-model call one function
-- [ ] Rework `tray.ts` and `poller.ts` onto it
-- [ ] Verify by hand: read the menu bar title and the panel percentage together and confirm they match
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing test: tray title and `buildPopoverModel(...).progress.label` agree for a trustworthy anchor with a cap
+- [x] Failing test: with no anchor, the tray shows its no-value title rather than a router-counter percentage
+- [x] Failing test: the notification threshold fires on the anchored percentage, not the router counter's
+- [x] Extract the shared "percentage to show" derivation so tray, poller and view-model call one function
+- [x] Rework `tray.ts` and `poller.ts` onto it
+- [x] Verify by hand: read the menu bar title and the panel percentage together and confirm they match
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The criterion said the tray "falls back to its current dash" — there was no dash.
+It showed the router's month total (`5.8Go`) with no percentage, which is the
+figure this task removes. A dash was chosen, matching the panel, which now shows
+one for the total in exactly the same cases.
+
+The byte half of the title moved to the anchored consumption too, so `8Go · 40%`
+has both halves describing the same month. Pairing the router's counter with the
+plan's share would have rebuilt the original bug inside one string.
+
+The shared derivation is `readPlanUsage()` in `src/domain/allowance.ts`; tray,
+poller and view-model all call it and read `percentUsed` off the reading. A test
+asserts none of the three imports the raw `percentUsed`/`totalUsedBytes` helpers,
+since drifting back is exactly how the two figures diverged.
+
+`MAX_DISPLAYED_PERCENT` (999) is gone — the share cannot pass 100% any more, so
+the widest title is now `999Go ⚠ 100%`, still exactly 12 characters.
 
 ## T-27 Let the plan cap be typed into the panel
 
-T-27 · status: todo · size: M · needs: T-25 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/renderer/preload.cts, src/main/popover.ts, src/main/main.ts, src/main/view-model.ts, src/config/config.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-27 · status: done · size: M · needs: T-25 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/renderer/preload.cts, src/main/popover.ts, src/main/main.ts, src/main/view-model.ts, src/config/config.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts, test/config/config.test.ts, test/main/main.test.ts
 
 T-25 makes the dial depend on a cap that today can only be set by hand-editing
 `config.json` — a setting nobody will find, which would leave the dial permanently showing
@@ -1133,30 +1177,57 @@ typed and shows what comes back.
 
 ### Acceptance
 
-- [ ] The popover model carries the current cap as a display string and a flag for whether the editor should be open
-- [ ] With no cap set, the dial's prompt area offers the editor rather than a bare sentence
-- [ ] Submitting a value writes `planLimitBytes` to `config.json` as bytes, using the same decimal Go scale as the display
-- [ ] A submitted value of `150` stores 150 000 000 000 bytes
-- [ ] A blank, negative, zero or non-numeric entry is rejected without writing, and the panel says why
-- [ ] The dial re-renders from the next model push after a successful save, with no renderer-side arithmetic
-- [ ] An existing cap is pre-filled in the field when the editor is reopened
-- [ ] The saved cap survives a restart, asserted through `config.ts` round-tripping the value
+- [x] The popover model carries the current cap as a display string and a flag for whether the editor should be open
+- [x] With no cap set, the dial's prompt area offers the editor rather than a bare sentence
+- [x] Submitting a value writes `planLimitBytes` to `config.json` as bytes, using the same decimal Go scale as the display
+- [x] A submitted value of `150` stores 150 000 000 000 bytes
+- [x] A blank, negative, zero or non-numeric entry is rejected without writing, and the panel says why
+- [x] The dial re-renders from the next model push after a successful save, with no renderer-side arithmetic
+- [x] An existing cap is pre-filled in the field when the editor is reopened
+- [x] The saved cap survives a restart, asserted through `config.ts` round-tripping the value
 
 ### Tasks
 
-- [ ] Failing test: the view-model exposes the cap and the editor flag for the set and unset cases
-- [ ] Failing test: the renderer sends the typed value through the preload bridge and rejects blank, zero, negative and non-numeric input
-- [ ] Failing test: `config.ts` round-trips `planLimitBytes` written from a Go figure
-- [ ] Failing test: the value is converted at the boundary — `150` in, 150 000 000 000 bytes on disk
-- [ ] Add the cap field and its state to the popover model
-- [ ] Add the input, its styling and its submit handling to the renderer, following the password prompt's shape
-- [ ] Add the IPC channel through `preload.cts` and `main/popover.ts`, and the config write in `main.ts`
-- [ ] Verify by hand: set 150 in the panel, confirm the ring appears and `config.json` holds the bytes
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing test: the view-model exposes the cap and the editor flag for the set and unset cases
+- [x] Failing test: the renderer sends the typed value through the preload bridge and rejects blank, zero, negative and non-numeric input
+- [x] Failing test: `config.ts` round-trips `planLimitBytes` written from a Go figure
+- [x] Failing test: the value is converted at the boundary — `150` in, 150 000 000 000 bytes on disk
+- [x] Add the cap field and its state to the popover model
+- [x] Add the input, its styling and its submit handling to the renderer, following the password prompt's shape
+- [x] Add the IPC channel through `preload.cts` and `main/popover.ts`, and the config write in `main.ts`
+- [x] Verify by hand: set 150 in the panel, confirm the ring appears and `config.json` holds the bytes
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+Two decisions taken at the clarify gate:
+
+- **The field is always on the panel**, not an editor that opens when the cap is
+  unset. A plan that changes has to be correctable, and an editor with no visible
+  way to reopen is one nobody reopens. So there is no open/closed flag: the model
+  carries `needsValue`, true while no cap is stored, and the stylesheet picks the
+  empty field out in the accent colour.
+- **Every refusal is worded in the main process.** The renderer sends the typed
+  characters verbatim — even `""` and `"abc"` — and shows the sentence that comes
+  back. It costs an IPC round trip to display an error, and it keeps the rule that
+  the renderer decides no strings and works nothing out.
+
+`readPlanLimitEntry` and `planLimitInGigaoctets` live in `src/config/config.ts`
+beside the existing `gigabytesToBytes`, which already owned the Go↔bytes boundary
+and the constant. Zero is refused there even though `gigabytesToBytes` accepts it:
+it is a storable value but not a plan anyone bought.
+
+The field is filled from the model only when it does not have focus. A poll pushes
+a fresh model every two seconds while the panel is open, and writing the stored
+value over a half-typed one makes the field unusable — that case has its own test.
+
+The panel's height budget went from 340 to 350. The field and its error line sit in
+the column beside the dial rather than under it, so they cost nothing until that
+column outgrows the dial's own 104px; the extra 10px covers that.
 
 ## T-28 Sync by itself when there is nothing trustworthy to show
 
-T-28 · status: todo · size: S · needs: T-21 · files: src/main/main.ts, src/main/sync.ts, test/main/sync.test.ts, test/main/main.test.ts
+T-28 · status: done · size: S · needs: T-21 · files: src/main/main.ts, src/domain/allowance.ts, test/main/main.test.ts, test/domain/allowance.test.ts
 
 A first launch currently shows an empty allowance section until the user finds the Sync
 button, and a launch after an expiry shows a figure marked stale until they press it again.
@@ -1171,28 +1242,44 @@ is never retried on a timer.
 
 ### Acceptance
 
-- [ ] An automatic sync is started at launch when no anchor is stored
-- [ ] An automatic sync is started at launch when the stored anchor is expired or reset-invalidated
-- [ ] No automatic sync is started when the stored anchor is trustworthy
-- [ ] No automatic sync is started when no router password is saved — the panel shows the existing needs-password state instead
-- [ ] A failed automatic sync leaves the panel in the same failed state a manual press would, and issues no second attempt
-- [ ] The automatic sync waits for a first successful snapshot, so the anchor has a counter to pin against
-- [ ] A manual press during an automatic sync is refused by the existing busy guard rather than starting a second dialogue
+- [x] An automatic sync is started at launch when no anchor is stored
+- [x] An automatic sync is started at launch when the stored anchor is expired or reset-invalidated
+- [x] No automatic sync is started when the stored anchor is trustworthy
+- [x] No automatic sync is started when no router password is saved — the panel shows the existing needs-password state instead
+- [x] A failed automatic sync leaves the panel in the same failed state a manual press would, and issues no second attempt
+- [x] The automatic sync waits for a first successful snapshot, so the anchor has a counter to pin against
+- [x] A manual press during an automatic sync is refused by the existing busy guard rather than starting a second dialogue
 
 ### Tasks
 
-- [ ] Failing test: the four trigger cases — no anchor, expired, counter-reset, healthy — start a dialogue in the first three only
-- [ ] Failing test: with no saved password, no dialogue is started and the state is `needs-password`
-- [ ] Failing test: a failed automatic sync issues exactly one dialogue and leaves a failed state
-- [ ] Failing test: no dialogue is started before the first successful snapshot
-- [ ] Add the trigger decision as a pure predicate over the config and the snapshot, next to the staleness logic it mirrors
-- [ ] Wire it into the startup path in `main.ts`, reusing the existing sync runner and its busy guard
-- [ ] Verify by hand: clear the anchor from `config.json`, launch, and confirm one dialogue runs and the panel fills in
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing test: the four trigger cases — no anchor, expired, counter-reset, healthy — start a dialogue in the first three only
+- [x] Failing test: with no saved password, no dialogue is started and the state is `needs-password`
+- [x] Failing test: a failed automatic sync issues exactly one dialogue and leaves a failed state
+- [x] Failing test: no dialogue is started before the first successful snapshot
+- [x] Add the trigger decision as a pure predicate over the config and the snapshot, next to the staleness logic it mirrors
+- [x] Wire it into the startup path in `main.ts`, reusing the existing sync runner and its busy guard
+- [x] Verify by hand: clear the anchor from `config.json`, launch, and confirm one dialogue runs and the panel fills in
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The predicate is `needsAutomaticSync()` in `src/domain/allowance.ts`, beside the
+staleness logic it reads. `src/main/sync.ts` did not need to change at all: with no
+password stored, `sync.start()` already asks for one and dials nothing, which is
+exactly what the criteria call for — so the automatic path reuses it unchanged,
+busy guard included.
+
+The decision is taken once, on the first reading that arrives, and the flag is set
+whichever way it went. That is what makes a failed automatic sync final: there is
+no later poll, timer or reconnection that can reach it a second time.
+
+The existing test "never starts a dialogue from the poll timer" asserted the old
+contract — zero dialogues, ever. It now asserts one at launch and none after, which
+is the distinction that actually protects the account.
 
 ## T-29 Drop the reset countdown the carrier never agreed with
 
-T-29 · status: todo · size: S · needs: T-25 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/domain/quota.ts, test/main/view-model.test.ts, test/domain/quota.test.ts
+T-29 · status: done · size: S · needs: T-25 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/domain/quota.ts, test/main/view-model.test.ts, test/domain/quota.test.ts, test/renderer/popover.test.ts
 
 "Resets in 27 days" is computed from the router's `StartDay`, which `docs/ARCHITECTURE.md`
 already records as disagreeing with the device's own `MonthLastClearTime` and which the
@@ -1206,20 +1293,35 @@ different change from removing a tile from a panel.
 
 ### Acceptance
 
-- [ ] `PopoverModel` no longer has a `daysUntilReset` field
-- [ ] The "Resets in" term and value are gone from `index.html`, and the renderer no longer looks for that field
-- [ ] The remaining tile row still renders correctly with an odd number of tiles, asserted against the rendered DOM
-- [ ] "Valid for" is unchanged and still sourced from the allowance reading
-- [ ] `daysUntilReset` and `nextResetDate` are removed from `src/domain/quota.ts` along with their tests
-- [ ] `startDay` is still parsed by `src/hilink/parse.ts` and still present on the snapshot type
-- [ ] `npm run lint` reports no unused imports or dead exports after the removal
+- [x] `PopoverModel` no longer has a `daysUntilReset` field
+- [x] The "Resets in" term and value are gone from `index.html`, and the renderer no longer looks for that field
+- [x] The remaining tile row still renders correctly with an odd number of tiles, asserted against the rendered DOM
+- [x] "Valid for" is unchanged and still sourced from the allowance reading
+- [x] `daysUntilReset` and `nextResetDate` are removed from `src/domain/quota.ts` along with their tests
+- [x] `startDay` is still parsed by `src/hilink/parse.ts` and still present on the snapshot type
+- [x] `npm run lint` reports no unused imports or dead exports after the removal
 
 ### Tasks
 
-- [ ] Failing test: the popover model's keys no longer include `daysUntilReset`
-- [ ] Failing test: the rendered panel contains no "Resets in" term and the tile row layout holds
-- [ ] Remove the field from the model, the markup and the renderer's field map
-- [ ] Remove `daysUntilReset` and `nextResetDate` from `quota.ts` and delete their tests
-- [ ] Adjust `popover.css` if the tile row needs it after losing a cell
-- [ ] Verify by hand: open the panel and confirm the layout reads correctly without the tile
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing test: the popover model's keys no longer include `daysUntilReset`
+- [x] Failing test: the rendered panel contains no "Resets in" term and the tile row layout holds
+- [x] Remove the field from the model, the markup and the renderer's field map
+- [x] Remove `daysUntilReset` and `nextResetDate` from `quota.ts` and delete their tests
+- [x] Adjust `popover.css` if the tile row needs it after losing a cell
+- [x] Verify by hand: open the panel and confirm the layout reads correctly without the tile
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+`popover.css` needed no change. Five tiles in the two-column grid leave "Valid for"
+alone on the last row's left cell, which matches the width of every tile above it;
+stretching it across both columns would have made the odd one out look deliberate
+in the wrong way. Confirmed by eye at the manual gate.
+
+Removing the two exported functions also stranded three private helpers —
+`daysInMonth`, `resetDayOf`, `resetAfter` — and the `MILLISECONDS_PER_DAY`
+constant. All four went with them, and `quota.ts` no longer takes a `Clock` for
+anything.
+
+The view-model's "single day in the singular" test moved onto the allowance's
+"Valid for" figure, which is now `formatDays`' only caller.
