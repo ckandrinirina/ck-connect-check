@@ -32,6 +32,7 @@ import {
   type Clock,
   type UsageState,
 } from "../domain/quota.js";
+import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { SnapshotResult } from "../hilink/client.js";
 import type { RouterSnapshot } from "../hilink/types.js";
@@ -133,6 +134,34 @@ export interface PopoverAllowance {
   note: string;
   /** True when the whole allowance has been consumed. */
   exhausted: boolean;
+  /**
+   * How old the figure is, e.g. `"Synced 7h 46m ago"`, or a dash before the
+   * first sync. Measured against the injected clock rather than stored, so
+   * every poll push ages it without a sync being needed.
+   */
+  syncedAgo: string;
+}
+
+/**
+ * The Sync button and the line beneath it.
+ *
+ * The renderer decides nothing here either: whether the button is pressable,
+ * what it says, and what the line under it reads are all settled in this file,
+ * so the panel cannot disagree with the dialogue it is reporting on.
+ */
+export interface PopoverSync {
+  /** True while a dialogue is in flight — the button refuses a second press. */
+  busy: boolean;
+  /** True when the anchored figure has gone stale, so Sync is called out. */
+  attention: boolean;
+  /** True when the panel must ask for the router password before dialling. */
+  needsPassword: boolean;
+  /** What the button says: `"Sync"`, or `"Syncing…"`. */
+  buttonLabel: string;
+  /** The button's accessible name — a sentence, not a word. */
+  buttonDescription: string;
+  /** The line under the button: progress, failure, or empty when idle. */
+  status: string;
 }
 
 /** Everything the popover displays, already spelled the way it appears on screen. */
@@ -157,6 +186,8 @@ export interface PopoverModel {
   history: PopoverHistory;
   /** The carrier's exact remaining volume, carried forward from the last sync. */
   allowance: PopoverAllowance;
+  /** The Sync button's state, and whatever the last press has to say. */
+  sync: PopoverSync;
 }
 
 export interface PopoverInput {
@@ -170,6 +201,8 @@ export interface PopoverInput {
    * building the model twice shows the same history twice.
    */
   history?: readonly RateSample[];
+  /** Where the Sync button has got to. Idle when the caller has no sync running. */
+  sync?: SyncState;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -275,11 +308,19 @@ function noAllowance(): PopoverAllowance {
     stale: false,
     note: "",
     exhausted: false,
+    syncedAgo: NO_VALUE,
   };
 }
 
-function buildAllowance(reading: AllowanceReading | null): PopoverAllowance {
+function buildAllowance(
+  reading: AllowanceReading | null,
+  now: Date,
+): PopoverAllowance {
   if (reading === null) return noAllowance();
+
+  const age = formatDuration(
+    (now.getTime() - reading.syncedAt.getTime()) / MILLISECONDS_PER_SECOND,
+  );
 
   return {
     available: true,
@@ -294,7 +335,62 @@ function buildAllowance(reading: AllowanceReading | null): PopoverAllowance {
     stale: !reading.trustworthy,
     note: staleNote(reading),
     exhausted: reading.exhausted,
+    syncedAgo: `Synced ${age} ago`,
   };
+}
+
+/**
+ * The one place a failure reason becomes a sentence. Every reason gets its own
+ * wording: "the sync failed" tells the user nothing they can act on, whereas a
+ * busy channel, a wrong password and a locked account each call for something
+ * different.
+ */
+const SYNC_FAILURE_TEXT: Record<SyncFailure, string> = {
+  busy: "The router is busy with another request — try again in a moment.",
+  timeout: "The carrier did not answer in time — try again.",
+  "wrong-credential": "The router refused that password.",
+  "account-locked":
+    "The router has locked the account after too many refused sign-ins.",
+  "no-password": "No password saved for the router yet.",
+  "keychain-unavailable":
+    "The Keychain is unavailable, so nothing was stored — try again.",
+  unreachable: "The router is not answering.",
+  session: "The router dropped the session — try again.",
+  error: "The router refused the request.",
+  "not-logged-in": "The router wants a sign-in before it will dial.",
+  unreadable: "The carrier replied with something we could not read.",
+};
+
+/** What the panel says while a dialogue is on a given step. */
+const SYNC_STEP_TEXT: Record<SyncStep, string> = {
+  "signing-in": "Signing in to the router…",
+  "asking-carrier": "Asking the carrier what is left…",
+};
+
+/** The button and its status line, for one sync state. */
+function buildSync(state: SyncState, attention: boolean): PopoverSync {
+  const busy = state.phase === "running";
+
+  return {
+    busy,
+    attention,
+    needsPassword: state.phase === "needs-password",
+    buttonLabel: busy ? "Syncing…" : "Sync",
+    buttonDescription: busy
+      ? "Syncing the allowance with the carrier"
+      : "Sync the allowance with the carrier",
+    status: syncStatus(state),
+  };
+}
+
+function syncStatus(state: SyncState): string {
+  if (state.phase === "running") return SYNC_STEP_TEXT[state.step];
+  if (state.phase === "needs-password") {
+    return SYNC_FAILURE_TEXT["no-password"];
+  }
+  if (state.phase === "failed") return SYNC_FAILURE_TEXT[state.reason];
+
+  return "";
 }
 
 function buildHistory(samples: readonly RateSample[]): PopoverHistory {
@@ -310,6 +406,7 @@ function emptyModel(
   freshness: PopoverFreshness,
   warnThresholdPercent: number,
   history: PopoverHistory,
+  sync: PopoverSync,
 ): PopoverModel {
   return {
     monthDownload: NO_VALUE,
@@ -325,6 +422,7 @@ function emptyModel(
     freshness,
     history,
     allowance: noAllowance(),
+    sync,
   };
 }
 
@@ -389,13 +487,21 @@ function buildDial(
 export function buildPopoverModel(input: PopoverInput): PopoverModel {
   const { result, lastReading, config } = input;
   const clock = input.clock ?? systemClock;
+  const now = clock.now();
+  const syncState = input.sync ?? { phase: "idle" };
   const live = result !== null && result.online;
   const snapshot = live ? result.snapshot : lastReading?.snapshot;
-  const freshness = buildFreshness(!live, lastReading, clock.now());
+  const freshness = buildFreshness(!live, lastReading, now);
   const history = buildHistory(input.history ?? []);
 
   if (snapshot === undefined) {
-    return emptyModel(freshness, config.warnThresholdPercent, history);
+    return emptyModel(
+      freshness,
+      config.warnThresholdPercent,
+      history,
+      // Nothing has been read, so nothing can be stale: no attention to call.
+      buildSync(syncState, false),
+    );
   }
 
   const { month, traffic, status, carrier, billing } = snapshot;
@@ -420,6 +526,9 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     daysUntilReset: formatDays(daysUntilReset(billing.startDay, clock)),
     freshness,
     history,
-    allowance: buildAllowance(allowance),
+    allowance: buildAllowance(allowance, now),
+    // An anchor that can no longer carry the arithmetic is the one thing the
+    // button has to call out: the figure on screen is the last honest one.
+    sync: buildSync(syncState, allowance !== null && !allowance.trustworthy),
   };
 }

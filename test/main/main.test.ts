@@ -45,6 +45,10 @@ vi.mock("electron", () => {
     Menu: { buildFromTemplate: electron.buildFromTemplate },
     Tray,
     nativeImage: { createEmpty: vi.fn(() => ({ empty: true })) },
+    // The panel's own channels are exercised in `test/main/popover.test.ts`;
+    // here they only have to exist, for the tests that let `main.ts` build a
+    // real popover.
+    ipcMain: { on: vi.fn(), removeListener: vi.fn() },
   };
 });
 

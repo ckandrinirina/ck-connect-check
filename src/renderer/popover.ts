@@ -18,10 +18,27 @@
 
 import type { PopoverModel } from "../main/view-model.js";
 
+/**
+ * The two messages the page can send. Exposed by `src/renderer/preload.cts`,
+ * which is the only thing in the renderer that can reach the main process —
+ * the page itself has no `require`, no network and no Electron.
+ *
+ * Optional because the page has to render without it: under jsdom, and for a
+ * split second before the bridge is installed, the panel is a display and
+ * nothing more.
+ */
+export interface PopoverBridge {
+  /** Ask the main process to run the carrier dialogue. */
+  sync(): void;
+  /** Hand the entered credential to the Keychain, through the main process. */
+  savePassword(credential: { username: string; password: string }): void;
+}
+
 declare global {
   interface Window {
     /** Called by `src/main/popover.ts` after every poll, and once on load. */
     applyPopoverModel(model: PopoverModel): void;
+    popoverBridge?: PopoverBridge;
   }
 }
 
@@ -40,6 +57,13 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     daysUntilReset: model.daysUntilReset,
     percent: model.progress.label,
     prompt: model.progress.prompt,
+    allowanceRemaining: model.allowance.remaining,
+    allowancePlan: model.allowance.planLabel,
+    allowanceExpires: model.allowance.expires,
+    allowanceDaysLeft: model.allowance.daysUntilExpiry,
+    allowanceSynced: model.allowance.syncedAgo,
+    allowanceNote: model.allowance.note,
+    syncStatus: model.sync.status,
   };
 }
 
@@ -209,7 +233,96 @@ function drawSpark(
   sparkLine(host).setAttribute("points", enough ? pointsFor(values, peak) : "");
 }
 
+function syncButton(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("[data-sync]");
+}
+
+function passwordPrompt(): HTMLFormElement | null {
+  return document.querySelector<HTMLFormElement>("[data-password-prompt]");
+}
+
+function fieldValue(selector: string): string {
+  return document.querySelector<HTMLInputElement>(selector)?.value ?? "";
+}
+
+/**
+ * Hangs the two listeners off the page, once each.
+ *
+ * Called on every model rather than once at load: the panel is rendered from a
+ * static page, but a test — and a reload — replaces that page wholesale, and a
+ * listener on a discarded element is a button that silently stops working. The
+ * marker on the element itself is what keeps a second call from doubling up,
+ * so one press stays one message however many models have arrived since.
+ */
+function bindControls(): void {
+  const button = syncButton();
+
+  if (button !== null && button.dataset["bound"] !== "true") {
+    button.dataset["bound"] = "true";
+    button.addEventListener("click", () => {
+      // Belt and braces: a disabled button dispatches no click, and a dialogue
+      // already running would refuse a second one anyway.
+      if (!button.disabled) {
+        window.popoverBridge?.sync();
+      }
+    });
+  }
+
+  const prompt = passwordPrompt();
+
+  if (prompt !== null && prompt.dataset["bound"] !== "true") {
+    prompt.dataset["bound"] = "true";
+    prompt.addEventListener("submit", (event) => {
+      // The page must never navigate: it is the app, not a document.
+      event.preventDefault();
+
+      const password = document.querySelector<HTMLInputElement>(
+        "[data-password-password]",
+      );
+
+      window.popoverBridge?.savePassword({
+        username: fieldValue("[data-password-username]").trim(),
+        password: password?.value ?? "",
+      });
+
+      // The plaintext leaves the page as soon as it has been handed over; it is
+      // never logged, and it is not left sitting in a field either.
+      if (password !== null) {
+        password.value = "";
+      }
+    });
+  }
+}
+
+/** Puts the sync state on the button, the prompt and the root element. */
+function applySync(model: PopoverModel): void {
+  const { sync, allowance } = model;
+  const button = syncButton();
+
+  if (button !== null) {
+    button.disabled = sync.busy;
+    button.textContent = sync.buttonLabel;
+    button.setAttribute("aria-label", sync.buttonDescription);
+    button.setAttribute("aria-busy", String(sync.busy));
+    button.dataset["attention"] = String(sync.attention);
+  }
+
+  const prompt = passwordPrompt();
+
+  if (prompt !== null) {
+    prompt.hidden = !sync.needsPassword;
+  }
+
+  document.documentElement.dataset["allowance"] = allowance.available
+    ? allowance.stale
+      ? "stale"
+      : "fresh"
+    : "none";
+}
+
 window.applyPopoverModel = (model: PopoverModel): void => {
+  bindControls();
+
   const fields = fieldsOf(model);
 
   document.querySelectorAll<HTMLElement>("[data-field]").forEach((node) => {
@@ -245,4 +358,11 @@ window.applyPopoverModel = (model: PopoverModel): void => {
 
   drawSpark("download", download, peak);
   drawSpark("upload", upload, peak);
+
+  applySync(model);
 };
+
+// The page is static and the script is deferred, so the controls exist by now.
+// Binding here as well as on every model means the button works even if the
+// first push is late.
+bindControls();

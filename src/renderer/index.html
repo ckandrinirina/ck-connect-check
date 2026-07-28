@@ -50,6 +50,30 @@
     </section>
 
     <!--
+      The carrier's own figure, carried forward from the last sync. It is a
+      different question from the dial above it — that is a share of the plan,
+      this is the exact volume the carrier said was left — so it gets its own
+      strip rather than another number in the grid.
+    -->
+    <section class="allowance">
+      <div class="allowance-figure">
+        <span class="allowance-remaining" data-field="allowanceRemaining"
+          >—</span
+        >
+        <span class="caption">left with the carrier</span>
+      </div>
+      <div class="allowance-meta">
+        <span class="allowance-plan" data-field="allowancePlan">—</span>
+        <span class="allowance-synced" data-field="allowanceSynced">—</span>
+      </div>
+      <!--
+        The re-sync marker. It is text, never a colour on its own: a figure that
+        can no longer be trusted has to say so out loud.
+      -->
+      <p class="allowance-note" data-field="allowanceNote"></p>
+    </section>
+
+    <!--
       Live throughput, as a shape rather than a figure. Each row is a label, the
       sparkline the last few minutes drew, and the current rate as text. The two
       SVGs are built by `popover.ts` for the same reason the dial's is: they
@@ -85,6 +109,59 @@
         <dt>Resets in</dt>
         <dd data-field="daysUntilReset">—</dd>
       </div>
+      <div class="stat">
+        <dt>Expires</dt>
+        <dd data-field="allowanceExpires">—</dd>
+      </div>
+      <div class="stat">
+        <dt>Valid for</dt>
+        <dd data-field="allowanceDaysLeft">—</dd>
+      </div>
     </dl>
+
+    <!--
+      The one control on the panel. USSD takes tens of seconds and holds
+      carrier-side state, so it is only ever driven from here — never by the
+      poll timer. The status line is a live region: the step names arriving in
+      it are the proof the panel has not frozen.
+    -->
+    <footer class="sync">
+      <button
+        class="sync-button"
+        type="button"
+        data-sync
+        data-attention="false"
+        aria-label="Sync the allowance with the carrier"
+      >
+        Sync
+      </button>
+      <p class="sync-status" data-field="syncStatus" role="status"></p>
+    </footer>
+
+    <!--
+      Shown only when nothing is stored: the password goes straight to the
+      Keychain through the main process, and is never written to the config.
+    -->
+    <form class="password-prompt" data-password-prompt hidden>
+      <label class="password-label" for="router-username">Router user</label>
+      <input
+        id="router-username"
+        class="password-input"
+        data-password-username
+        type="text"
+        value="admin"
+        autocomplete="username"
+        spellcheck="false"
+      />
+      <label class="password-label" for="router-password">Password</label>
+      <input
+        id="router-password"
+        class="password-input"
+        data-password-password
+        type="password"
+        autocomplete="current-password"
+      />
+      <button class="password-submit" type="submit">Save and sync</button>
+    </form>
   </body>
 </html>
