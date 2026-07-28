@@ -4,9 +4,11 @@
  *
  * There is no arithmetic here, no formatting and no knowledge of bytes — every
  * value arrives from `buildPopoverModel` already spelled the way it appears on
- * screen. The one exception is the dial's sweep, which arrives as a share of a
- * ring and is multiplied by that ring's circumference: geometry is the
- * renderer's own business, because only the renderer knows how big the ring is.
+ * screen. The exceptions are geometry: the dial's sweep, which is multiplied by
+ * that ring's circumference, and the sparklines' samples, which are plotted
+ * against the model's own peak. Only the renderer knows how big its shapes are,
+ * so only the renderer can turn a share into a coordinate — but the scale still
+ * comes from the model rather than being derived from the series here.
  *
  * The main process pushes updates by calling {@link Window.applyPopoverModel}.
  * One global entry point rather than an IPC channel: there is a single message,
@@ -105,6 +107,108 @@ function drawArc(arc: SVGCircleElement, sweep: number): void {
   );
 }
 
+/**
+ * A sparkline's geometry, in the user units of its `viewBox`. The box is
+ * stretched to whatever width and height the stylesheet gives it
+ * (`preserveAspectRatio="none"`), so these numbers are a coordinate space
+ * rather than a size — only their ratios matter.
+ */
+const SPARK_WIDTH = 100;
+const SPARK_HEIGHT = 24;
+/** Half a stroke's worth of room, so a crest and a trough are not clipped. */
+const SPARK_INSET = 2;
+const SPARK_BASELINE = SPARK_HEIGHT - SPARK_INSET;
+const SPARK_SPAN = SPARK_BASELINE - SPARK_INSET;
+
+/**
+ * Two samples is the least a line can be drawn from. One sample is a dot and
+ * none is nothing, and both would read as a chart that had gone wrong rather
+ * than as a chart with nothing in it yet.
+ */
+const SPARK_MINIMUM_SAMPLES = 2;
+
+/**
+ * A sparkline's polyline, built once and reused — the same bargain the dial
+ * makes. Rewriting `points` on the existing line is also what keeps a second
+ * model from stacking its samples on top of the first one's.
+ */
+function sparkLine(host: HTMLElement): SVGPolylineElement {
+  const existing = host.querySelector<SVGPolylineElement>("[data-line]");
+
+  if (existing !== null) {
+    return existing;
+  }
+
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+
+  svg.setAttribute("class", "spark-chart");
+  svg.setAttribute("viewBox", `0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`);
+  // The box is a coordinate space, not a shape: let it stretch to the panel.
+  svg.setAttribute("preserveAspectRatio", "none");
+  // The rate beside the line says what the line says; the shapes are decoration.
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const base = document.createElementNS(SVG_NAMESPACE, "line");
+
+  base.setAttribute("class", "spark-base");
+  base.setAttribute("x1", "0");
+  base.setAttribute("x2", String(SPARK_WIDTH));
+  base.setAttribute("y1", String(SPARK_BASELINE));
+  base.setAttribute("y2", String(SPARK_BASELINE));
+
+  const line = document.createElementNS(SVG_NAMESPACE, "polyline");
+
+  line.setAttribute("class", "spark-line");
+  line.setAttribute("data-line", "");
+  // The stroke keeps its width however far the box is stretched sideways.
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+
+  svg.append(base, line);
+  host.append(svg);
+
+  return line;
+}
+
+/**
+ * Plots `values` against `peak` — the scale both series share, so a download
+ * and an upload drawn side by side are the same height for the same rate.
+ *
+ * Two divisions, neither of which can be by zero: the caller only plots two
+ * samples or more, and a peak of zero is an idle connection rather than a
+ * scale, so every sample sits on the baseline and the line reads flat.
+ */
+function pointsFor(values: readonly number[], peak: number): string {
+  const last = values.length - 1;
+
+  return values
+    .map((value, index) => {
+      const x = (index / last) * SPARK_WIDTH;
+      const y = SPARK_BASELINE - (peak > 0 ? value / peak : 0) * SPARK_SPAN;
+
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+/** Redraws one sparkline, or empties it when there is not yet a line to draw. */
+function drawSpark(
+  series: "download" | "upload",
+  values: readonly number[],
+  peak: number,
+): void {
+  const host = document.querySelector<HTMLElement>(`[data-spark="${series}"]`);
+
+  if (host === null) {
+    return;
+  }
+
+  const enough = values.length >= SPARK_MINIMUM_SAMPLES;
+
+  host.dataset["empty"] = String(!enough);
+  sparkLine(host).setAttribute("points", enough ? pointsFor(values, peak) : "");
+}
+
 window.applyPopoverModel = (model: PopoverModel): void => {
   const fields = fieldsOf(model);
 
@@ -132,4 +236,13 @@ window.applyPopoverModel = (model: PopoverModel): void => {
     dial.setAttribute("aria-label", model.progress.description);
     drawArc(dialArc(dial), model.progress.sweep);
   }
+
+  // One peak for both lines: the point of stacking them is that their heights
+  // mean the same thing. An offline poll records no sample, so the history is
+  // unchanged and the shape stays exactly as it was — dimmed by `data-stale`,
+  // never blanked.
+  const { download, upload, peak } = model.history;
+
+  drawSpark("download", download, peak);
+  drawSpark("upload", upload, peak);
 };

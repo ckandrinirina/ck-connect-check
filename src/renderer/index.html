@@ -49,6 +49,25 @@
       </div>
     </section>
 
+    <!--
+      Live throughput, as a shape rather than a figure. Each row is a label, the
+      sparkline the last few minutes drew, and the current rate as text. The two
+      SVGs are built by `popover.ts` for the same reason the dial's is: they
+      exist to be redrawn, so they belong where the redrawing happens.
+    -->
+    <section class="rates">
+      <div class="rate">
+        <span class="rate-label">Down</span>
+        <span class="spark" data-spark="download" data-empty="true"></span>
+        <span class="rate-value" data-field="downloadRate">—</span>
+      </div>
+      <div class="rate">
+        <span class="rate-label">Up</span>
+        <span class="spark" data-spark="upload" data-empty="true"></span>
+        <span class="rate-value" data-field="uploadRate">—</span>
+      </div>
+    </section>
+
     <dl class="stats">
       <div class="stat">
         <dt>Downloaded</dt>
@@ -57,14 +76,6 @@
       <div class="stat">
         <dt>Uploaded</dt>
         <dd data-field="monthUpload">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Down now</dt>
-        <dd data-field="downloadRate">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Up now</dt>
-        <dd data-field="uploadRate">—</dd>
       </div>
       <div class="stat">
         <dt>Devices</dt>
