@@ -10,12 +10,12 @@
     <title>Data usage</title>
     <link rel="stylesheet" href="./popover.css" />
     <!--
-      The markup and the stylesheet are read straight from `src/renderer/`, but
-      `tsc` emits the script to `dist/`, so this is the one path that has to
-      reach across. Change it to `./popover.js` if the build ever copies the
-      page and its stylesheet into `dist/renderer/` beside the compiled script.
+      The build copies this page and its stylesheet into `dist/renderer/`, beside
+      the script `tsc` emits there, and that copy is what the app loads. Every
+      path here is therefore relative to the page itself — a walk up out of
+      `dist/` would leave the bundle, which ships `dist/` and nothing else.
     -->
-    <script type="module" src="../../dist/renderer/popover.js"></script>
+    <script type="module" src="./popover.js"></script>
   </head>
   <body>
     <header class="header">

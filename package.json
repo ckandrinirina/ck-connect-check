@@ -11,7 +11,7 @@
   "scripts": {
     "start": "npm run build && electron .",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html src/renderer/popover.css dist/renderer/",
     "lint": "eslint .",
     "package": "npm run build && electron-forge package"
   },

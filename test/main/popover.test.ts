@@ -416,6 +416,19 @@ describe("createPopover — the panel talking back", () => {
     popover.destroy();
   });
 
+  it("loads the page from the build output, not from the source tree", () => {
+    // A packaged app carries `dist/` and drops `src/`, so a default that walks
+    // into `src/renderer/` starts fine and then cannot find its own page.
+    const popover = createPopover();
+    popover.show(TRAY_BOUNDS);
+
+    const loaded = lastWindow().loadFile.mock.calls[0]?.[0] as string;
+    expect(loaded).toContain("dist/renderer/index.html");
+    expect(loaded).not.toContain("src/renderer");
+
+    popover.destroy();
+  });
+
   it("reports a Sync press from its own page exactly once", () => {
     const onSync = vi.fn();
     const popover = createPopover({ htmlPath: "/tmp/index.html", onSync });

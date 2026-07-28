@@ -32,21 +32,23 @@ export const POPOVER_SYNC_CHANNEL = "popover:sync";
 export const POPOVER_SAVE_PASSWORD_CHANNEL = "popover:save-password";
 
 /**
- * The page lives beside its stylesheet in `src/renderer/`, and this module sits
- * two directories deep whether it is running from `src/` under Vitest or from
- * `dist/` after a build — so the same relative walk finds it either way.
+ * The page, as the build leaves it. `npm run build` copies it and its stylesheet
+ * into `dist/renderer/`, and that copy is the one the app loads: a packaged
+ * bundle carries `dist/` and drops `src/`, so a path into the source tree would
+ * start fine and then fail to find its own page.
+ *
+ * This module sits two directories deep whether it runs from `src/` under Vitest
+ * or from `dist/` after a build, so the same walk reaches `dist/` either way.
  */
 function defaultHtmlPath(): string {
   return fileURLToPath(
-    new URL("../../src/renderer/index.html", import.meta.url),
+    new URL("../../dist/renderer/index.html", import.meta.url),
   );
 }
 
 /**
- * The compiled preload script. `tsc` emits it beside the compiled renderer, so
- * unlike the page — which is read straight from `src/` — this path always points
- * into `dist/`; the same relative walk finds it from `src/main/` under Vitest
- * and from `dist/main/` after a build.
+ * The compiled preload script, found by the same walk as the page above — `tsc`
+ * emits it into `dist/renderer/` beside the compiled renderer.
  */
 function defaultPreloadPath(): string {
   return fileURLToPath(

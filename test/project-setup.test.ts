@@ -1,7 +1,10 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 function readRepoFile(relativePath: string): string {
   return readFileSync(
@@ -35,6 +38,40 @@ describe("build config", () => {
     };
     expect(buildConfig.compilerOptions?.noEmit).toBe(false);
     expect(buildConfig.compilerOptions?.outDir).toBe("dist");
+  });
+});
+
+/**
+ * The packaged app ships `dist/` and nothing else — electron-forge's `ignore`
+ * list drops `^/src$` from the bundle. So the page and its stylesheet have to be
+ * part of the build output, not read out of the source tree at runtime.
+ *
+ * This runs the real build rather than inspecting a `dist/` somebody else left
+ * behind: an assertion about build output that a stale directory can satisfy
+ * proves nothing.
+ */
+describe("build output", () => {
+  beforeAll(() => {
+    execFileSync("npm", ["run", "build"], { cwd: repoRoot, stdio: "pipe" });
+  }, 180_000);
+
+  it.each(["index.html", "popover.css"])(
+    "copies %s into dist/renderer/",
+    (asset) => {
+      expect(
+        existsSync(new URL(`../dist/renderer/${asset}`, import.meta.url)),
+      ).toBe(true);
+    },
+  );
+
+  it("leaves the built page pointing at its own directory", () => {
+    // The copy lands beside the compiled script, so the page's own references
+    // have to be relative to itself — a walk out to `../../dist/` would resolve
+    // outside the bundle once the page no longer lives in `src/`.
+    const page = readRepoFile("dist/renderer/index.html");
+    expect(page).toContain('src="./popover.js"');
+    expect(page).toContain('href="./popover.css"');
+    expect(page).not.toContain("../../dist/");
   });
 });
 
