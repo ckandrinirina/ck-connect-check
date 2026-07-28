@@ -427,12 +427,14 @@ describe("the popover page", () => {
   });
 
   it("keeps the dial and the sparklines small enough for the panel to fit its window", () => {
-    // No layout engine, so this is a budget rather than a measurement. The
-    // room everything other than the dial and the two sparklines takes:
-    // 30px body padding, ~30px header, 22px of vertical padding around the
-    // dial, ~25px of rule and spacing above the sparklines, and ~113px for the
-    // two-row stats grid with its own rule. Anything that outgrows what is
-    // left pushes the panel past POPOVER_HEIGHT and raises a scrollbar.
+    // No layout engine, so this is a budget rather than a measurement: the
+    // room everything other than the dial and the two sparklines takes, which
+    // is 30px of body padding, ~29px of header and its rule, 22px of padding
+    // around the dial, 23px of rule and spacing above the sparklines and ~105px
+    // for the two-row stats grid with its own rule — call it 210px, rounded up
+    // to 220 so a stray line of text does not silently overrun. Anything that
+    // outgrows what is left pushes the panel past POPOVER_HEIGHT and raises a
+    // scrollbar, which a popover has no room for.
     const CHROME_HEIGHT = 220;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];

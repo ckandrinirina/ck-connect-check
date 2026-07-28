@@ -19,6 +19,12 @@
   --dial-size: 104px;
   --dial: var(--accent);
 
+  /* One sparkline's height. Two of them stack, so this is the whole panel's
+     tightest budget — see the height test in `test/renderer/popover.test.ts`. */
+  --spark-height: 22px;
+  --down: var(--accent);
+  --up: #30d158;
+
   color-scheme: light dark;
 }
 
@@ -33,6 +39,7 @@
     --warn: #ffa726;
     --over: #ff6961;
     --track: rgb(255 255 255 / 12%);
+    --up: #32d74b;
   }
 }
 
@@ -219,12 +226,87 @@ body {
   display: none;
 }
 
+/* Live throughput: a label, the shape of the last few minutes, and the current
+   figure. Two rows on one shared scale, so their heights are comparable. */
+.rates {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.rate {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rate-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.rate-value {
+  min-width: 64px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.spark {
+  display: block;
+  height: var(--spark-height);
+}
+
+/* The viewBox is stretched to this box, so the chart is as wide as the row. */
+.spark-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spark-base {
+  stroke: var(--track);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-line {
+  fill: none;
+  stroke: var(--down);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Two colours so a glance tells the directions apart without reading labels. */
+[data-spark="upload"] .spark-line {
+  stroke: var(--up);
+}
+
+/* Too little history to draw a line: the baseline is left as an empty axis,
+   which reads as "nothing yet" rather than as a chart that failed. */
+.spark[data-empty="true"] .spark-line {
+  display: none;
+}
+
+/* Offline keeps the last known shape, drawn as the rest of the panel is when
+   the figures are no longer current: still there, no longer live. */
+:root[data-stale="true"] .spark-line {
+  stroke: var(--muted);
+  opacity: 65%;
+}
+
+/* The same rule and rhythm as `.rates` above it: with two ruled sections now
+   stacked under the dial, an uneven gap between them reads as a mistake. */
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 16px;
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
 }
 
