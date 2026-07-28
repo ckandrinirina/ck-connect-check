@@ -333,4 +333,34 @@ describe("startMenuBarApp — polling while the panel is open", () => {
 
     app.stop();
   });
+
+  it("leaves the active interval when the panel closes itself", async () => {
+    const popover = recordingPopover();
+    const client = countingClient();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client,
+      popover,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    clickTray();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.calls).toBe(2);
+
+    // A click anywhere else dismisses the panel from inside, without the tray
+    // ever hearing about it.
+    popover.hide();
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS);
+    const settled = client.calls;
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_MS * 3);
+    expect(client.calls).toBe(settled);
+
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(client.calls).toBe(settled + 1);
+
+    app.stop();
+  });
 });

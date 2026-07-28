@@ -7,18 +7,20 @@
  * wrong, because an unattended menu bar app must not die on a bad file.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 import {
   BYTES_PER_GIGABYTE,
+  DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
   DEFAULT_HOST,
   DEFAULT_POLL_INTERVAL_SECONDS,
   DEFAULT_WARN_THRESHOLD_PERCENT,
+  MIN_ACTIVE_POLL_INTERVAL_SECONDS,
   MIN_POLL_INTERVAL_SECONDS,
   defaultConfig,
-} from './defaults.js';
-import type { AppConfig } from './defaults.js';
+} from "./defaults.js";
+import type { AppConfig } from "./defaults.js";
 
 /** A config value the app refuses to run on. `field` names the culprit. */
 export class ConfigValidationError extends Error {
@@ -26,7 +28,7 @@ export class ConfigValidationError extends Error {
 
   constructor(field: string, detail: string) {
     super(`${field}: ${detail}`);
-    this.name = 'ConfigValidationError';
+    this.name = "ConfigValidationError";
     this.field = field;
   }
 }
@@ -42,17 +44,20 @@ const MAX_WARN_THRESHOLD_PERCENT = 100;
 const MIN_WARN_THRESHOLD_PERCENT = 1;
 
 function requireNumber(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new ConfigValidationError(field, `expected a number, got ${formatValue(value)}`);
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new ConfigValidationError(
+      field,
+      `expected a number, got ${formatValue(value)}`,
+    );
   }
 
   return value;
 }
 
 function formatValue(value: unknown): string {
-  if (typeof value === 'number') return String(value);
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (value === null) return 'null';
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null) return "null";
 
   return typeof value;
 }
@@ -62,10 +67,10 @@ function formatValue(value: unknown): string {
  * that is not a plain non-negative number.
  */
 export function gigabytesToBytes(gigabytes: number): number {
-  const value = requireNumber(gigabytes, 'planLimitGb');
+  const value = requireNumber(gigabytes, "planLimitGb");
 
   if (value < 0) {
-    throw new ConfigValidationError('planLimitGb', 'must not be negative');
+    throw new ConfigValidationError("planLimitGb", "must not be negative");
   }
 
   return Math.round(value * BYTES_PER_GIGABYTE);
@@ -74,21 +79,25 @@ export function gigabytesToBytes(gigabytes: number): number {
 function readHost(raw: Record<string, unknown>): string {
   if (raw.host === undefined) return DEFAULT_HOST;
 
-  if (typeof raw.host !== 'string' || raw.host.trim() === '') {
-    throw new ConfigValidationError('host', 'must be a non-empty router address');
+  if (typeof raw.host !== "string" || raw.host.trim() === "") {
+    throw new ConfigValidationError(
+      "host",
+      "must be a non-empty router address",
+    );
   }
 
   return raw.host.trim();
 }
 
 function readPollInterval(raw: Record<string, unknown>): number {
-  if (raw.pollIntervalSeconds === undefined) return DEFAULT_POLL_INTERVAL_SECONDS;
+  if (raw.pollIntervalSeconds === undefined)
+    return DEFAULT_POLL_INTERVAL_SECONDS;
 
-  const seconds = requireNumber(raw.pollIntervalSeconds, 'pollIntervalSeconds');
+  const seconds = requireNumber(raw.pollIntervalSeconds, "pollIntervalSeconds");
 
   if (seconds < MIN_POLL_INTERVAL_SECONDS) {
     throw new ConfigValidationError(
-      'pollIntervalSeconds',
+      "pollIntervalSeconds",
       `must be at least ${MIN_POLL_INTERVAL_SECONDS} seconds so the router is not hammered`,
     );
   }
@@ -96,14 +105,56 @@ function readPollInterval(raw: Record<string, unknown>): number {
   return seconds;
 }
 
-function readWarnThreshold(raw: Record<string, unknown>): number {
-  if (raw.warnThresholdPercent === undefined) return DEFAULT_WARN_THRESHOLD_PERCENT;
+/**
+ * The interval used while the panel is open. Bounded below by its own floor
+ * rather than {@link MIN_POLL_INTERVAL_SECONDS} — being faster than the idle
+ * interval is the entire point — and above by the idle interval itself, since
+ * an "active" interval slower than the resting one is a typo, not a setting.
+ */
+function readActivePollInterval(
+  raw: Record<string, unknown>,
+  idleSeconds: number,
+): number {
+  if (raw.activePollIntervalSeconds === undefined)
+    return DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS;
 
-  const percent = requireNumber(raw.warnThresholdPercent, 'warnThresholdPercent');
+  const seconds = requireNumber(
+    raw.activePollIntervalSeconds,
+    "activePollIntervalSeconds",
+  );
 
-  if (percent < MIN_WARN_THRESHOLD_PERCENT || percent > MAX_WARN_THRESHOLD_PERCENT) {
+  if (seconds < MIN_ACTIVE_POLL_INTERVAL_SECONDS) {
     throw new ConfigValidationError(
-      'warnThresholdPercent',
+      "activePollIntervalSeconds",
+      `must be at least ${MIN_ACTIVE_POLL_INTERVAL_SECONDS} second so the router is not hammered`,
+    );
+  }
+
+  if (seconds > idleSeconds) {
+    throw new ConfigValidationError(
+      "activePollIntervalSeconds",
+      `must not be slower than pollIntervalSeconds (${idleSeconds} seconds)`,
+    );
+  }
+
+  return seconds;
+}
+
+function readWarnThreshold(raw: Record<string, unknown>): number {
+  if (raw.warnThresholdPercent === undefined)
+    return DEFAULT_WARN_THRESHOLD_PERCENT;
+
+  const percent = requireNumber(
+    raw.warnThresholdPercent,
+    "warnThresholdPercent",
+  );
+
+  if (
+    percent < MIN_WARN_THRESHOLD_PERCENT ||
+    percent > MAX_WARN_THRESHOLD_PERCENT
+  ) {
+    throw new ConfigValidationError(
+      "warnThresholdPercent",
       `must be between ${MIN_WARN_THRESHOLD_PERCENT} and ${MAX_WARN_THRESHOLD_PERCENT}`,
     );
   }
@@ -112,12 +163,13 @@ function readWarnThreshold(raw: Record<string, unknown>): number {
 }
 
 function readPlanLimit(raw: Record<string, unknown>): number | null {
-  if (raw.planLimitBytes === undefined || raw.planLimitBytes === null) return null;
+  if (raw.planLimitBytes === undefined || raw.planLimitBytes === null)
+    return null;
 
-  const bytes = requireNumber(raw.planLimitBytes, 'planLimitBytes');
+  const bytes = requireNumber(raw.planLimitBytes, "planLimitBytes");
 
   if (bytes < 0) {
-    throw new ConfigValidationError('planLimitBytes', 'must not be negative');
+    throw new ConfigValidationError("planLimitBytes", "must not be negative");
   }
 
   return bytes;
@@ -129,22 +181,30 @@ function readPlanLimit(raw: Record<string, unknown>): number | null {
  * that is present but wrong.
  */
 export function parseConfig(raw: unknown): AppConfig {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new ConfigValidationError('config', `expected a JSON object, got ${formatValue(raw)}`);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new ConfigValidationError(
+      "config",
+      `expected a JSON object, got ${formatValue(raw)}`,
+    );
   }
 
   const record = raw as Record<string, unknown>;
+  const pollIntervalSeconds = readPollInterval(record);
 
   return {
     host: readHost(record),
-    pollIntervalSeconds: readPollInterval(record),
+    pollIntervalSeconds,
+    activePollIntervalSeconds: readActivePollInterval(
+      record,
+      pollIntervalSeconds,
+    ),
     warnThresholdPercent: readWarnThreshold(record),
     planLimitBytes: readPlanLimit(record),
   };
 }
 
 function isMissingFile(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT';
+  return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
 }
 
 function messageOf(error: unknown): string {
@@ -160,17 +220,23 @@ export function loadConfig(path: string): LoadedConfig {
   let text: string;
 
   try {
-    text = readFileSync(path, 'utf8');
+    text = readFileSync(path, "utf8");
   } catch (error) {
     if (isMissingFile(error)) return { config: defaultConfig() };
 
-    return { config: defaultConfig(), problem: `could not read ${path}: ${messageOf(error)}` };
+    return {
+      config: defaultConfig(),
+      problem: `could not read ${path}: ${messageOf(error)}`,
+    };
   }
 
   try {
     return { config: parseConfig(JSON.parse(text)) };
   } catch (error) {
-    return { config: defaultConfig(), problem: `ignoring ${path}: ${messageOf(error)}` };
+    return {
+      config: defaultConfig(),
+      problem: `ignoring ${path}: ${messageOf(error)}`,
+    };
   }
 }
 
@@ -182,5 +248,5 @@ export function saveConfig(path: string, config: AppConfig): void {
   const validated = parseConfig(config);
 
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(validated, null, 2)}\n`, 'utf8');
+  writeFileSync(path, `${JSON.stringify(validated, null, 2)}\n`, "utf8");
 }

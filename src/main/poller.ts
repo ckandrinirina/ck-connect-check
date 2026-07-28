@@ -8,6 +8,11 @@
  *
  * Each poll schedules the next one after it settles, rather than firing on a
  * fixed interval, so a slow reply can never stack two requests on the router.
+ *
+ * There are two cadences rather than one. A menu bar title is happy with a
+ * reading every half minute; the rate readout behind it is not, so
+ * {@link UsagePoller.setActive} switches to a much shorter interval for as long
+ * as the panel is open.
  */
 
 import type { AppConfig } from "../config/defaults.js";
@@ -60,6 +65,8 @@ export class UsagePoller {
   #consecutiveFailures = 0;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #running = false;
+  /** True while the panel is on screen — the only thing that picks the interval. */
+  #active = false;
 
   constructor(options: UsagePollerOptions) {
     this.#client = options.client;
@@ -90,6 +97,42 @@ export class UsagePoller {
 
     this.#running = true;
     void this.#tick();
+  }
+
+  /**
+   * Switches between the two cadences: the active one while the detail panel is
+   * open, the resting one while it is shut.
+   *
+   * Opening also reads immediately, because a panel that appears showing
+   * figures up to a full idle interval old is not showing live data. The
+   * pending timer is dropped in favour of that read, and only a timer — never a
+   * request already on the wire — is ever replaced, so two polls still cannot
+   * overlap. Repeating the same mode is a no-op, so a second open costs no
+   * extra request.
+   */
+  setActive(active: boolean): void {
+    if (active === this.#active) {
+      return;
+    }
+
+    this.#active = active;
+
+    if (!this.#running || this.#timer === null) {
+      // Nothing is scheduled: either the poller is stopped, or a poll is in
+      // flight and will schedule the next one at the new interval itself.
+      return;
+    }
+
+    clearTimeout(this.#timer);
+    this.#timer = null;
+
+    if (active) {
+      void this.#tick();
+
+      return;
+    }
+
+    this.#scheduleNext();
   }
 
   /** Cancels the pending poll; a poll already in flight publishes nothing. */
@@ -167,9 +210,13 @@ export class UsagePoller {
   }
 
   #scheduleNext(): void {
+    const seconds = this.#active
+      ? this.#config.activePollIntervalSeconds
+      : this.#config.pollIntervalSeconds;
+
     this.#timer = setTimeout(() => {
       this.#timer = null;
       void this.#tick();
-    }, this.#config.pollIntervalSeconds * 1_000);
+    }, seconds * 1_000);
   }
 }
