@@ -51,6 +51,30 @@ export interface BillingCycle {
   warnThresholdPercent: number;
 }
 
+/** One numbered line of a carrier USSD menu, e.g. `00 Page precedente`. */
+export interface UssdOption {
+  /** Kept as written — `00` is not the number 0. */
+  digit: string;
+  label: string;
+}
+
+/** `/api/ussd/get` — one carrier reply: its whole text, plus any menu it offers. */
+export interface UssdReply {
+  /** The `<content>` verbatim, trimmed. Carries the option lines too. */
+  text: string;
+  /** Empty when the reply offers no menu — never null. */
+  options: UssdOption[];
+}
+
+/** The exact remaining volume a `#359#` dialogue ends on. */
+export interface Allowance {
+  /** Offer name the carrier states, e.g. `NET MONTH 200 000`. */
+  planLabel: string;
+  remainingBytes: number;
+  /** Null when the reply states a volume but no expiry date. */
+  expiresAt: Date | null;
+}
+
 /** One complete reading of the router, assembled by the client in T-03. */
 export interface RouterSnapshot {
   month: MonthStatistics;

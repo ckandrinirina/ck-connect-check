@@ -162,7 +162,7 @@ function scan(xml: string, endpoint: string): FlatXml {
  * Read a reply into its fields, translating an `<error>` root into a typed API
  * error so a stale session is never mistaken for malformed XML.
  */
-function readReply(xml: string, endpoint: string): Map<string, string> {
+export function readReply(xml: string, endpoint: string): Map<string, string> {
   const { root, fields } = scan(xml, endpoint);
   if (root === 'error') {
     const code = fields.get('code');
@@ -174,7 +174,7 @@ function readReply(xml: string, endpoint: string): Map<string, string> {
   return fields;
 }
 
-function requireText(fields: Map<string, string>, key: string, endpoint: string): string {
+export function requireText(fields: Map<string, string>, key: string, endpoint: string): string {
   const value = fields.get(key);
   if (value === undefined) {
     throw new HilinkParseError(endpoint, `missing field <${key}>`);
@@ -190,7 +190,8 @@ function requireNumber(fields: Map<string, string>, key: string, endpoint: strin
   return Number(value);
 }
 
-const UNIT_BYTES: Record<string, number> = {
+/** The decimal scale carriers bill on — the single source for every unit conversion. */
+export const UNIT_BYTES: Record<string, number> = {
   B: 1,
   KB: 1_000,
   MB: 1_000_000,
