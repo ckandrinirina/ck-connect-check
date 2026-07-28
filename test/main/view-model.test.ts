@@ -661,6 +661,47 @@ describe("buildPopoverModel — why a sync failed", () => {
     expect(new Set(statuses).size).toBe(REASONS.length);
   });
 
+  it("names the code the router refused the request with", () => {
+    const status = statusFor({
+      kind: "error",
+      source: "api",
+      code: 111019,
+      endpoint: "/api/ussd/get",
+    });
+
+    expect(status).toMatch(/111019/);
+    expect(status).toMatch(/\/api\/ussd\/get/);
+  });
+
+  it("names the HTTP status when the router answered no XML", () => {
+    const status = statusFor({
+      kind: "error",
+      source: "http",
+      code: 404,
+      endpoint: "/api/ussd/status",
+    });
+
+    expect(status).toMatch(/404/);
+    expect(status).toMatch(/\/api\/ussd\/status/);
+  });
+
+  it("tells two different codes apart rather than saying the same thing twice", () => {
+    const first = statusFor({
+      kind: "error",
+      source: "api",
+      code: 111019,
+      endpoint: "/api/ussd/get",
+    });
+    const second = statusFor({
+      kind: "error",
+      source: "api",
+      code: 100005,
+      endpoint: "/api/ussd/get",
+    });
+
+    expect(first).not.toBe(second);
+  });
+
   it("leaves the button pressable so the user can try again", () => {
     const model = buildPopoverModel({
       result: online(),

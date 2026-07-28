@@ -510,7 +510,15 @@ describe("readAllowance release", () => {
       baseUrl: stub.baseUrl,
     }).readAllowance({ clock: fakeClock() });
 
-    expect(result).toEqual({ ok: false, reason: "error" });
+    expect(result).toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "api",
+        code: 100005,
+        endpoint: USSD_GET,
+      },
+    });
     expect(stub.hits(USSD_RELEASE)).toBe(1);
   });
 
@@ -648,7 +656,15 @@ describe("readAllowance missing login", () => {
     }).readAllowance({ clock: fakeClock() });
 
     expect(first).toEqual({ ok: false, reason: "not-logged-in" });
-    expect(second).toEqual({ ok: false, reason: "error" });
+    expect(second).toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "api",
+        code: 100005,
+        endpoint: USSD_SEND,
+      },
+    });
   });
 
   it("stops the dialogue at the refused send rather than carrying on", async () => {
@@ -664,6 +680,89 @@ describe("readAllowance missing login", () => {
 
     expect(stub.hits(USSD_SEND)).toBe(1);
     expect(stub.hits(USSD_GET)).toBe(0);
+  });
+});
+
+describe("readAllowance names what the router refused with", () => {
+  it("carries the code and the endpoint when the send is refused", async () => {
+    const stub = await startStubRouter(
+      carrier({
+        sendAnswer: (n) => (n === 1 ? errorReply(111019) : undefined),
+      }),
+    );
+
+    const result = await new RouterClient({
+      baseUrl: stub.baseUrl,
+    }).readAllowance({ clock: fakeClock() });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "api",
+        code: 111019,
+        endpoint: USSD_SEND,
+      },
+    });
+  });
+
+  it("names /api/ussd/get for a refusal arriving mid-dialogue", async () => {
+    const stub = await startStubRouter(
+      carrier({ replies: [CREDIT, errorReply(100005)] }),
+    );
+
+    const result = await new RouterClient({
+      baseUrl: stub.baseUrl,
+    }).readAllowance({ clock: fakeClock() });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "api",
+        code: 100005,
+        endpoint: USSD_GET,
+      },
+    });
+  });
+
+  it("names the HTTP status when the router answers no XML at all", async () => {
+    const stub = await startStubRouter();
+
+    const result = await new RouterClient({
+      baseUrl: stub.baseUrl,
+    }).readAllowance({ clock: fakeClock() });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "http",
+        code: 404,
+        endpoint: USSD_STATUS,
+      },
+    });
+  });
+
+  it("leaves the two codes it already understands as their own reasons", async () => {
+    const missingLogin = await startStubRouter(
+      carrier({
+        sendAnswer: (n) => (n === 1 ? errorReply(100003) : undefined),
+      }),
+    );
+    const staleSession = await startStubRouter(
+      carrier({ status: errorReply(125002) }),
+    );
+
+    const refused = await new RouterClient({
+      baseUrl: missingLogin.baseUrl,
+    }).readAllowance({ clock: fakeClock() });
+    const expired = await new RouterClient({
+      baseUrl: staleSession.baseUrl,
+    }).readAllowance({ clock: fakeClock() });
+
+    expect(refused).toEqual({ ok: false, reason: "not-logged-in" });
+    expect(expired).toEqual({ ok: false, reason: "session" });
   });
 });
 
@@ -683,7 +782,15 @@ describe("readAllowance never throws", () => {
       new RouterClient({ baseUrl: stub.baseUrl }).readAllowance({
         clock: fakeClock(),
       }),
-    ).resolves.toEqual({ ok: false, reason: "error" });
+    ).resolves.toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "http",
+        code: 404,
+        endpoint: USSD_STATUS,
+      },
+    });
   });
 
   it("resolves to a reason when the status reply itself is malformed", async () => {

@@ -16,6 +16,7 @@ import { anchorFrom, planTotalBytes } from "../domain/allowance.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import { RouterClient, type SnapshotResult } from "../hilink/client.js";
+import { isRouterRefusal } from "../hilink/ussd.js";
 import type { Allowance } from "../hilink/types.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import { UsagePoller, type SnapshotSource } from "./poller.js";
@@ -156,6 +157,14 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     credentials,
     onAllowance: anchorAllowance,
     onStateChange: (state) => {
+      if (state.phase === "failed" && isRouterRefusal(state.reason)) {
+        // The panel dismisses itself the moment the user clicks elsewhere, so
+        // the log is the only place this number survives long enough to report.
+        console.warn(
+          `sync refused: ${state.reason.source} code ${String(state.reason.code)} at ${state.reason.endpoint}`,
+        );
+      }
+
       syncState = state;
       refreshPopover();
     },

@@ -34,6 +34,7 @@ import { SessionStore, sessionHeaders } from "./session.js";
 import {
   UssdDialogue,
   type AllowanceResult,
+  type UssdFailure,
   type UssdOptions,
 } from "./ussd.js";
 import type {
@@ -60,7 +61,12 @@ const POST_CONTENT_TYPE = "application/x-www-form-urlencoded; charset=UTF-8";
 export type { OfflineReason } from "./types.js";
 
 /** The USSD dialogue's own result and failure vocabulary — see `./ussd.ts`. */
-export type { AllowanceResult, UssdFailure, UssdOptions } from "./ussd.js";
+export type {
+  AllowanceResult,
+  RouterRefusal,
+  UssdFailure,
+  UssdOptions,
+} from "./ussd.js";
 
 export type SnapshotResult =
   | { online: true; snapshot: RouterSnapshot }
@@ -91,9 +97,15 @@ class RouterTimeoutError extends Error {
 
 /** The router answered, but not with a reply we can use. */
 class RouterHttpError extends Error {
-  constructor(url: string, status: number) {
+  /** The path, not the full URL — the host is noise in anything user-facing. */
+  readonly endpoint: string;
+  readonly status: number;
+
+  constructor(url: string, endpoint: string, status: number) {
     super(`${url}: router answered HTTP ${status}`);
     this.name = "RouterHttpError";
+    this.endpoint = endpoint;
+    this.status = status;
   }
 }
 
@@ -119,6 +131,24 @@ function offlineReason(
   return "error";
 }
 
+/**
+ * The same mapping for the USSD dialogue, except that an HTTP refusal keeps its
+ * status and its path. A dialogue is driven by an explicit press and reports
+ * back to the user, so "it was refused" has to be able to say what by.
+ */
+function ussdTransportFailure(error: unknown): UssdFailure {
+  if (error instanceof RouterHttpError) {
+    return {
+      kind: "error",
+      source: "http",
+      code: error.status,
+      endpoint: error.endpoint,
+    };
+  }
+
+  return offlineReason(error, "session");
+}
+
 export class RouterClient {
   readonly #baseUrl: string;
   readonly #timeoutMs: number;
@@ -142,7 +172,7 @@ export class RouterClient {
             body,
           )
         ).body,
-      transportReason: (error) => offlineReason(error, "session"),
+      transportReason: ussdTransportFailure,
     });
   }
 
@@ -271,7 +301,7 @@ export class RouterClient {
     try {
       const response = await fetch(url, { ...init, signal: controller.signal });
       if (!response.ok) {
-        throw new RouterHttpError(url, response.status);
+        throw new RouterHttpError(url, path, response.status);
       }
       return { body: await response.text(), headers: response.headers };
     } catch (error) {

@@ -73,13 +73,42 @@ export const systemUssdClock: UssdClock = {
 };
 
 /**
+ * The router refused with a number instead of a reply, and the number is not one
+ * we have a name for. It is carried whole rather than flattened to `"error"`
+ * because that number and the endpoint that produced it are the only evidence of
+ * *why* it refused — a bare "the request was refused" leaves nothing to act on
+ * and nothing to report.
+ */
+export interface RouterRefusal {
+  kind: "error";
+  /** `api` for the router's own error code, `http` for a plain HTTP status. */
+  source: "api" | "http";
+  /** The number itself, e.g. `111019` or `404`. */
+  code: number;
+  /** The endpoint that produced it, e.g. `/api/ussd/get`. */
+  endpoint: string;
+}
+
+/**
+ * True for the one failure that carries a number, narrowing it as it goes. Every
+ * other member of {@link UssdFailure} — and of the wider `SyncFailure` built on
+ * it — is a word, so being an object is the whole test.
+ */
+export function isRouterRefusal(
+  reason: UssdFailure | string,
+): reason is RouterRefusal {
+  return typeof reason !== "string";
+}
+
+/**
  * Why a dialogue produced no allowance. `busy` and `not-logged-in` are the two
  * the user can act on — wait, or sign in; `unreadable` means the carrier
- * answered something we could not turn into a figure. The rest mirror
+ * answered something we could not turn into a figure. A refusal we have no name
+ * for arrives as a {@link RouterRefusal} rather than as a word. The rest mirror
  * {@link OfflineReason}, so the panel renders them the way it already does.
  */
 export type UssdFailure =
-  OfflineReason | "busy" | "not-logged-in" | "unreadable";
+  OfflineReason | "busy" | "not-logged-in" | "unreadable" | RouterRefusal;
 
 export type AllowanceResult =
   { ok: true; allowance: Allowance } | { ok: false; reason: UssdFailure };
@@ -168,8 +197,8 @@ export function chooseDigit(reply: UssdReply, step: UssdMenuStep): string {
 export interface UssdTransport {
   get(path: string): Promise<string>;
   post(path: string, body: string): Promise<string>;
-  /** How the transport's own failures — unreachable, timed out — map to a reason. */
-  transportReason(error: unknown): OfflineReason;
+  /** How the transport's own failures — unreachable, timed out, refused — map to a reason. */
+  transportReason(error: unknown): UssdFailure;
 }
 
 /** Per-call timing. Every field has a default; tests override all three. */
@@ -188,7 +217,7 @@ interface Timing {
 
 function failureReason(
   error: unknown,
-  transportReason: (error: unknown) => OfflineReason,
+  transportReason: (error: unknown) => UssdFailure,
 ): UssdFailure {
   if (error instanceof UssdTimeoutError) {
     return "timeout";
@@ -197,7 +226,16 @@ function failureReason(
     if (error.code === NO_RIGHTS_CODE) {
       return "not-logged-in";
     }
-    return error.isStaleSession ? "session" : "error";
+    if (error.isStaleSession) {
+      return "session";
+    }
+    // Every other code is one nobody has named yet, so it travels as itself.
+    return {
+      kind: "error",
+      source: "api",
+      code: error.code,
+      endpoint: error.endpoint,
+    };
   }
   if (error instanceof HilinkParseError) {
     return "unreadable";

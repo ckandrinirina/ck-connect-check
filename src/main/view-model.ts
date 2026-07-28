@@ -32,9 +32,10 @@ import {
   type Clock,
   type UsageState,
 } from "../domain/quota.js";
+import { isRouterRefusal } from "../hilink/ussd.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
-import type { SnapshotResult } from "../hilink/client.js";
+import type { RouterRefusal, SnapshotResult } from "../hilink/client.js";
 import type { RouterSnapshot } from "../hilink/types.js";
 
 /**
@@ -345,7 +346,7 @@ function buildAllowance(
  * busy channel, a wrong password and a locked account each call for something
  * different.
  */
-const SYNC_FAILURE_TEXT: Record<SyncFailure, string> = {
+const SYNC_FAILURE_TEXT: Record<Exclude<SyncFailure, RouterRefusal>, string> = {
   busy: "The router is busy with another request — try again in a moment.",
   timeout: "The carrier did not answer in time — try again.",
   "wrong-credential": "The router refused that password.",
@@ -360,6 +361,24 @@ const SYNC_FAILURE_TEXT: Record<SyncFailure, string> = {
   "not-logged-in": "The router wants a sign-in before it will dial.",
   unreadable: "The carrier replied with something we could not read.",
 };
+
+/**
+ * A refusal that carries a number says the number. It is the one thing on this
+ * panel the user cannot work out for themselves and the only thing that makes
+ * the failure reportable, so it is spelled out rather than summarised away.
+ */
+function refusalText(refusal: RouterRefusal): string {
+  return refusal.source === "http"
+    ? `The router answered HTTP ${String(refusal.code)} at ${refusal.endpoint}.`
+    : `The router refused the request (code ${String(refusal.code)} at ${refusal.endpoint}).`;
+}
+
+/** One failure, whether it arrived as a word or as a number. */
+function failureText(reason: SyncFailure): string {
+  return isRouterRefusal(reason)
+    ? refusalText(reason)
+    : SYNC_FAILURE_TEXT[reason];
+}
 
 /** What the panel says while a dialogue is on a given step. */
 const SYNC_STEP_TEXT: Record<SyncStep, string> = {
@@ -388,7 +407,7 @@ function syncStatus(state: SyncState): string {
   if (state.phase === "needs-password") {
     return SYNC_FAILURE_TEXT["no-password"];
   }
-  if (state.phase === "failed") return SYNC_FAILURE_TEXT[state.reason];
+  if (state.phase === "failed") return failureText(state.reason);
 
   return "";
 }

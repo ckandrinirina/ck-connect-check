@@ -581,4 +581,60 @@ describe("startMenuBarApp — the allowance sync", () => {
 
     app.stop();
   });
+
+  it("logs the code and the endpoint the router refused with", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: countingClient(),
+      popover: recordingPopover(),
+      allowance: allowanceRouter(() =>
+        Promise.resolve({
+          ok: false,
+          reason: {
+            kind: "error",
+            source: "api",
+            code: 111019,
+            endpoint: "/api/ussd/get",
+          },
+        }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    // The panel can be dismissed; the log is what survives to be read back.
+    const logged = warn.mock.calls.map(([line]) => String(line)).join("\n");
+
+    expect(logged).toMatch(/111019/);
+    expect(logged).toMatch(/\/api\/ussd\/get/);
+
+    warn.mockRestore();
+    app.stop();
+  });
+
+  it("logs nothing about a code for a failure that carries none", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const app = startMenuBarApp({
+      configPath: scratchConfig(),
+      client: countingClient(),
+      popover: recordingPopover(),
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: false, reason: "busy" }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    const logged = warn.mock.calls.map(([line]) => String(line)).join("\n");
+
+    expect(logged).not.toMatch(/code/i);
+
+    warn.mockRestore();
+    app.stop();
+  });
 });

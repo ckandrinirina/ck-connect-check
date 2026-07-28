@@ -24,6 +24,7 @@
 | T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05       |
 | T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20       |
 | T-22 | Make the packaged app find its own panel                                | todo   | S    | T-21             |
+| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21             |
 
 ## T-01 Set the project up so tests can run
 
@@ -880,3 +881,67 @@ kept in the bundle by narrowing the `ignore` list. The first is preferable: it k
 - [ ] Copy the two assets into `dist/renderer/` as part of `npm run build`
 - [ ] Point `src/main/popover.ts` at the built copy
 - [ ] Verify by hand: `npm run package`, launch the packaged app, confirm the panel renders and Sync still works
+
+## T-23 Say which error the router actually returned when a sync fails
+
+T-23 · status: done · size: S · needs: T-21 · files: src/hilink/ussd.ts, src/hilink/client.ts, src/main/main.ts, src/main/view-model.ts, test/hilink/ussd.test.ts, test/main/view-model.test.ts, test/main/main.test.ts
+
+Pressing Sync against the real router ends in "The router refused the request." — the
+panel's wording for reason `error`. That reason has exactly one source: `ussd.ts:200`,
+where a `HilinkApiError` whose code is neither `NO_RIGHTS_CODE` nor `125002` collapses
+into the bare string `error`. The router's numeric code — the only thing that says _why_
+it refused — is discarded there and appears in no log and no message.
+
+The dialogue has never completed end to end against the real router, so the code is
+unknown and cannot be guessed. Nothing can be fixed until one press names it. This task
+carries the code through the boundary and stops there: handling whatever code it turns
+out to be is a separate task, written once the code is known.
+
+Two things must survive to the surface: the code itself, and the endpoint that returned
+it, since `/api/ussd/send` and `/api/ussd/get` failing tell different stories. The
+`error` reason therefore becomes a carrier rather than a bare string, and the panel
+sentence names the code instead of hiding it.
+
+### Acceptance
+
+- [x] `UssdFailure`'s `error` case carries the router's numeric code and the endpoint that returned it, rather than being a bare string
+- [x] A `HilinkApiError` raised from `/api/ussd/send` produces a failure whose code and endpoint match the ones the router returned
+- [x] A `HilinkApiError` raised from `/api/ussd/get` does the same, with `/api/ussd/get` as the endpoint
+- [x] Codes already mapped keep their own reasons: `NO_RIGHTS_CODE` still yields `not-logged-in` and `125002` still yields `session`
+- [x] The panel's failure line for an unmapped code names the code, e.g. "The router refused the request (code 111019)."
+- [x] Every other `SyncFailure` keeps the sentence it has today, asserted by the existing view-model tests
+- [x] The code and endpoint are written to the main-process log on every such failure, so the value is recoverable even if the panel is dismissed
+
+### Tasks
+
+- [x] Failing tests: a stubbed transport raising `HilinkApiError('/api/ussd/send', 111019)` yields a failure carrying code 111019 and that endpoint; the same for `/api/ussd/get`; the two already-mapped codes keep their reasons
+- [x] Failing view-model test: the unmapped-code failure renders a sentence naming the code
+- [x] Widen `UssdFailure`'s `error` case to carry `{ code, endpoint }` and update `failureReason` in `src/hilink/ussd.ts`
+- [x] Follow the type through `src/hilink/client.ts` and `src/main/sync.ts` until it compiles
+- [x] Render the code in `SYNC_FAILURE_TEXT`'s `error` entry in `src/main/view-model.ts`
+- [x] Log code and endpoint from the main process when a sync ends in that reason
+- [x] Verify by hand: press Sync against the real router and record the code and endpoint it names — that value is the input to the follow-up task
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The `error` case became a `RouterRefusal` object — `{ kind, source, code, endpoint }` — rather
+than a widened string. `source` distinguishes the router's own API code from a plain HTTP
+status, because the two are different numbers with the same shape and reading "code 404"
+as a carrier code would send the follow-up task hunting for something that does not exist.
+That distinction was not free: the HTTP path turned out to be a real producer of this
+failure, not a hypothetical one — the pre-existing test at `test/hilink/ussd.test.ts`
+("resolves to a reason when the USSD endpoints answer nothing usable") was already
+exercising it and asserting the bare `"error"`.
+
+The bare string `"error"` still exists in `OfflineReason`, so it remains a legal
+`SyncFailure` through the snapshot and login paths, which this task did not touch. In the
+USSD path it is now unreachable: every failure there is either a named reason or a
+refusal carrying a number.
+
+`src/main/sync.ts` needed no change at all — `SyncFailure` is built on `UssdFailure`, so
+widening the latter carried through on its own.
+
+The manual gate passed: a real press named a code. **The observed code and endpoint are
+not written down here yet** — recording that value is the first thing the follow-up task
+needs.
