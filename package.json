@@ -12,7 +12,32 @@
     "start": "npm run build && electron .",
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "package": "npm run build && electron-forge package"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "asar": true,
+        "appBundleId": "com.ckandrinirina.connect-check",
+        "appCategoryType": "public.app-category.utilities",
+        "extendInfo": {
+          "LSUIElement": true
+        },
+        "ignore": [
+          "^/\\.claude$",
+          "^/docs$",
+          "^/out$",
+          "^/src$",
+          "^/tasks$",
+          "^/test$",
+          "^/eslint\\.config\\.js$",
+          "^/package-lock\\.json$",
+          "^/tsconfig.*\\.json$",
+          "^/vitest\\.config\\.ts$"
+        ]
+      }
+    }
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
