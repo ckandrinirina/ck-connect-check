@@ -8,21 +8,24 @@
  * `poller.ts`. This file only connects them.
  */
 
-import { Menu, Tray, app, nativeImage } from 'electron';
+import { Menu, Tray, app, nativeImage } from "electron";
 
-import { loadConfig } from '../config/config.js';
-import { defaultConfigPath } from '../config/defaults.js';
-import { systemClock } from '../domain/quota.js';
-import { RouterClient, type SnapshotResult } from '../hilink/client.js';
-import { UsagePoller, type SnapshotSource } from './poller.js';
-import { bindTrayToPopover, createPopover } from './popover.js';
-import { buildPopoverModel, type UsageReading } from './view-model.js';
+import { loadConfig } from "../config/config.js";
+import { defaultConfigPath } from "../config/defaults.js";
+import { createRateHistory } from "../domain/history.js";
+import { systemClock } from "../domain/quota.js";
+import { RouterClient, type SnapshotResult } from "../hilink/client.js";
+import { UsagePoller, type SnapshotSource } from "./poller.js";
+import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
+import { buildPopoverModel, type UsageReading } from "./view-model.js";
 
 export interface MenuBarOptions {
   /** Where the config lives. Injected so tests never touch the user directory. */
   configPath?: string;
   /** The router client. Injected so tests never touch the network. */
   client?: SnapshotSource;
+  /** The detail panel. Injected so tests can read the model without a window. */
+  popover?: Popover;
 }
 
 export interface MenuBarApp {
@@ -40,24 +43,38 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // Before anything is drawn: no Dock icon, no app switcher entry, menu bar only.
   app.dock?.hide();
 
-  const { config, problem } = loadConfig(options.configPath ?? defaultConfigPath());
+  const { config, problem } = loadConfig(
+    options.configPath ?? defaultConfigPath(),
+  );
 
   if (problem !== undefined) {
     // A bad config file is never fatal — the app runs on the defaults and says why.
     console.warn(problem);
   }
 
-  const router = options.client ?? new RouterClient({ baseUrl: `http://${config.host}` });
+  const router =
+    options.client ?? new RouterClient({ baseUrl: `http://${config.host}` });
   const tray = new Tray(nativeImage.createEmpty());
-  const popover = createPopover();
+  const popover = options.popover ?? createPopover();
 
   // The poller only publishes a title, so the popover's figures are gathered
   // here instead: every poll passes through this wrapper on its way back.
   let result: SnapshotResult | null = null;
   let lastReading: UsageReading | null = null;
 
+  // Kept out here rather than inside the panel: the router remembers no
+  // throughput, so closing the panel must not throw away what it has seen.
+  const history = createRateHistory();
+
   function refreshPopover(): void {
-    popover.setModel(buildPopoverModel({ result, lastReading, config }));
+    popover.setModel(
+      buildPopoverModel({
+        result,
+        lastReading,
+        config,
+        history: history.samples(),
+      }),
+    );
   }
 
   const client: SnapshotSource = {
@@ -67,6 +84,17 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       if (result.online) {
         lastReading = { snapshot: result.snapshot, at: systemClock.now() };
       }
+
+      // Every poll is offered to the history; an offline one records a gap
+      // rather than a zero.
+      history.record(
+        result.online
+          ? {
+              downloadBytesPerSecond: result.snapshot.traffic.downloadRateBps,
+              uploadBytesPerSecond: result.snapshot.traffic.uploadRateBps,
+            }
+          : null,
+      );
 
       refreshPopover();
 
@@ -82,9 +110,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
   // A context menu would swallow the left click on macOS, so Quit moves to the
   // right button and the left one belongs to the popover.
-  const menu = Menu.buildFromTemplate([{ label: 'Quit', role: 'quit' }]);
+  const menu = Menu.buildFromTemplate([{ label: "Quit", role: "quit" }]);
 
-  tray.on('right-click', () => tray.popUpContextMenu(menu));
+  tray.on("right-click", () => tray.popUpContextMenu(menu));
   bindTrayToPopover(tray, popover);
   tray.setTitle(poller.title);
   refreshPopover();
@@ -104,7 +132,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 if (process.versions.electron !== undefined) {
   const started = app.whenReady().then(() => startMenuBarApp());
 
-  app.on('will-quit', () => {
+  app.on("will-quit", () => {
     void started.then((menuBarApp) => {
       menuBarApp.stop();
     });

@@ -17,6 +17,7 @@ import {
   formatPercent,
   formatRate,
 } from "../domain/format.js";
+import { peak, type RateSample } from "../domain/history.js";
 import {
   daysUntilReset,
   percentUsed,
@@ -77,6 +78,23 @@ export interface PopoverFreshness {
   label: string;
 }
 
+/**
+ * The last few minutes of throughput, for the sparklines.
+ *
+ * The one part of the model that is not display strings: a chart is geometry,
+ * not text. The renderer still does no arithmetic beyond plotting — the scale
+ * it needs is handed to it as {@link PopoverHistory.peak} rather than derived
+ * from the series.
+ */
+export interface PopoverHistory {
+  /** Download rates in bytes per second, oldest first. */
+  download: number[];
+  /** Upload rates in bytes per second, oldest first. */
+  upload: number[];
+  /** The largest rate across both series — one shared scale. 0 when empty. */
+  peak: number;
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   monthDownload: string;
@@ -95,6 +113,8 @@ export interface PopoverModel {
   /** Time left in the billing cycle, e.g. `"5 days"`. */
   daysUntilReset: string;
   freshness: PopoverFreshness;
+  /** Recent throughput for the sparklines. */
+  history: PopoverHistory;
 }
 
 export interface PopoverInput {
@@ -103,6 +123,11 @@ export interface PopoverInput {
   /** The most recent successful reading, or `null` if there has never been one. */
   lastReading: UsageReading | null;
   config: AppConfig;
+  /**
+   * Recent throughput samples, oldest first — read, never recorded here, so
+   * building the model twice shows the same history twice.
+   */
+  history?: readonly RateSample[];
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -170,10 +195,19 @@ function buildFreshness(
   return { stale: true, age, label: `Updated ${age} ago` };
 }
 
+function buildHistory(samples: readonly RateSample[]): PopoverHistory {
+  return {
+    download: samples.map((sample) => sample.downloadBytesPerSecond),
+    upload: samples.map((sample) => sample.uploadBytesPerSecond),
+    peak: peak(samples),
+  };
+}
+
 /** The model shown before the first reading, and whenever every reading has been lost. */
 function emptyModel(
   freshness: PopoverFreshness,
   warnThresholdPercent: number,
+  history: PopoverHistory,
 ): PopoverModel {
   return {
     monthDownload: NO_VALUE,
@@ -187,6 +221,7 @@ function emptyModel(
     signal: NO_VALUE,
     daysUntilReset: NO_VALUE,
     freshness,
+    history,
   };
 }
 
@@ -205,9 +240,10 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   const live = result !== null && result.online;
   const snapshot = live ? result.snapshot : lastReading?.snapshot;
   const freshness = buildFreshness(!live, lastReading, clock.now());
+  const history = buildHistory(input.history ?? []);
 
   if (snapshot === undefined) {
-    return emptyModel(freshness, config.warnThresholdPercent);
+    return emptyModel(freshness, config.warnThresholdPercent, history);
   }
 
   const { month, traffic, status, carrier, billing } = snapshot;
@@ -229,5 +265,6 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     signal: `${status.signalBars}/${status.maxSignalBars}`,
     daysUntilReset: formatDays(daysUntilReset(billing.startDay, clock)),
     freshness,
+    history,
   };
 }

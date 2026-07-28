@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultConfig, type AppConfig } from "../../src/config/defaults.js";
+import {
+  createRateHistory,
+  type RateSample,
+} from "../../src/domain/history.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
@@ -55,6 +59,17 @@ const OFFLINE: SnapshotResult = { online: false, reason: "unreachable" };
 
 function configWithLimit(limitBytes: number | null): AppConfig {
   return { ...defaultConfig(), planLimitBytes: limitBytes };
+}
+
+/** A history holding the given `[download, upload]` rates, oldest first. */
+function historyOf(...rates: readonly [number, number][]): RateSample[] {
+  const history = createRateHistory(90);
+
+  for (const [downloadBytesPerSecond, uploadBytesPerSecond] of rates) {
+    history.record({ downloadBytesPerSecond, uploadBytesPerSecond });
+  }
+
+  return history.samples();
 }
 
 /** Every leaf of the model, so "no arithmetic in the renderer" can be asserted wholesale. */
@@ -117,7 +132,13 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("hands the renderer only display strings — never a number to format", () => {
-    for (const leaf of leaves(model)) {
+    // The sparkline history is the one exception: a chart is geometry, not
+    // text, so it carries raw rates. Everything the user *reads* is a string.
+    const displayed = Object.entries(model).filter(
+      ([field]) => field !== "history",
+    );
+
+    for (const leaf of leaves(Object.fromEntries(displayed))) {
       expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
     }
   });
@@ -297,6 +318,80 @@ describe("buildPopoverModel — the usage state on the progress bar", () => {
     });
 
     expect(model.progress.state).toBe("over");
+  });
+});
+
+describe("buildPopoverModel — the recent throughput history", () => {
+  const history = historyOf([1_000, 100], [3_000, 200], [2_000, 4_000]);
+
+  const model = buildPopoverModel({
+    result: online(),
+    lastReading: null,
+    config: configWithLimit(20_000_000_000),
+    history,
+    clock,
+  });
+
+  it("exposes the recorded download rates, oldest first", () => {
+    expect(model.history.download).toEqual([1_000, 3_000, 2_000]);
+  });
+
+  it("exposes the recorded upload rates, oldest first", () => {
+    expect(model.history.upload).toEqual([100, 200, 4_000]);
+  });
+
+  it("exposes the peak across both series, so the renderer scales without deriving it", () => {
+    expect(model.history.peak).toBe(4_000);
+  });
+
+  it("is empty with a peak of 0 when no history has been passed", () => {
+    const empty = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      clock,
+    });
+
+    expect(empty.history.download).toEqual([]);
+    expect(empty.history.upload).toEqual([]);
+    expect(empty.history.peak).toBe(0);
+  });
+
+  it("still shows the recorded history while the router is unreachable", () => {
+    const stale = buildPopoverModel({
+      result: OFFLINE,
+      lastReading: { snapshot: snapshot(), at: SEVEN_HOURS_AGO },
+      config: configWithLimit(20_000_000_000),
+      history,
+      clock,
+    });
+
+    expect(stale.history.download).toEqual([1_000, 3_000, 2_000]);
+    expect(stale.history.peak).toBe(4_000);
+  });
+
+  it("reads the history without consuming it, so every rebuild shows the same samples", () => {
+    const live = createRateHistory(90);
+
+    live.record({ downloadBytesPerSecond: 1_000, uploadBytesPerSecond: 100 });
+
+    const first = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      history: live.samples(),
+      clock,
+    });
+    const second = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      history: live.samples(),
+      clock,
+    });
+
+    expect(second.history.download).toEqual(first.history.download);
+    expect(live.samples()).toHaveLength(1);
   });
 });
 
