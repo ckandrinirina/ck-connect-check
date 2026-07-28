@@ -16,19 +16,24 @@ import {
   LOGOUT_ENDPOINT,
   ROLLING_TOKEN_HEADER,
   SESSION_COOKIE_HEADER,
+  TOKEN_HEADERS,
   loginRefusal,
   loginRequestXml,
   logoutRequestXml,
   readLoginReply,
 } from "./login.js";
 import {
+  HilinkApiError,
+  SPENT_TOKEN_CODE,
   isStaleSessionError,
   parseCurrentPlmn,
   parseMonthStatistics,
   parseSesTokInfo,
   parseStartDate,
   parseStatus,
+  parseToken,
   parseTrafficStatistics,
+  readReply,
 } from "./parse.js";
 import { SessionStore, sessionHeaders } from "./session.js";
 import {
@@ -45,6 +50,7 @@ import type {
 } from "./types.js";
 
 const SES_TOK_INFO = "/api/webserver/SesTokInfo";
+const TOKEN = "/api/webserver/token";
 const MONTH_STATISTICS = "/api/monitoring/month_statistics";
 const TRAFFIC_STATISTICS = "/api/monitoring/traffic-statistics";
 const STATUS = "/api/monitoring/status";
@@ -115,6 +121,31 @@ interface RouterResponse {
   headers: Headers;
 }
 
+/** The token a reply rotated to, from whichever header carried it. */
+function rotatedToken(headers: Headers): string | undefined {
+  for (const name of TOKEN_HEADERS) {
+    const value = headers.get(name);
+    if (value !== null && value.trim() !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * True when a reply is the router saying the token had already been spent. The
+ * body is read rather than raised on, because a `POST` reply is parsed by its
+ * caller — this is the one code the transport itself has to act on.
+ */
+function isSpentTokenReply(body: string, endpoint: string): boolean {
+  try {
+    readReply(body, endpoint);
+    return false;
+  } catch (error) {
+    return error instanceof HilinkApiError && error.code === SPENT_TOKEN_CODE;
+  }
+}
+
 function offlineReason(
   error: unknown,
   staleReason: OfflineReason,
@@ -164,14 +195,7 @@ export class RouterClient {
     this.#ussd = new UssdDialogue({
       get: async (path) =>
         await this.#get(path, sessionHeaders(await this.#session.current())),
-      post: async (path, body) =>
-        (
-          await this.#post(
-            path,
-            sessionHeaders(await this.#session.current()),
-            body,
-          )
-        ).body,
+      post: async (path, body) => await this.#write(path, body),
       transportReason: ussdTransportFailure,
     });
   }
@@ -237,11 +261,7 @@ export class RouterClient {
       return;
     }
     try {
-      await this.#post(
-        LOGOUT_ENDPOINT,
-        sessionHeaders(await this.#session.current()),
-        logoutRequestXml(),
-      );
+      await this.#write(LOGOUT_ENDPOINT, logoutRequestXml());
     } catch {
       // A refused or unanswered logout changes nothing: the session goes anyway.
     } finally {
@@ -277,6 +297,43 @@ export class RouterClient {
     return (await this.#request(path, { method: "GET", headers })).body;
   }
 
+  /**
+   * A `POST` on the session `current()` hands out, retried once when the router
+   * answers 125003 — the token had already been spent, which is the normal state
+   * of affairs for the second write of a dialogue.
+   *
+   * The retry refreshes the token and nothing else. Signing in again would be
+   * the wrong repair for a spent token and the right way to walk the account
+   * into its five-failure lockout, so no path here logs in.
+   */
+  async #write(path: string, body: string): Promise<string> {
+    const send = async (): Promise<string> =>
+      (
+        await this.#post(
+          path,
+          sessionHeaders(await this.#session.current()),
+          body,
+        )
+      ).body;
+
+    const reply = await send();
+    if (!isSpentTokenReply(reply, path)) {
+      return reply;
+    }
+    await this.#refreshToken();
+    return await send();
+  }
+
+  /**
+   * Ask the router which token it is expecting. Only reached when a reply
+   * carried none and a write was refused for it, so nothing here is on the
+   * ordinary path.
+   */
+  async #refreshToken(): Promise<void> {
+    const headers = sessionHeaders(await this.#session.current());
+    this.#session.advanceToken(parseToken(await this.#get(TOKEN, headers)));
+  }
+
   async #post(
     path: string,
     headers: Record<string, string>,
@@ -302,6 +359,12 @@ export class RouterClient {
       const response = await fetch(url, { ...init, signal: controller.signal });
       if (!response.ok) {
         throw new RouterHttpError(url, path, response.status);
+      }
+      // The token moves with every reply that carries one, so the next write
+      // sends the current one rather than the one the login was handed.
+      const rotated = rotatedToken(response.headers);
+      if (rotated !== undefined) {
+        this.#session.advanceToken(rotated);
       }
       return { body: await response.text(), headers: response.headers };
     } catch (error) {

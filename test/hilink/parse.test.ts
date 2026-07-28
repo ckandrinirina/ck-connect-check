@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
 import {
   HilinkApiError,
@@ -12,142 +12,148 @@ import {
   parseSesTokInfo,
   parseStartDate,
   parseStatus,
+  parseToken,
   parseTrafficStatistics,
-} from '../../src/hilink/parse.js';
+} from "../../src/hilink/parse.js";
 
 function fixture(name: string): string {
   return readFileSync(
     fileURLToPath(new URL(`../fixtures/hilink/${name}.xml`, import.meta.url)),
-    'utf8',
+    "utf8",
   );
 }
 
-const staleSession = fixture('error-125002');
-const malformed = fixture('malformed');
+const staleSession = fixture("error-125002");
+const malformed = fixture("malformed");
 
-describe('parseMonthStatistics', () => {
-  const parsed = parseMonthStatistics(fixture('month_statistics'));
+describe("parseMonthStatistics", () => {
+  const parsed = parseMonthStatistics(fixture("month_statistics"));
 
-  it('reads the recorded monthly totals as numbers', () => {
+  it("reads the recorded monthly totals as numbers", () => {
     expect(parsed.monthDownloadBytes).toBe(4427475340);
     expect(parsed.monthUploadBytes).toBe(1403243047);
   });
 
-  it('reads the connected duration and last clear time', () => {
+  it("reads the connected duration and last clear time", () => {
     expect(parsed.monthDurationSeconds).toBe(28902);
-    expect(parsed.monthLastClearTime).toBe('2026-7-27');
+    expect(parsed.monthLastClearTime).toBe("2026-7-27");
   });
 
-  it('types every numeric field as a number', () => {
-    expect(typeof parsed.monthDownloadBytes).toBe('number');
-    expect(typeof parsed.monthUploadBytes).toBe('number');
-    expect(typeof parsed.monthDurationSeconds).toBe('number');
+  it("types every numeric field as a number", () => {
+    expect(typeof parsed.monthDownloadBytes).toBe("number");
+    expect(typeof parsed.monthUploadBytes).toBe("number");
+    expect(typeof parsed.monthDurationSeconds).toBe("number");
   });
 
-  it('rejects a reply whose numeric field is missing', () => {
-    const withoutDownload = fixture('month_statistics').replace(
+  it("rejects a reply whose numeric field is missing", () => {
+    const withoutDownload = fixture("month_statistics").replace(
       /<CurrentMonthDownload>.*<\/CurrentMonthDownload>/,
-      '',
+      "",
     );
-    expect(() => parseMonthStatistics(withoutDownload)).toThrow(HilinkParseError);
+    expect(() => parseMonthStatistics(withoutDownload)).toThrow(
+      HilinkParseError,
+    );
   });
 });
 
-describe('parseTrafficStatistics', () => {
-  const parsed = parseTrafficStatistics(fixture('traffic-statistics'));
+describe("parseTrafficStatistics", () => {
+  const parsed = parseTrafficStatistics(fixture("traffic-statistics"));
 
-  it('reads the instantaneous rates as numbers', () => {
+  it("reads the instantaneous rates as numbers", () => {
     expect(parsed.downloadRateBps).toBe(9828);
     expect(parsed.uploadRateBps).toBe(33066);
-    expect(typeof parsed.downloadRateBps).toBe('number');
-    expect(typeof parsed.uploadRateBps).toBe('number');
+    expect(typeof parsed.downloadRateBps).toBe("number");
+    expect(typeof parsed.uploadRateBps).toBe("number");
   });
 
-  it('reads the current connection time', () => {
+  it("reads the current connection time", () => {
     expect(parsed.connectTimeSeconds).toBe(11440);
   });
 });
 
-describe('parseStatus', () => {
-  const parsed = parseStatus(fixture('status'));
+describe("parseStatus", () => {
+  const parsed = parseStatus(fixture("status"));
 
-  it('reads signal bars against the device maximum', () => {
+  it("reads signal bars against the device maximum", () => {
     expect(parsed.signalBars).toBe(5);
     expect(parsed.maxSignalBars).toBe(5);
-    expect(typeof parsed.signalBars).toBe('number');
-    expect(typeof parsed.maxSignalBars).toBe('number');
+    expect(typeof parsed.signalBars).toBe("number");
+    expect(typeof parsed.maxSignalBars).toBe("number");
   });
 
-  it('counts the connected devices', () => {
+  it("counts the connected devices", () => {
     expect(parsed.connectedDevices).toBe(2);
-    expect(typeof parsed.connectedDevices).toBe('number');
+    expect(typeof parsed.connectedDevices).toBe("number");
   });
 
-  it('reports connection status 901 as connected', () => {
+  it("reports connection status 901 as connected", () => {
     expect(parsed.connected).toBe(true);
   });
 
-  it('reports a disconnected status as not connected', () => {
-    const disconnected = fixture('status').replace(
-      '<ConnectionStatus>901</ConnectionStatus>',
-      '<ConnectionStatus>902</ConnectionStatus>',
+  it("reports a disconnected status as not connected", () => {
+    const disconnected = fixture("status").replace(
+      "<ConnectionStatus>901</ConnectionStatus>",
+      "<ConnectionStatus>902</ConnectionStatus>",
     );
     expect(parseStatus(disconnected).connected).toBe(false);
   });
 });
 
-describe('parseCurrentPlmn', () => {
-  it('reads the carrier name', () => {
-    expect(parseCurrentPlmn(fixture('current-plmn')).carrier).toBe('Yas');
+describe("parseCurrentPlmn", () => {
+  it("reads the carrier name", () => {
+    expect(parseCurrentPlmn(fixture("current-plmn")).carrier).toBe("Yas");
   });
 
-  it('treats an empty carrier name as unknown', () => {
-    const empty = fixture('current-plmn').replace('<FullName>Yas</FullName>', '<FullName></FullName>');
-    expect(parseCurrentPlmn(empty).carrier).toBe('');
+  it("treats an empty carrier name as unknown", () => {
+    const empty = fixture("current-plmn").replace(
+      "<FullName>Yas</FullName>",
+      "<FullName></FullName>",
+    );
+    expect(parseCurrentPlmn(empty).carrier).toBe("");
   });
 });
 
-describe('parseStartDate', () => {
-  const parsed = parseStartDate(fixture('start_date'));
+describe("parseStartDate", () => {
+  const parsed = parseStartDate(fixture("start_date"));
 
-  it('reads the billing cycle start day', () => {
+  it("reads the billing cycle start day", () => {
     expect(parsed.startDay).toBe(1);
-    expect(typeof parsed.startDay).toBe('number');
+    expect(typeof parsed.startDay).toBe("number");
   });
 
-  it('reads the router-held data limit of 0MB as zero bytes', () => {
+  it("reads the router-held data limit of 0MB as zero bytes", () => {
     expect(parsed.routerDataLimitBytes).toBe(0);
-    expect(typeof parsed.routerDataLimitBytes).toBe('number');
+    expect(typeof parsed.routerDataLimitBytes).toBe("number");
   });
 
-  it('converts a non-zero data limit to bytes', () => {
-    const withLimit = fixture('start_date').replace(
-      '<DataLimit>0MB</DataLimit>',
-      '<DataLimit>50GB</DataLimit>',
+  it("converts a non-zero data limit to bytes", () => {
+    const withLimit = fixture("start_date").replace(
+      "<DataLimit>0MB</DataLimit>",
+      "<DataLimit>50GB</DataLimit>",
     );
     expect(parseStartDate(withLimit).routerDataLimitBytes).toBe(50_000_000_000);
   });
 
-  it('reads the warn threshold percentage', () => {
+  it("reads the warn threshold percentage", () => {
     expect(parsed.warnThresholdPercent).toBe(90);
   });
 });
 
-describe('parseSesTokInfo', () => {
-  it('reads the session cookie and verification token', () => {
-    const parsed = parseSesTokInfo(fixture('ses-tok-info'));
+describe("parseSesTokInfo", () => {
+  it("reads the session cookie and verification token", () => {
+    const parsed = parseSesTokInfo(fixture("ses-tok-info"));
     expect(parsed.sessionId).toMatch(/^SessionID=/);
-    expect(parsed.token).toBe('CY8/MvG3W0kNqZpLdRyTbAe1');
+    expect(parsed.token).toBe("CY8/MvG3W0kNqZpLdRyTbAe1");
   });
 });
 
-describe('stale session replies', () => {
-  it('throws an API error carrying code 125002, not a parse error', () => {
+describe("stale session replies", () => {
+  it("throws an API error carrying code 125002, not a parse error", () => {
     expect(() => parseStatus(staleSession)).toThrow(HilinkApiError);
     expect(() => parseStatus(staleSession)).not.toThrow(HilinkParseError);
   });
 
-  it('flags the error as a stale session on every endpoint', () => {
+  it("flags the error as a stale session on every endpoint", () => {
     for (const parse of [
       parseMonthStatistics,
       parseTrafficStatistics,
@@ -167,8 +173,8 @@ describe('stale session replies', () => {
     }
   });
 
-  it('does not flag another API error code as a stale session', () => {
-    const otherError = staleSession.replace('125002', '100002');
+  it("does not flag another API error code as a stale session", () => {
+    const otherError = staleSession.replace("125002", "100002");
     let caught: unknown;
     try {
       parseStatus(otherError);
@@ -180,7 +186,7 @@ describe('stale session replies', () => {
     expect(isStaleSessionError(caught)).toBe(false);
   });
 
-  it('does not flag a parse failure as a stale session', () => {
+  it("does not flag a parse failure as a stale session", () => {
     let caught: unknown;
     try {
       parseStatus(malformed);
@@ -191,8 +197,8 @@ describe('stale session replies', () => {
   });
 });
 
-describe('malformed replies', () => {
-  it('raises a parse error naming the endpoint', () => {
+describe("malformed replies", () => {
+  it("raises a parse error naming the endpoint", () => {
     let caught: unknown;
     try {
       parseMonthStatistics(malformed);
@@ -200,17 +206,21 @@ describe('malformed replies', () => {
       caught = error;
     }
     expect(caught).toBeInstanceOf(HilinkParseError);
-    expect((caught as HilinkParseError).endpoint).toBe('/api/monitoring/month_statistics');
-    expect((caught as HilinkParseError).message).toContain('/api/monitoring/month_statistics');
+    expect((caught as HilinkParseError).endpoint).toBe(
+      "/api/monitoring/month_statistics",
+    );
+    expect((caught as HilinkParseError).message).toContain(
+      "/api/monitoring/month_statistics",
+    );
   });
 
-  it('names its own endpoint on each parser', () => {
+  it("names its own endpoint on each parser", () => {
     const endpoints: Array<[(xml: string) => unknown, string]> = [
-      [parseTrafficStatistics, '/api/monitoring/traffic-statistics'],
-      [parseStatus, '/api/monitoring/status'],
-      [parseCurrentPlmn, '/api/net/current-plmn'],
-      [parseStartDate, '/api/monitoring/start_date'],
-      [parseSesTokInfo, '/api/webserver/SesTokInfo'],
+      [parseTrafficStatistics, "/api/monitoring/traffic-statistics"],
+      [parseStatus, "/api/monitoring/status"],
+      [parseCurrentPlmn, "/api/net/current-plmn"],
+      [parseStartDate, "/api/monitoring/start_date"],
+      [parseSesTokInfo, "/api/webserver/SesTokInfo"],
     ];
     for (const [parse, endpoint] of endpoints) {
       let caught: unknown;
@@ -224,7 +234,7 @@ describe('malformed replies', () => {
     }
   });
 
-  it('never returns an object with undefined fields instead of throwing', () => {
+  it("never returns an object with undefined fields instead of throwing", () => {
     for (const parse of [parseMonthStatistics, parseStatus, parseStartDate]) {
       let result: unknown;
       let threw = false;
@@ -238,15 +248,52 @@ describe('malformed replies', () => {
     }
   });
 
-  it('rejects an empty body', () => {
-    expect(() => parseStatus('')).toThrow(HilinkParseError);
+  it("rejects an empty body", () => {
+    expect(() => parseStatus("")).toThrow(HilinkParseError);
   });
 
-  it('rejects a non-numeric value in a numeric field', () => {
-    const corrupted = fixture('status').replace(
-      '<SignalIcon>5</SignalIcon>',
-      '<SignalIcon>full</SignalIcon>',
+  it("rejects a non-numeric value in a numeric field", () => {
+    const corrupted = fixture("status").replace(
+      "<SignalIcon>5</SignalIcon>",
+      "<SignalIcon>full</SignalIcon>",
     );
     expect(() => parseStatus(corrupted)).toThrow(HilinkParseError);
+  });
+});
+
+describe("parseToken", () => {
+  function tokenReply(token: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<token>${token}</token>\n</response>`;
+  }
+
+  it("takes the last 32 characters of a long <token>", () => {
+    const tail = "Ab3dEf5GhIjKlM7nOpQrSt9UvWxYz1B2";
+    expect(parseToken(tokenReply(`prefix1234${tail}`))).toBe(tail);
+    expect(parseToken(tokenReply(`prefix1234${tail}`))).toHaveLength(32);
+  });
+
+  it("returns a shorter <token> whole", () => {
+    expect(parseToken(tokenReply("ShortToken123"))).toBe("ShortToken123");
+  });
+
+  it("rejects a reply with no <token>", () => {
+    expect(() =>
+      parseToken('<?xml version="1.0"?><response>OK</response>'),
+    ).toThrow(HilinkParseError);
+  });
+
+  it("names /api/webserver/token as the endpoint it failed on", () => {
+    let caught: unknown;
+    try {
+      parseToken(malformed);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(HilinkParseError);
+    expect((caught as HilinkParseError).endpoint).toBe("/api/webserver/token");
+  });
+
+  it("raises an API error when the router refused instead", () => {
+    expect(() => parseToken(staleSession)).toThrow(HilinkApiError);
   });
 });

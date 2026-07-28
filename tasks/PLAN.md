@@ -25,6 +25,7 @@
 | T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20       |
 | T-22 | Make the packaged app find its own panel                                | todo   | S    | T-21             |
 | T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21             |
+| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23             |
 
 ## T-01 Set the project up so tests can run
 
@@ -945,3 +946,74 @@ widening the latter carried through on its own.
 The manual gate passed: a real press named a code. **The observed code and endpoint are
 not written down here yet** — recording that value is the first thing the follow-up task
 needs.
+
+## T-24 Give every POST a token the router has not already spent
+
+T-24 · status: done · size: M · needs: T-23 · files: src/hilink/session.ts, src/hilink/client.ts, src/hilink/login.ts, src/hilink/parse.ts, test/hilink/session.test.ts, test/hilink/token.test.ts, test/hilink/parse.test.ts
+
+T-23's manual gate produced the number it was written for. Pressing Sync against the real
+router answers:
+
+```
+sync refused: api code 125003 at /api/ussd/send
+```
+
+`125003` is HiLink's _wrong session token_ — distinct from `125002` (wrong session), which
+the client already handles by re-handshaking. The session is fine; the token is not.
+
+The cause is visible without the router. `login()` reads one rolling token off the reply
+headers and hands it to `SessionStore.authenticate()`; from then on `sessionHeaders()`
+replays that same string on every request (`src/hilink/client.ts:216`,
+`src/hilink/session.ts:18`). But the device's verification token is **single-use on a
+`POST`** — it rotates on each reply. The login POST spends the handshake token and is
+issued a fresh one; `/api/ussd/send`, the very next POST, presents the login's token a
+second time and is refused. `#collect()`'s `GET`s never noticed because reads do not
+consume the token.
+
+So the token stops being a fixed property of the session and becomes a value that advances
+with every reply. Two things carry it: each response's `__RequestVerificationToken` header
+(the login's `…one` / `…two` pair being the same mechanism under a different name), and,
+when a reply carries none, `GET /api/webserver/token`, whose `<token>` element the device
+answers with the current one — its last 32 characters are the usable token.
+
+A refused POST must also be recoverable: a single `125003` retry after refreshing the
+token, and no more. Re-logging-in is explicitly not the recovery path — the account locks
+after five consecutive login failures, and a spent token is not a credential problem.
+
+### Acceptance
+
+- [x] `SessionStore` exposes a way to advance the stored token, leaving the session cookie untouched
+- [x] Every response that carries a `__RequestVerificationToken`, `…one` or `…two` header advances the stored token before the next request goes out
+- [x] Two `POST`s issued back to back carry two different tokens when the first reply rotated it
+- [x] A `POST` refused with `125003` refreshes the token from `GET /api/webserver/token` and is retried exactly once
+- [x] A second `125003` on the retry surfaces as a failure and issues no third request
+- [x] `125003` never triggers a login: a stubbed transport asserts `POST /api/user/login` is issued at most once across the whole dialogue
+- [x] `parseToken` returns the last 32 characters of the `<token>` element, and rejects a reply with no `<token>`
+- [x] `snapshot()`, `login()` and `logout()` keep their current behaviour, asserted by the existing client tests
+
+### Tasks
+
+- [x] Failing test: a stubbed transport whose first POST reply carries a rotated `__RequestVerificationToken` header — the second POST must carry the new value, not the login's
+- [x] Failing test: a POST answered with `125003` refreshes from `/api/webserver/token` and retries once; a second `125003` fails without a third attempt; no login is issued in either case
+- [x] Failing test: `parseToken` on a `<token>` element and on a reply without one
+- [x] Add `parseToken` to `src/hilink/parse.ts` and a `TOKEN` endpoint constant to `src/hilink/client.ts`
+- [x] Add token advancement to `SessionStore` and a shared header-reading helper next to `ROLLING_TOKEN_HEADER` in `src/hilink/login.ts`
+- [x] Advance the token from every `#request` reply, and wrap `#post` so a `125003` refreshes and retries once
+- [x] Verify by hand: press Sync against the real router and confirm the dialogue reaches `/api/ussd/get` instead of being refused at `send`
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The refusal never reaches the transport as an exception: a `POST` reply is parsed by whoever
+asked for it, so `#write` reads the body itself (`isSpentTokenReply`) to decide whether the
+retry is owed. That is the only place in `src/hilink/client.ts` that looks inside a reply
+it is about to hand back.
+
+`TOKEN_HEADERS` lists the bare `__RequestVerificationToken` first and the login's `…one` /
+`…two` pair after it, so an ordinary reply and a login reply advance the token through the
+same path. The rotation applies to whichever session `current()` would hand out, which is
+why a login can still be scrambled against the untouched handshake token afterwards.
+
+`logout()` was moved onto `#write` too — it is a write like any other, and a spent token
+there would otherwise leave the router-side session standing. `login()` deliberately was
+not: a retry of a login POST is a second login attempt, and five of those lock the account.

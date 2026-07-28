@@ -76,7 +76,11 @@ POST /api/user/login  <request><Username>…</Username><Password>…</Password><
 
 The reply carries a fresh `SessionID` in `Set-Cookie` and rolling tokens in the
 `__RequestVerificationTokenone` / `…two` response headers; subsequent writes must use
-those, not the handshake token. A wrong credential answers `108006`, and the router locks
+those, not the handshake token. The token is single-use on a `POST` and rotates on every
+reply — replaying the login's token on the next `POST` is refused with `125003` (wrong
+session token), which is what a live Sync press produced on 2026-07-28. When a reply
+carries no token header, `GET /api/webserver/token` answers the current one in a `<token>`
+element, of which the last 32 characters are the value to send. A wrong credential answers `108006`, and the router locks
 the account after five consecutive failures — so a failed login is never retried
 automatically.
 
@@ -168,6 +172,7 @@ Append-only. One line each, always with the reason.
 - A failed router login is never retried automatically — the device locks the account after five consecutive failures, so a retry loop would lock the user out of their own router
 - USSD is only ever driven by an explicit Sync press, never by the poll loop — a USSD dialogue takes tens of seconds, holds carrier-side state, and costs a real signalling exchange
 - Menu navigation matches on reply labels (`Mes offres`, `Info conso`) and falls back to the recorded `1,1,1` digits — a carrier inserting a menu entry would otherwise land the app on the wrong screen silently
+- The verification token advances with every reply and a `125003` refreshes it and retries the `POST` once, never re-logging-in — the token is single-use per write, and treating a spent token as a credential problem would walk the account towards its five-failure lockout
 - An unrecognised router error code is carried to the surface with its code and endpoint, never collapsed into a bare "it failed" — the device's own numeric code is the only evidence of why it refused, and a reason string that discards it makes the failure undiagnosable
 
 ## Conventions

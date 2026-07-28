@@ -37,6 +37,18 @@ const ACCOUNT_LOCKED_CODE = 108007;
 export const SESSION_COOKIE_HEADER = "set-cookie";
 export const ROLLING_TOKEN_HEADER = "__RequestVerificationTokenone";
 
+/**
+ * Every header a reply is known to rotate the verification token in, most
+ * specific first. Ordinary replies use the bare name; a login reply uses the
+ * numbered pair, of which `…one` is the one to send. The token is spent by each
+ * `POST`, so whichever of these arrives supersedes the one being held.
+ */
+export const TOKEN_HEADERS: readonly string[] = [
+  "__RequestVerificationToken",
+  ROLLING_TOKEN_HEADER,
+  "__RequestVerificationTokentwo",
+];
+
 /** The two response headers `readLoginReply` needs, lifted out of `fetch`. */
 export interface LoginReplyHeaders {
   /** Raw `Set-Cookie`, attributes and all. */

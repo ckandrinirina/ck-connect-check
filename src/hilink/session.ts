@@ -60,6 +60,31 @@ export class SessionStore {
     this.#authenticated = credentials;
   }
 
+  /**
+   * Move the session `current()` hands out on to the token a reply just issued.
+   * The token is spent by every `POST`, so it is a moving value rather than a
+   * property of the session — the cookie it belongs to is left untouched.
+   *
+   * A blank token is ignored: a reply that carried no usable one must never
+   * replace the one still working.
+   */
+  advanceToken(token: string): void {
+    const next = token.trim();
+    if (next === "") {
+      return;
+    }
+    const held = this.#authenticated ?? this.#credentials;
+    if (held === undefined) {
+      return;
+    }
+    const advanced = { ...held, token: next };
+    if (this.#authenticated === held) {
+      this.#authenticated = advanced;
+    } else {
+      this.#credentials = advanced;
+    }
+  }
+
   /** Drop both held sessions so the next `current()` handshakes again. */
   clear(): void {
     this.#credentials = undefined;
