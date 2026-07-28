@@ -17,12 +17,13 @@
 | T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10             |
 | T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13       |
 | T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14             |
-| T-16 | Read the carrier's USSD replies as data instead of text                 | todo   | S    | T-02             |
-| T-17 | Sign in to the router so its protected endpoints can be used            | todo   | M    | T-03             |
-| T-18 | Ask the carrier for the exact remaining allowance over USSD             | todo   | M    | T-16, T-17       |
-| T-19 | Keep the router password in the macOS Keychain                          | todo   | S    | T-17             |
-| T-20 | Carry the real allowance forward with the router's own counter          | todo   | M    | T-18, T-05       |
-| T-21 | Sync the real figures from the panel with one button                    | todo   | M    | T-19, T-20       |
+| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02             |
+| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03             |
+| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17       |
+| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17             |
+| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05       |
+| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20       |
+| T-22 | Make the packaged app find its own panel                                | todo   | S    | T-21             |
 
 ## T-01 Set the project up so tests can run
 
@@ -591,14 +592,14 @@ their English suffixes in `src/hilink/parse.ts`; that parser is out of scope.
 
 ## T-16 Read the carrier's USSD replies as data instead of text
 
-T-16 · status: todo · size: S · needs: T-02 · files: src/hilink/ussd-parse.ts, src/hilink/types.ts, test/hilink/ussd-parse.test.ts, test/fixtures/hilink/ussd-\*.xml
+T-16 · status: done · size: S · needs: T-02 · files: src/hilink/ussd-parse.ts, src/hilink/types.ts, src/hilink/parse.ts, test/hilink/ussd-parse.test.ts, test/fixtures/hilink/ussd-\*.xml
 
 The carrier answers `#359#` in prose. This turns each reply into a typed object at the
 `src/hilink/` boundary, exactly as the XML parsers already do: the `<content>` is
 extracted from the envelope, then the text is read for the two things worth having — a
 menu with numbered options, and the final allowance line.
 
-Both live in one reply shape, because a USSD reply can carry text *and* a menu at once:
+Both live in one reply shape, because a USSD reply can carry text _and_ a menu at once:
 the `#359#` answer states the credit and offers `1 Mes offres` in the same breath.
 
 Purely textual, no I/O — a fixture per captured step is the whole test surface. Accents
@@ -607,29 +608,29 @@ must not depend on them.
 
 ### Acceptance
 
-- [ ] `parseUssdContent` returns `{ text, options }` from a `<response><content>…</content></response>` envelope
-- [ ] The `#359#` reply parses to one option `{ digit: "1", label: "Mes offres" }`
-- [ ] The third reply parses to options `1 Info conso` and `00 Page precedente`, keeping `00` as a string and preserving order
-- [ ] A reply with no numbered lines parses to an empty `options` array, not a null
-- [ ] `parseAllowance` reads `il vous reste 145835.9 Mo` as `145_835_900_000` bytes on the decimal 1000³ scale
-- [ ] `parseAllowance` reads `jusqu au 25/08/2026 inclus` as a date whose day, month and year are 25, 8 and 2026
-- [ ] `parseAllowance` reads the offer name `NET MONTH 200 000` as the plan label
-- [ ] `parseAllowance` accepts `Go`, `Mo` and `Ko` units, and a comma decimal separator (`145835,9 Mo`)
-- [ ] `parseAllowance` returns null for the credit line and for any reply without a `il vous reste` clause, rather than throwing
-- [ ] `parseUssdError` maps `111019` to a "not ready" result distinct from any other error code
-- [ ] A malformed or empty envelope raises the same parse error the existing XML parsers raise
+- [x] `parseUssdContent` returns `{ text, options }` from a `<response><content>…</content></response>` envelope
+- [x] The `#359#` reply parses to one option `{ digit: "1", label: "Mes offres" }`
+- [x] The third reply parses to options `1 Info conso` and `00 Page precedente`, keeping `00` as a string and preserving order
+- [x] A reply with no numbered lines parses to an empty `options` array, not a null
+- [x] `parseAllowance` reads `il vous reste 145835.9 Mo` as `145_835_900_000` bytes on the decimal 1000³ scale
+- [x] `parseAllowance` reads `jusqu au 25/08/2026 inclus` as a date whose day, month and year are 25, 8 and 2026
+- [x] `parseAllowance` reads the offer name `NET MONTH 200 000` as the plan label
+- [x] `parseAllowance` accepts `Go`, `Mo` and `Ko` units, and a comma decimal separator (`145835,9 Mo`)
+- [x] `parseAllowance` returns null for the credit line and for any reply without a `il vous reste` clause, rather than throwing
+- [x] `parseUssdError` maps `111019` to a "not ready" result distinct from any other error code
+- [x] A malformed or empty envelope raises the same parse error the existing XML parsers raise
 
 ### Tasks
 
-- [ ] Capture the four `#359#` replies as fixtures under `test/fixtures/hilink/`, one file per step, in the router's own envelope format
-- [ ] Failing tests in `test/hilink/ussd-parse.test.ts` for every criterion above, driven off those fixtures
-- [ ] Add `UssdReply`, `UssdOption` and `Allowance` to `src/hilink/types.ts`
-- [ ] Implement `parseUssdContent`, `parseAllowance` and `parseUssdError` in `src/hilink/ussd-parse.ts`, reusing the envelope helpers already in `src/hilink/parse.ts`
-- [ ] Confirm the volume conversion routes through the existing decimal scale rather than a second private constant
+- [x] Capture the four `#359#` replies as fixtures under `test/fixtures/hilink/`, one file per step, in the router's own envelope format
+- [x] Failing tests in `test/hilink/ussd-parse.test.ts` for every criterion above, driven off those fixtures
+- [x] Add `UssdReply`, `UssdOption` and `Allowance` to `src/hilink/types.ts`
+- [x] Implement `parseUssdContent`, `parseAllowance` and `parseUssdError` in `src/hilink/ussd-parse.ts`, reusing the envelope helpers already in `src/hilink/parse.ts`
+- [x] Confirm the volume conversion routes through the existing decimal scale rather than a second private constant
 
 ## T-17 Sign in to the router so its protected endpoints can be used
 
-T-17 · status: todo · size: M · needs: T-03 · files: src/hilink/login.ts, src/hilink/session.ts, src/hilink/client.ts, src/hilink/types.ts, test/hilink/login.test.ts, test/hilink/client.test.ts
+T-17 · status: done · size: M · needs: T-03 · files: src/hilink/login.ts, src/hilink/session.ts, src/hilink/client.ts, src/hilink/types.ts, test/hilink/login.test.ts, test/hilink/client.test.ts
 
 Every `POST` on this device answers `100003` — no rights — until a login has happened. The
 monitoring snapshot does not need one, so this adds an authenticated mode alongside the
@@ -638,7 +639,7 @@ credential present.
 
 The scheme is the `password_type: 4` SHA-256 one recorded in `docs/ARCHITECTURE.md`. Two
 details are easy to get wrong and are pinned by tests: the token folded into the hash is
-the handshake `TokInfo`, while every request *after* login must use the rolling token from
+the handshake `TokInfo`, while every request _after_ login must use the rolling token from
 the login reply's `__RequestVerificationTokenone` header, not the handshake one.
 
 A wrong password must fail once and stop. The router locks the account after five
@@ -647,30 +648,30 @@ same credential.
 
 ### Acceptance
 
-- [ ] `scramblePassword(user, password, token)` produces `base64(sha256hex(user + base64(sha256hex(password)) + token))`, asserted against a hand-computed vector
-- [ ] `login` posts to `/api/user/login` with `password_type` 4 and the scrambled value in the `<Password>` element
-- [ ] A successful login returns the `SessionID` from `Set-Cookie` and the token from the `__RequestVerificationTokenone` response header
-- [ ] Requests issued after a successful login carry the rolling token, not the handshake `TokInfo`
-- [ ] A `108006` reply resolves to a failed result naming a wrong credential, and never throws
-- [ ] A `108007` reply resolves to a failed result naming a locked account, distinct from a wrong credential
-- [ ] `login` is called at most once per attempt — a failed login triggers no second request, asserted by counting fetch calls
-- [ ] `snapshot()` still succeeds with no credential configured, proving the anonymous path is untouched
-- [ ] A login attempt that times out or cannot reach the host returns the existing offline reasons rather than a login failure
-- [ ] `logout` posts to `/api/user/logout` and clears the stored authenticated session
+- [x] `scramblePassword(user, password, token)` produces `base64(sha256hex(user + base64(sha256hex(password)) + token))`, asserted against a hand-computed vector
+- [x] `login` posts to `/api/user/login` with `password_type` 4 and the scrambled value in the `<Password>` element
+- [x] A successful login returns the `SessionID` from `Set-Cookie` and the token from the `__RequestVerificationTokenone` response header
+- [x] Requests issued after a successful login carry the rolling token, not the handshake `TokInfo`
+- [x] A `108006` reply resolves to a failed result naming a wrong credential, and never throws
+- [x] A `108007` reply resolves to a failed result naming a locked account, distinct from a wrong credential
+- [x] `login` is called at most once per attempt — a failed login triggers no second request, asserted by counting fetch calls
+- [x] `snapshot()` still succeeds with no credential configured, proving the anonymous path is untouched
+- [x] A login attempt that times out or cannot reach the host returns the existing offline reasons rather than a login failure
+- [x] `logout` posts to `/api/user/logout` and clears the stored authenticated session
 
 ### Tasks
 
-- [ ] Failing tests in `test/hilink/login.test.ts` for the scramble vector, the rolling-token rule, and each of the `108006` / `108007` / offline outcomes
-- [ ] Failing test asserting exactly one fetch to `/api/user/login` when the credential is rejected
-- [ ] Add `RouterCredential` and `LoginResult` to `src/hilink/types.ts`
-- [ ] Implement `scramblePassword` and `login` in `src/hilink/login.ts` using `node:crypto`
-- [ ] Extend `SessionStore` in `src/hilink/session.ts` to hold an authenticated session with its rolling token, separate from the anonymous one
-- [ ] Add a `#post` helper to `RouterClient` mirroring `#get` — same timeout, same error classes, same offline mapping
-- [ ] Confirm `test/hilink/client.test.ts` still passes untouched, or note in `### Notes` why a change was unavoidable
+- [x] Failing tests in `test/hilink/login.test.ts` for the scramble vector, the rolling-token rule, and each of the `108006` / `108007` / offline outcomes
+- [x] Failing test asserting exactly one fetch to `/api/user/login` when the credential is rejected
+- [x] Add `RouterCredential` and `LoginResult` to `src/hilink/types.ts`
+- [x] Implement `scramblePassword` and `login` in `src/hilink/login.ts` using `node:crypto`
+- [x] Extend `SessionStore` in `src/hilink/session.ts` to hold an authenticated session with its rolling token, separate from the anonymous one
+- [x] Add a `#post` helper to `RouterClient` mirroring `#get` — same timeout, same error classes, same offline mapping
+- [x] Confirm `test/hilink/client.test.ts` still passes untouched, or note in `### Notes` why a change was unavoidable
 
 ## T-18 Ask the carrier for the exact remaining allowance over USSD
 
-T-18 · status: todo · size: M · needs: T-16, T-17 · files: src/hilink/ussd.ts, src/hilink/client.ts, test/hilink/ussd.test.ts
+T-18 · status: done · size: M · needs: T-16, T-17 · files: src/hilink/ussd.ts, src/hilink/client.ts, test/hilink/ussd.test.ts
 
 This drives the four-step dialogue and returns one `Allowance`, or a reason it could not.
 The mechanics are send-then-poll: `POST /api/ussd/send`, then `GET /api/ussd/get` until it
@@ -689,32 +690,32 @@ Timing is injected, not slept — the tests use a fake clock and must not take r
 
 ### Acceptance
 
-- [ ] A run against the four recorded fixtures returns an `Allowance` of `145_835_900_000` bytes expiring 25/08/2026, labelled `NET MONTH 200 000`
-- [ ] The four sends carry `#359#`, then `1`, `1`, `1` in that order, asserted from the recorded request bodies
-- [ ] A menu whose `Info conso` entry is numbered `2` is navigated with `2`, proving label matching beats position
-- [ ] A menu with no matching label falls back to the recorded digit for that step
-- [ ] `111019` from `/api/ussd/get` is retried until content arrives, and the poll interval comes from the injected clock rather than a real delay
-- [ ] A `get` that never yields content within the bounded window ends the attempt with a timeout reason
-- [ ] `/api/ussd/release` is requested exactly once on the success path
-- [ ] `/api/ussd/release` is requested on the failure path too — asserted for a mid-dialogue error, a timeout, and an unparseable reply
-- [ ] A non-zero `/api/ussd/status` before starting returns a "busy" reason without sending anything
-- [ ] A second concurrent call while one dialogue is in flight returns the "busy" reason rather than interleaving requests
-- [ ] A `100003` anywhere in the dialogue returns a reason naming the missing login, distinct from every other failure
-- [ ] The whole flow resolves to a result object and never throws, matching how `snapshot()` behaves
+- [x] A run against the four recorded fixtures returns an `Allowance` of `145_835_900_000` bytes expiring 25/08/2026, labelled `NET MONTH 200 000`
+- [x] The four sends carry `#359#`, then `1`, `1`, `1` in that order, asserted from the recorded request bodies
+- [x] A menu whose `Info conso` entry is numbered `2` is navigated with `2`, proving label matching beats position
+- [x] A menu with no matching label falls back to the recorded digit for that step
+- [x] `111019` from `/api/ussd/get` is retried until content arrives, and the poll interval comes from the injected clock rather than a real delay
+- [x] A `get` that never yields content within the bounded window ends the attempt with a timeout reason
+- [x] `/api/ussd/release` is requested exactly once on the success path
+- [x] `/api/ussd/release` is requested on the failure path too — asserted for a mid-dialogue error, a timeout, and an unparseable reply
+- [x] A non-zero `/api/ussd/status` before starting returns a "busy" reason without sending anything
+- [x] A second concurrent call while one dialogue is in flight returns the "busy" reason rather than interleaving requests
+- [x] A `100003` anywhere in the dialogue returns a reason naming the missing login, distinct from every other failure
+- [x] The whole flow resolves to a result object and never throws, matching how `snapshot()` behaves
 
 ### Tasks
 
-- [ ] Failing tests in `test/hilink/ussd.test.ts` for the happy path over the fixtures, using a stub fetch and a fake clock
-- [ ] Failing tests for the reordered-menu, no-label-fallback, busy, concurrent, timeout, `100003` and release-on-failure cases
-- [ ] Define the menu script as data — a list of steps, each with a label pattern and a fallback digit
-- [ ] Implement `readAllowance` in `src/hilink/ussd.ts` against the `#post` and `#get` helpers from T-17
-- [ ] Wrap the release in a `finally` so no exit path can skip it, and guard re-entry with an in-flight flag
-- [ ] Expose the entry point on `RouterClient` so the main process never talks to endpoints directly
-- [ ] Verify by hand against the real router once, and record the observed reply in `### Notes`
+- [x] Failing tests in `test/hilink/ussd.test.ts` for the happy path over the fixtures, using a stub fetch and a fake clock
+- [x] Failing tests for the reordered-menu, no-label-fallback, busy, concurrent, timeout, `100003` and release-on-failure cases
+- [x] Define the menu script as data — a list of steps, each with a label pattern and a fallback digit
+- [x] Implement `readAllowance` in `src/hilink/ussd.ts` against the `#post` and `#get` helpers from T-17
+- [x] Wrap the release in a `finally` so no exit path can skip it, and guard re-entry with an in-flight flag
+- [x] Expose the entry point on `RouterClient` so the main process never talks to endpoints directly
+- [x] Verify by hand against the real router once, and record the observed reply in `### Notes`
 
 ## T-19 Keep the router password in the macOS Keychain
 
-T-19 · status: todo · size: S · needs: T-17 · files: src/main/credentials.ts, src/config/config.ts, test/main/credentials.test.ts
+T-19 · status: done · size: S · needs: T-17 · files: src/main/credentials.ts, src/config/config.ts, src/config/defaults.ts, test/main/credentials.test.ts, test/config/config.test.ts
 
 The password is the first secret this app has ever held, and `config.json` is plaintext in
 the user's home directory — so it goes to the Keychain through Electron `safeStorage`
@@ -730,31 +731,31 @@ this module is the only new place allowed to import it.
 
 ### Acceptance
 
-- [ ] `saveCredential` writes an encrypted blob and the username to config, and the plaintext password appears nowhere in the written file
-- [ ] `loadCredential` round-trips a saved username and password through a stubbed `safeStorage`
-- [ ] `loadCredential` returns null when no credential has ever been saved
-- [ ] `clearCredential` removes the stored blob, after which `loadCredential` returns null
-- [ ] `saveCredential` reports a failure, and writes nothing, when `safeStorage.isEncryptionAvailable()` is false
-- [ ] A stored blob that fails to decrypt returns null and does not throw, so a Keychain reset degrades to "no password"
-- [ ] `parseConfig` accepts a config with no credential fields, keeping every existing config file valid
-- [ ] `parseConfig` rejects a credential blob that is not a string, with the existing `ConfigValidationError`
-- [ ] No test or source file outside `src/main/credentials.ts` imports `safeStorage`
+- [x] `saveCredential` writes an encrypted blob and the username to config, and the plaintext password appears nowhere in the written file
+- [x] `loadCredential` round-trips a saved username and password through a stubbed `safeStorage`
+- [x] `loadCredential` returns null when no credential has ever been saved
+- [x] `clearCredential` removes the stored blob, after which `loadCredential` returns null
+- [x] `saveCredential` reports a failure, and writes nothing, when `safeStorage.isEncryptionAvailable()` is false
+- [x] A stored blob that fails to decrypt returns null and does not throw, so a Keychain reset degrades to "no password"
+- [x] `parseConfig` accepts a config with no credential fields, keeping every existing config file valid
+- [x] `parseConfig` rejects a credential blob that is not a string, with the existing `ConfigValidationError`
+- [x] No test or source file outside `src/main/credentials.ts` imports `safeStorage`
 
 ### Tasks
 
-- [ ] Failing tests in `test/main/credentials.test.ts` for the round trip, the absent case, the clear, the unavailable-encryption case and the corrupt-blob case, against a stubbed `safeStorage`
-- [ ] Failing tests in `test/config/config.test.ts` for the optional credential fields and the non-string rejection
-- [ ] Add the optional `routerUsername` and `routerPasswordBlob` fields to `AppConfig` and its validator
-- [ ] Implement `saveCredential`, `loadCredential` and `clearCredential` in `src/main/credentials.ts`
-- [ ] Confirm nothing logs the decrypted value — grep the module for the password variable reaching a log call
+- [x] Failing tests in `test/main/credentials.test.ts` for the round trip, the absent case, the clear, the unavailable-encryption case and the corrupt-blob case, against a stubbed `safeStorage`
+- [x] Failing tests in `test/config/config.test.ts` for the optional credential fields and the non-string rejection
+- [x] Add the optional `routerUsername` and `routerPasswordBlob` fields to `AppConfig` and its validator
+- [x] Implement `saveCredential`, `loadCredential` and `clearCredential` in `src/main/credentials.ts`
+- [x] Confirm nothing logs the decrypted value — grep the module for the password variable reaching a log call
 
 ## T-20 Carry the real allowance forward with the router's own counter
 
-T-20 · status: todo · size: M · needs: T-18, T-05 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts
+T-20 · status: done · size: M · needs: T-18, T-05 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/view-model.test.ts
 
 This is the heart of the feature: the arithmetic that turns one USSD reading into a figure
 that stays right for days. A sync records an anchor — the remaining volume, the expiry, and
-the router's month counter *at that instant* — and afterwards only the counter's delta is
+the router's month counter _at that instant_ — and afterwards only the counter's delta is
 used:
 
 ```
@@ -777,33 +778,33 @@ Pure domain code — a clock is injected, and nothing here touches Electron or t
 
 ### Acceptance
 
-- [ ] With an anchor of 145 835 900 000 bytes at counter 1 000 000 000, a counter of 3 000 000 000 yields 143 835 900 000 bytes remaining
-- [ ] An unchanged counter yields exactly the anchored remaining, with no drift
-- [ ] A counter below the anchored one reports the anchor as stale with a reset reason, rather than a larger remaining
-- [ ] A `MonthLastClearTime` different from the anchored one reports stale with a reset reason, even when the counter has grown
-- [ ] An anchor whose `expiresAt` is before the injected now reports stale with an expiry reason
-- [ ] A delta exceeding the anchored remaining clamps to zero remaining and reports an exhausted state, never a negative
-- [ ] `planTotalBytes` is the maximum `remainingBytes` ever anchored, and does not fall when a later sync anchors a smaller remaining
-- [ ] Percentage used is computed from the anchor when one is trustworthy, and from the configured limit when none is
-- [ ] `daysUntilExpiry` counts whole days from the injected now to the anchored expiry, reporting 0 on the expiry day itself
-- [ ] A stale anchor still exposes its last computed remaining, so the panel can show a marked figure
-- [ ] An anchor round-trips through `saveConfig` and `loadConfig` unchanged, including the expiry date
-- [ ] `parseConfig` accepts a config with no anchor, keeping every existing config file valid
-- [ ] `parseConfig` rejects an anchor with a non-numeric byte count or an unparseable date
+- [x] With an anchor of 145 835 900 000 bytes at counter 1 000 000 000, a counter of 3 000 000 000 yields 143 835 900 000 bytes remaining
+- [x] An unchanged counter yields exactly the anchored remaining, with no drift
+- [x] A counter below the anchored one reports the anchor as stale with a reset reason, rather than a larger remaining
+- [x] A `MonthLastClearTime` different from the anchored one reports stale with a reset reason, even when the counter has grown
+- [x] An anchor whose `expiresAt` is before the injected now reports stale with an expiry reason
+- [x] A delta exceeding the anchored remaining clamps to zero remaining and reports an exhausted state, never a negative
+- [x] `planTotalBytes` is the maximum `remainingBytes` ever anchored, and does not fall when a later sync anchors a smaller remaining
+- [x] Percentage used is computed from the anchor when one is trustworthy, and from the configured limit when none is
+- [x] `daysUntilExpiry` counts whole days from the injected now to the anchored expiry, reporting 0 on the expiry day itself
+- [x] A stale anchor still exposes its last computed remaining, so the panel can show a marked figure
+- [x] An anchor round-trips through `saveConfig` and `loadConfig` unchanged, including the expiry date
+- [x] `parseConfig` accepts a config with no anchor, keeping every existing config file valid
+- [x] `parseConfig` rejects an anchor with a non-numeric byte count or an unparseable date
 
 ### Tasks
 
-- [ ] Failing tests in `test/domain/allowance.test.ts` for each arithmetic and staleness criterion, with an injected `Clock`
-- [ ] Failing tests in `test/config/config.test.ts` for the anchor round trip, the absent anchor and the two rejections
-- [ ] Define `AllowanceAnchor` and `AllowanceReading` in `src/domain/allowance.ts`
-- [ ] Implement `anchorFrom`, `readAllowanceNow` and `planTotalBytes` as pure functions over an injected clock
-- [ ] Add the anchor and the high-water plan total to `AppConfig`, its defaults and its validator, storing dates as ISO strings
-- [ ] Extend `buildPopoverModel` to prefer a trustworthy anchor over the configured limit, leaving its existing behaviour intact when no anchor exists
-- [ ] Confirm `src/domain/allowance.ts` imports neither Electron nor the network
+- [x] Failing tests in `test/domain/allowance.test.ts` for each arithmetic and staleness criterion, with an injected `Clock`
+- [x] Failing tests in `test/config/config.test.ts` for the anchor round trip, the absent anchor and the two rejections
+- [x] Define `AllowanceAnchor` and `AllowanceReading` in `src/domain/allowance.ts`
+- [x] Implement `anchorFrom`, `readAllowanceNow` and `planTotalBytes` as pure functions over an injected clock
+- [x] Add the anchor and the high-water plan total to `AppConfig`, its defaults and its validator, storing dates as ISO strings
+- [x] Extend `buildPopoverModel` to prefer a trustworthy anchor over the configured limit, leaving its existing behaviour intact when no anchor exists
+- [x] Confirm `src/domain/allowance.ts` imports neither Electron nor the network
 
 ## T-21 Sync the real figures from the panel with one button
 
-T-21 · status: todo · size: M · needs: T-19, T-20 · files: src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, src/main/popover.ts, src/main/main.ts, src/main/view-model.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/main/view-model.test.ts
+T-21 · status: done · size: M · needs: T-19, T-20 · files: src/main/sync.ts, src/main/view-model.ts, src/main/popover.ts, src/main/main.ts, src/renderer/preload.cts, src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, test/main/sync.test.ts, test/main/view-model.test.ts, test/main/popover.test.ts, test/main/main.test.ts, test/renderer/popover.test.ts
 
 The visible half: one Sync button that runs the whole dialogue, and a panel that shows the
 exact remaining volume, the real expiry date and how fresh the reading is.
@@ -824,28 +825,58 @@ no new dependency, and every message crosses the existing IPC bridge.
 
 ### Acceptance
 
-- [ ] The panel renders a Sync button, and pressing it sends exactly one sync request over IPC
-- [ ] The button is disabled while a sync is in flight, and a second press sends nothing
-- [ ] While syncing, the panel shows a progress state naming the current step rather than a frozen panel
-- [ ] A successful sync renders the exact remaining volume in octets, the expiry as a date, and the days remaining
-- [ ] A successful sync renders how long ago it happened, refreshed by the existing poll push
-- [ ] A stale anchor renders the last computed figure together with a visible re-sync marker, and the Sync button carries an attention state
-- [ ] A stale anchor never renders the config-limit estimate in place of the anchored figure
-- [ ] A sync that fails renders the reason — busy, timeout, wrong password, locked account, no password, router offline — as distinct panel text, one case asserted per reason
-- [ ] With no password stored, pressing Sync renders a password prompt instead of starting a dialogue
-- [ ] Submitting the password prompt saves the credential and then starts the dialogue
-- [ ] The rate sparklines and the usage dial keep updating while a sync is in flight, proving the poll loop is not blocked
-- [ ] No sync is ever started by the poll timer — asserted by advancing the poll clock and counting USSD calls at zero
-- [ ] The Sync button is reachable by keyboard and carries an accessible name; the freshness marker is announced as text, not colour alone
+- [x] The panel renders a Sync button, and pressing it sends exactly one sync request over IPC
+- [x] The button is disabled while a sync is in flight, and a second press sends nothing
+- [x] While syncing, the panel shows a progress state naming the current step rather than a frozen panel
+- [x] A successful sync renders the exact remaining volume in octets, the expiry as a date, and the days remaining
+- [x] A successful sync renders how long ago it happened, refreshed by the existing poll push
+- [x] A stale anchor renders the last computed figure together with a visible re-sync marker, and the Sync button carries an attention state
+- [x] A stale anchor never renders the config-limit estimate in place of the anchored figure
+- [x] A sync that fails renders the reason — busy, timeout, wrong password, locked account, no password, router offline — as distinct panel text, one case asserted per reason
+- [x] With no password stored, pressing Sync renders a password prompt instead of starting a dialogue
+- [x] Submitting the password prompt saves the credential and then starts the dialogue
+- [x] The rate sparklines and the usage dial keep updating while a sync is in flight, proving the poll loop is not blocked
+- [x] No sync is ever started by the poll timer — asserted by advancing the poll clock and counting USSD calls at zero
+- [x] The Sync button is reachable by keyboard and carries an accessible name; the freshness marker is announced as text, not colour alone
 
 ### Tasks
 
-- [ ] Failing tests in `test/renderer/popover.test.ts` for the button, the disabled-while-syncing rule, the progress state, the success rendering, the stale marker and each failure reason
-- [ ] Failing test asserting the poll timer never triggers a USSD call
-- [ ] Failing tests in `test/main/popover.test.ts` for the sync IPC channel and the password-save channel
-- [ ] Extend `PopoverModel` with the allowance figures, the freshness state and the sync state, and cover them in `test/main/view-model.test.ts`
-- [ ] Add the sync and save-password IPC channels to the preload bridge and `src/main/popover.ts`
-- [ ] Wire the handler in `src/main/main.ts`: load the credential, run T-18's dialogue, anchor the result through T-20, persist, push the new model
-- [ ] Build the button, progress, stale marker and password prompt in `src/renderer/popover.ts`, styled in `popover.css` to match the existing panel
-- [ ] Verify by hand: press Sync against the real router, confirm the panel figure matches the USSD reply, then watch it decrease as data is used
-- [ ] Confirm the `files:` line above reflects everything actually touched
+- [x] Failing tests in `test/renderer/popover.test.ts` for the button, the disabled-while-syncing rule, the progress state, the success rendering, the stale marker and each failure reason
+- [x] Failing test asserting the poll timer never triggers a USSD call
+- [x] Failing tests in `test/main/popover.test.ts` for the sync IPC channel and the password-save channel
+- [x] Extend `PopoverModel` with the allowance figures, the freshness state and the sync state, and cover them in `test/main/view-model.test.ts`
+- [x] Add the sync and save-password IPC channels to the preload bridge and `src/main/popover.ts`
+- [x] Wire the handler in `src/main/main.ts`: load the credential, run T-18's dialogue, anchor the result through T-20, persist, push the new model
+- [x] Build the button, progress, stale marker and password prompt in `src/renderer/popover.ts`, styled in `popover.css` to match the existing panel
+- [x] Verify by hand: press Sync against the real router, confirm the panel figure matches the USSD reply, then watch it decrease as data is used
+- [x] Confirm the `files:` line above reflects everything actually touched
+
+## T-22 Make the packaged app find its own panel
+
+T-22 · status: todo · size: S · needs: T-21 · files: package.json, tsconfig.build.json, src/main/popover.ts, test/project-setup.test.ts
+
+`npm start` works, but `npm run package` does not: the panel's `index.html` and
+`popover.css` are loaded from `src/renderer/` at runtime, while electron-forge's `ignore`
+list drops `^/src$` from the bundle. A packaged build therefore starts and then fails to
+find its own page.
+
+Found during T-21's review; it predates that task and was deliberately left out of its
+scope. The fix is to make the two assets part of the build output rather than something
+read out of the source tree — either copied into `dist/renderer/` by the build step, or
+kept in the bundle by narrowing the `ignore` list. The first is preferable: it keeps
+`dist/` the single thing that ships.
+
+### Acceptance
+
+- [ ] `npm run build` puts `index.html` and `popover.css` under `dist/renderer/`
+- [ ] `src/main/popover.ts` resolves the page from the build output, not from `src/`
+- [ ] A packaged build launches and renders the panel, with the dial, sparklines and Sync button all present
+- [ ] `npm start` still works unchanged
+- [ ] A test asserts the two assets exist in the build output, so this cannot regress silently
+
+### Tasks
+
+- [ ] Failing test asserting `dist/renderer/index.html` and `dist/renderer/popover.css` exist after a build
+- [ ] Copy the two assets into `dist/renderer/` as part of `npm run build`
+- [ ] Point `src/main/popover.ts` at the built copy
+- [ ] Verify by hand: `npm run package`, launch the packaged app, confirm the panel renders and Sync still works
