@@ -11,6 +11,28 @@ export interface SessionCredentials {
   token: string;
 }
 
+/**
+ * Why a call produced nothing usable. The first four all render as "offline";
+ * the last two are the router refusing a credential it did receive.
+ */
+export type OfflineReason = "unreachable" | "timeout" | "session" | "error";
+
+/** The account used to sign in to the router. Never logged, never serialised. */
+export interface RouterCredential {
+  username: string;
+  /** Plaintext, held only long enough to be scrambled. */
+  password: string;
+}
+
+/**
+ * Why a login did not produce an authenticated session: either the router
+ * refused the credential, or we never got a usable answer out of it.
+ */
+export type LoginFailure =
+  OfflineReason | "wrong-credential" | "account-locked";
+
+export type LoginResult = { ok: true } | { ok: false; reason: LoginFailure };
+
 /** `/api/monitoring/month_statistics` — usage since the billing cycle started. */
 export interface MonthStatistics {
   monthDownloadBytes: number;
