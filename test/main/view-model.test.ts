@@ -134,9 +134,11 @@ describe("buildPopoverModel — a live reading", () => {
   it("hands the renderer only display strings — never a number to format", () => {
     // The sparkline history is the one exception: a chart is geometry, not
     // text, so it carries raw rates. Everything the user *reads* is a string.
-    const { history: _history, ...displayed } = model;
+    const displayed = Object.entries(model).filter(
+      ([field]) => field !== "history",
+    );
 
-    for (const leaf of leaves(displayed)) {
+    for (const leaf of leaves(Object.fromEntries(displayed))) {
       expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
     }
   });
