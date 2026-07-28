@@ -12,6 +12,11 @@
  */
 
 import {
+  readAllowanceNow,
+  type AllowanceAnchor,
+  type AllowanceReading,
+} from "../domain/allowance.js";
+import {
   formatBytes,
   formatDuration,
   formatPercent,
@@ -103,6 +108,33 @@ export interface PopoverHistory {
   peak: number;
 }
 
+/**
+ * The carrier's own figure, carried forward from the last sync.
+ *
+ * Separate from {@link PopoverProgress} because it answers a different
+ * question: the dial is a share of the plan, this is the exact volume the
+ * carrier said was left. When {@link PopoverAllowance.stale} is set the figure
+ * is the last one that could honestly be computed — shown, but marked.
+ */
+export interface PopoverAllowance {
+  /** False when nothing has been synced yet — there is no figure to show. */
+  available: boolean;
+  /** Carrier's offer name, e.g. `"NET MONTH 200 000"`, or a dash. */
+  planLabel: string;
+  /** Exact volume left, e.g. `"90.00 Go"`, or a dash. */
+  remaining: string;
+  /** Expiry as a date, e.g. `"12/08/2026"`, or a dash. */
+  expires: string;
+  /** Time left before the allowance expires, e.g. `"16 days"`, or a dash. */
+  daysUntilExpiry: string;
+  /** True when the anchor can no longer be trusted, so the figure is marked. */
+  stale: boolean;
+  /** Why it is marked, in words. Empty while the anchor holds. */
+  note: string;
+  /** True when the whole allowance has been consumed. */
+  exhausted: boolean;
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   monthDownload: string;
@@ -123,6 +155,8 @@ export interface PopoverModel {
   freshness: PopoverFreshness;
   /** Recent throughput for the sparklines. */
   history: PopoverHistory;
+  /** The carrier's exact remaining volume, carried forward from the last sync. */
+  allowance: PopoverAllowance;
 }
 
 export interface PopoverInput {
@@ -210,6 +244,59 @@ function buildFreshness(
   return { stale: true, age, label: `Updated ${age} ago` };
 }
 
+/** `"12/08/2026"` — built by hand, so the panel reads the same on every machine. */
+function formatDate(date: Date): string {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+
+  return `${day}/${month}/${date.getFullYear()}`;
+}
+
+/** Why a marked figure is marked, in the words the panel shows. */
+function staleNote(reading: AllowanceReading): string {
+  if (reading.staleReason === "counter-reset") {
+    return "The router's counter was reset — sync to refresh.";
+  }
+  if (reading.staleReason === "expired") {
+    return "This allowance has expired — sync to refresh.";
+  }
+
+  return "";
+}
+
+/** The panel before the first sync: an allowance section with nothing in it. */
+function noAllowance(): PopoverAllowance {
+  return {
+    available: false,
+    planLabel: NO_VALUE,
+    remaining: NO_VALUE,
+    expires: NO_VALUE,
+    daysUntilExpiry: NO_VALUE,
+    stale: false,
+    note: "",
+    exhausted: false,
+  };
+}
+
+function buildAllowance(reading: AllowanceReading | null): PopoverAllowance {
+  if (reading === null) return noAllowance();
+
+  return {
+    available: true,
+    planLabel: reading.planLabel === "" ? NO_VALUE : reading.planLabel,
+    remaining: formatBytes(reading.remainingBytes),
+    expires:
+      reading.expiresAt === null ? NO_VALUE : formatDate(reading.expiresAt),
+    daysUntilExpiry:
+      reading.daysUntilExpiry === null
+        ? NO_VALUE
+        : formatDays(reading.daysUntilExpiry),
+    stale: !reading.trustworthy,
+    note: staleNote(reading),
+    exhausted: reading.exhausted,
+  };
+}
+
 function buildHistory(samples: readonly RateSample[]): PopoverHistory {
   return {
     download: samples.map((sample) => sample.downloadBytesPerSecond),
@@ -237,7 +324,57 @@ function emptyModel(
     daysUntilReset: NO_VALUE,
     freshness,
     history,
+    allowance: noAllowance(),
   };
+}
+
+/**
+ * The anchored allowance read against this snapshot's counter, or null when
+ * nothing has been synced yet. The anchor lives in the config because it has to
+ * survive a quit — the router keeps counting while the app is closed.
+ */
+function readAnchored(
+  anchor: AllowanceAnchor | undefined,
+  snapshot: RouterSnapshot,
+  planTotalBytes: number | undefined,
+  clock: Clock,
+): AllowanceReading | null {
+  if (anchor === undefined) return null;
+
+  return readAllowanceNow({
+    anchor,
+    month: snapshot.month,
+    planTotalBytes: planTotalBytes ?? null,
+    clock,
+  });
+}
+
+/**
+ * The dial, measured against whichever total can be trusted.
+ *
+ * A trustworthy anchor is the carrier's own arithmetic, so it wins over the
+ * limit the user typed in. A stale one falls back to that limit rather than
+ * drawing a share it cannot stand behind — the marked volume itself stays in
+ * {@link PopoverModel.allowance}, where it is labelled as stale.
+ */
+function buildDial(
+  allowance: AllowanceReading | null,
+  monthUsedBytes: number,
+  config: AppConfig,
+): PopoverProgress {
+  if (allowance !== null && allowance.trustworthy) {
+    return buildProgress(
+      allowance.planTotalBytes - allowance.remainingBytes,
+      allowance.planTotalBytes,
+      config.warnThresholdPercent,
+    );
+  }
+
+  return buildProgress(
+    monthUsedBytes,
+    config.planLimitBytes,
+    config.warnThresholdPercent,
+  );
 }
 
 /**
@@ -263,16 +400,18 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
 
   const { month, traffic, status, carrier, billing } = snapshot;
   const used = totalUsedBytes(month.monthDownloadBytes, month.monthUploadBytes);
+  const allowance = readAnchored(
+    config.allowanceAnchor,
+    snapshot,
+    config.planTotalBytes,
+    clock,
+  );
 
   return {
     monthDownload: formatBytes(month.monthDownloadBytes),
     monthUpload: formatBytes(month.monthUploadBytes),
     monthTotal: formatBytes(used),
-    progress: buildProgress(
-      used,
-      config.planLimitBytes,
-      config.warnThresholdPercent,
-    ),
+    progress: buildDial(allowance, used, config),
     downloadRate: formatRate(traffic.downloadRateBps),
     uploadRate: formatRate(traffic.uploadRateBps),
     connectedDevices: String(status.connectedDevices),
@@ -281,5 +420,6 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     daysUntilReset: formatDays(daysUntilReset(billing.startDay, clock)),
     freshness,
     history,
+    allowance: buildAllowance(allowance),
   };
 }

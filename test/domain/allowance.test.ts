@@ -410,7 +410,7 @@ describe("readAllowanceNow — daysUntilExpiry", () => {
     const reading = readAllowanceNow({
       anchor: anchor({ expiresAt: new Date(2026, 7, 12) }),
       month: month(ANCHORED_COUNTER),
-      clock: fixedClock(2026, 7, 12, 9, 30),
+      clock: fixedClock(2026, 8, 12, 9, 30),
     });
 
     expect(reading.daysUntilExpiry).toBe(0);
@@ -420,7 +420,7 @@ describe("readAllowanceNow — daysUntilExpiry", () => {
     const reading = readAllowanceNow({
       anchor: anchor({ expiresAt: new Date(2026, 7, 12) }),
       month: month(ANCHORED_COUNTER),
-      clock: fixedClock(2026, 7, 11, 23, 0),
+      clock: fixedClock(2026, 8, 11, 23, 0),
     });
 
     expect(reading.daysUntilExpiry).toBe(1);
@@ -430,7 +430,7 @@ describe("readAllowanceNow — daysUntilExpiry", () => {
     const reading = readAllowanceNow({
       anchor: anchor({ expiresAt: new Date(2026, 7, 12) }),
       month: month(ANCHORED_COUNTER),
-      clock: fixedClock(2026, 7, 15),
+      clock: fixedClock(2026, 8, 15),
     });
 
     expect(reading.daysUntilExpiry).toBe(-3);

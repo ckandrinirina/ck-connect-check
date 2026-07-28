@@ -492,10 +492,12 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
   });
 
   it("falls back to the configured limit for the dial once the anchor is stale", () => {
-    const model = withAnchor(ANCHOR, counter(11_000_000_000, "2026-8-1"));
+    // 4 Go counted against the configured 20 Go limit — 20%, not the 98% the
+    // anchor would have claimed.
+    const model = withAnchor(ANCHOR, counter(4_000_000_000, "2026-8-1"));
 
     expect(model.allowance.stale).toBe(true);
-    expect(model.progress.label).toBe("29%");
+    expect(model.progress.label).toBe("20%");
   });
 
   it("marks an exhausted allowance", () => {

@@ -9,6 +9,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { AllowanceAnchor } from "../domain/allowance.js";
+
 /** Everything the app remembers between launches. */
 export interface AppConfig {
   /** Router address — hostname or IP, no scheme. */
@@ -36,6 +38,20 @@ export interface AppConfig {
    * a password, and only on the machine that wrote it.
    */
   routerPasswordBlob?: string;
+  /**
+   * The last USSD reading, pinned to the router's counter at that instant.
+   * Absent until the first sync — and the reason the exact remaining volume
+   * survives a quit, since the router keeps counting while the app is closed.
+   * Its dates are written to disk as ISO strings and read back as `Date`s.
+   */
+  allowanceAnchor?: AllowanceAnchor;
+  /**
+   * The highest `remainingBytes` ever anchored — the dial's 100%. Held apart
+   * from {@link AppConfig.allowanceAnchor} so it outlives any single anchor,
+   * and distinct from {@link AppConfig.planLimitBytes}, which is what the user
+   * *believes* the plan is rather than what the carrier stated.
+   */
+  planTotalBytes?: number;
 }
 
 /** The stock HiLink address; the router answers here out of the box. */
