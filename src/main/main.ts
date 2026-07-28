@@ -8,7 +8,7 @@
  * `poller.ts`. This file only connects them.
  */
 
-import { Menu, Tray, app, nativeImage } from "electron";
+import { Menu, Tray, app } from "electron";
 
 import {
   loadConfig,
@@ -26,6 +26,7 @@ import type { Allowance, RouterSnapshot } from "../hilink/types.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import { UsagePoller, type SnapshotSource } from "./poller.js";
 import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
+import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
 import {
   createAllowanceSync,
   type AllowanceSource,
@@ -97,7 +98,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     load: () => loadCredential(configPath),
     save: (credential) => saveCredential(configPath, credential),
   };
-  const tray = new Tray(nativeImage.createEmpty());
+  // The glyph starts empty-handed rather than at full signal: no poll has
+  // answered yet, so claiming any bars would be inventing one.
+  const glyph = createTrayGlyph();
+  const tray = new Tray(glyph.imageFor(0));
   const popover =
     options.popover ??
     createPopover({
@@ -250,6 +254,13 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       poller.setActive(popover.isOpen());
 
       result = await router.snapshot();
+
+      // An unreachable router shows no bars — the title already says `offline`,
+      // and a glyph still claiming a signal would contradict it.
+      glyph.apply(
+        tray,
+        result.online ? trayBarsFor(result.snapshot.status) : 0,
+      );
 
       if (result.online) {
         lastReading = { snapshot: result.snapshot, at: systemClock.now() };

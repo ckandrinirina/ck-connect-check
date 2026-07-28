@@ -44,9 +44,24 @@ const ICONSET_ENTRIES = [
 /** The point sizes the built `.icns` has to carry. */
 const ICNS_POINT_SIZES = [16, 32, 128, 256, 512];
 
+/** One artwork per filled bar count, from none to four. */
+const TRAY_LEVELS = [0, 1, 2, 3, 4];
+
+/**
+ * The menu bar glyphs. `…Template.png` and `…Template@2x.png` are the names
+ * `nativeImage` reads: the suffix is what makes macOS recolour the image for a
+ * light, dark or selected menu bar, and the `@2x` beside it is picked up on a
+ * Retina display without being asked for by name.
+ */
+const TRAY_ENTRIES = TRAY_LEVELS.flatMap((bars) => [
+  { file: `bars-${String(bars)}Template.png`, pixels: 16 },
+  { file: `bars-${String(bars)}Template@2x.png`, pixels: 32 },
+]);
+
 const GENERATED_FILES = [
   ...ICONSET_ENTRIES.map((entry) => `assets/icon.iconset/${entry.file}`),
   "assets/icon.icns",
+  ...TRAY_ENTRIES.map((entry) => `assets/tray/${entry.file}`),
 ];
 
 function pixelSize(path: string): { width: number; height: number } {
@@ -81,6 +96,37 @@ describe("assets/icon.svg", () => {
     // The whole point of an SVG source is that 1024px is drawn, not upscaled.
     // An `<image>` element would smuggle a fixed-resolution bitmap back in.
     expect(readRepoFile("assets/icon.svg")).not.toMatch(/<image[\s>]/);
+  });
+});
+
+describe("assets/tray", () => {
+  it.each(TRAY_LEVELS)("draws bars-%i.svg as its own source", (bars) => {
+    expect(existsSync(repoPath(`assets/tray/bars-${String(bars)}.svg`))).toBe(
+      true,
+    );
+  });
+
+  it.each(TRAY_LEVELS)("draws bars-%i.svg on a square viewBox", (bars) => {
+    // The menu bar gives a template image a square slot; a taller viewBox
+    // would letterbox the glyph and shrink the bars inside it.
+    const viewBox = /viewBox="([\d.\s-]+)"/.exec(
+      readRepoFile(`assets/tray/bars-${String(bars)}.svg`),
+    )?.[1];
+    expect(viewBox).toBeTruthy();
+    const [, , width, height] = viewBox!.trim().split(/\s+/).map(Number);
+    expect(width).toBe(height);
+  });
+
+  it("fills one more bar at each level", () => {
+    // Five artworks that looked alike would be the decoration T-30 took out of
+    // the panel — the glyph has to say which level the router reported.
+    const opaque = TRAY_LEVELS.map(
+      (bars) =>
+        readRepoFile(`assets/tray/bars-${String(bars)}.svg`).match(
+          /<rect[^>]*class="filled"/g,
+        )?.length ?? 0,
+    );
+    expect(opaque).toEqual(TRAY_LEVELS);
   });
 });
 
@@ -176,6 +222,25 @@ describe("npm run icon", () => {
   it("writes those ten entries and nothing else", () => {
     const written = readdirSync(repoPath("assets/icon.iconset")).sort();
     expect(written).toEqual(ICONSET_ENTRIES.map((entry) => entry.file).sort());
+  });
+
+  it.each(TRAY_ENTRIES)(
+    "writes tray $file at $pixels pixels square",
+    (entry) => {
+      const path = repoPath(`assets/tray/${entry.file}`);
+      expect(existsSync(path)).toBe(true);
+      expect(pixelSize(path)).toEqual({
+        width: entry.pixels,
+        height: entry.pixels,
+      });
+    },
+  );
+
+  it("writes a tray PNG for every level at both scales, and nothing else", () => {
+    const written = readdirSync(repoPath("assets/tray"))
+      .filter((name) => name.endsWith(".png"))
+      .sort();
+    expect(written).toEqual(TRAY_ENTRIES.map((entry) => entry.file).sort());
   });
 
   it("produces an .icns carrying every point size macOS asks for", () => {

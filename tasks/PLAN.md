@@ -35,7 +35,7 @@
 | T-31 | Say which network the router is actually on                             | done   | S    | T-30             |
 | T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21             |
 | T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
-| T-34 | Put the signal glyph next to the number in the menu bar                 | todo   | M    | T-33, T-30       |
+| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
 | T-35 | Introduce the app to someone arriving from GitHub                       | todo   | M    | T-33, T-34       |
 
 ## T-01 Set the project up so tests can run
@@ -1560,7 +1560,7 @@ and `CFBundleIconFile` names it.
 
 ## T-34 Put the signal glyph next to the number in the menu bar
 
-T-34 · status: todo · size: M · needs: T-33, T-30 · files: assets/tray/bars-0.svg … bars-4.svg, assets/tray/\*.png, scripts/make-tray-icons.mjs, src/main/tray-icon.ts, src/main/tray.ts, src/main/main.ts, package.json, test/main/tray-icon.test.ts
+T-34 · status: done · size: M · needs: T-33, T-30 · files: assets/tray/bars-0.svg … bars-4.svg, assets/tray/\*Template\*.png, scripts/make-tray-icons.mjs, src/main/tray-icon.ts, src/main/main.ts, package.json, test/main/tray-icon.test.ts, test/main/main.test.ts, test/assets/icon.test.ts, test/project-setup.test.ts
 
 `main.ts:100` builds the tray from `nativeImage.createEmpty()`, so the menu bar
 shows a bare number with nothing identifying it. The glyph added here is the
@@ -1579,27 +1579,58 @@ Electron call it needs is `nativeImage.createFromPath`, which the test stubs.
 
 ### Acceptance
 
-- [ ] Five bar artworks exist and `npm run icon` rasterises each at 16 and 32 pixels
-- [ ] Every generated tray PNG is square and its filename ends `Template` or `Template@2x`, the macOS convention `nativeImage` recognises
-- [ ] `trayImageFor(bars)` answers a distinct image path for each of 0, 1, 2, 3 and 4 filled bars
-- [ ] `trayImageFor` clamps out-of-range input — a negative count and a count above the maximum both resolve to an existing path, never `undefined`
-- [ ] A snapshot whose `maxSignalBars` is 0 resolves to the empty-bars image and throws nothing
-- [ ] Every image handed to the tray has `setTemplateImage(true)` applied
-- [ ] The tray is set from a real image at startup rather than `nativeImage.createEmpty()`
-- [ ] The image is only reassigned when the bar count actually changes, not on every poll
-- [ ] The tray title still fits under 12 characters alongside the glyph
-- [ ] `npm test` and `npm run lint` still exit 0
+- [x] Five bar artworks exist and `npm run icon` rasterises each at 16 and 32 pixels
+- [x] Every generated tray PNG is square and its filename ends `Template` or `Template@2x`, the macOS convention `nativeImage` recognises
+- [x] `trayImageFor(bars)` answers a distinct image path for each of 0, 1, 2, 3 and 4 filled bars
+- [x] `trayImageFor` clamps out-of-range input — a negative count and a count above the maximum both resolve to an existing path, never `undefined`
+- [x] A snapshot whose `maxSignalBars` is 0 resolves to the empty-bars image and throws nothing
+- [x] Every image handed to the tray has `setTemplateImage(true)` applied
+- [x] The tray is set from a real image at startup rather than `nativeImage.createEmpty()`
+- [x] The image is only reassigned when the bar count actually changes, not on every poll
+- [x] The tray title still fits under 12 characters alongside the glyph
+- [x] `npm test` and `npm run lint` still exit 0
 
 ### Tasks
 
-- [ ] Failing `test/main/tray-icon.test.ts` — the mapping, the clamping, the template flag, the change-only reassignment
-- [ ] Draw `assets/tray/bars-0.svg` … `bars-4.svg`, sized for a 16-point menu bar
-- [ ] `scripts/make-tray-icons.mjs` over T-33's renderer, wired into the `icon` script
-- [ ] `src/main/tray-icon.ts` — load the five, map a bar count to one, apply the template flag
-- [ ] Replace `nativeImage.createEmpty()` in `main.ts` and set the image from the snapshot in `tray.ts`
-- [ ] Make sure the packaged app can find the images — they sit outside the asar, like the panel's assets in T-22
-- [ ] Verify by hand: watch the glyph in a light and a dark menu bar, and confirm it follows the signal level
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing `test/main/tray-icon.test.ts` — the mapping, the clamping, the template flag, the change-only reassignment
+- [x] Draw `assets/tray/bars-0.svg` … `bars-4.svg`, sized for a 16-point menu bar
+- [x] `scripts/make-tray-icons.mjs` over T-33's renderer, wired into the `icon` script
+- [x] `src/main/tray-icon.ts` — load the five, map a bar count to one, apply the template flag
+- [x] Replace `nativeImage.createEmpty()` in `main.ts` and set the image from the snapshot in `tray.ts`
+- [x] Make sure the packaged app can find the images — they sit outside the asar, like the panel's assets in T-22
+- [x] Verify by hand: watch the glyph in a light and a dark menu bar, and confirm it follows the signal level
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The glyphs ship _inside_ the asar, not outside it. The task above said outside,
+"like the panel's assets in T-22" — but T-22 put its assets in `dist/`, which
+electron-forge packs into `app.asar` along with everything else it keeps. The
+two halves of that sentence contradict each other, and the half worth following
+is the precedent: `npm run build` copies the ten PNGs into `dist/assets/tray/`,
+`tray-icon.ts` resolves them by the same `import.meta.url` walk `popover.ts`
+uses for its page, and `nativeImage.createFromPath` reads an asar path without
+being told it is one. Verified on the built bundle: `asar list` shows all ten
+under `/dist/assets/tray/`.
+
+The image is set from `main.ts` rather than from `tray.ts`. `tray.ts` is pure —
+a snapshot and the config in, a string out, no Electron — and the reason it is
+pure is that every rendering case is testable without a screen. Handing it a
+`Tray` to call `setImage` on would have ended that for one line of wiring, so
+`main.ts` keeps it, beside the `setTitle` it already owns.
+
+Only the 1x path is ever named. `nativeImage.createFromPath` finds the `@2x`
+file sitting beside it by convention, so asking for the Retina variant by name
+would be asking twice.
+
+The five levels are loaded once at creation rather than per poll, and
+`apply()` remembers which one is showing — a poll every thirty seconds for the
+life of the app is a long time to keep reassigning the same image.
+
+`bars-0.svg`'s header comment originally contained the literal `class="filled"`
+while describing the artwork, which the "fills one more bar at each level" test
+counted as a filled bar. The test now matches `<rect …class="filled"`, so prose
+about the drawing cannot be mistaken for the drawing.
 
 ## T-35 Introduce the app to someone arriving from GitHub
 

@@ -64,6 +64,24 @@ describe("build output", () => {
     },
   );
 
+  it.each([0, 1, 2, 3, 4])(
+    "copies the %i-bar tray glyph into dist/assets/tray/",
+    (bars) => {
+      // The tray reads its image at runtime, so the glyphs travel with `dist/`
+      // for the same reason the panel's page does.
+      for (const scale of ["", "@2x"]) {
+        expect(
+          existsSync(
+            new URL(
+              `../dist/assets/tray/bars-${String(bars)}Template${scale}.png`,
+              import.meta.url,
+            ),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+
   it("leaves the built page pointing at its own directory", () => {
     // The copy lands beside the compiled script, so the page's own references
     // have to be relative to itself — a walk out to `../../dist/` would resolve

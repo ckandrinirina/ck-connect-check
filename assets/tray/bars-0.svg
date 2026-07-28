@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    The menu bar glyph at no signal. One of five artworks, `bars-0` to
+    `bars-4`, differing only in how many of the bars are drawn filled — the
+    same four ascending bars the panel's header and the app's own mark draw, so
+    the three never disagree about what a signal looks like.
+
+    Everything is black with alpha. These are rasterised as macOS template
+    images, and a template keeps only its alpha channel: colour here would be
+    discarded, and the dimmed bars read as dimmed because they are 30% opaque,
+    not because they are grey.
+
+    Drawn on a 32 square and rendered at 16 and 32 pixels, so the 1x menu bar
+    and the Retina one are the same drawing at two scales.
+  -->
+  <style>
+    rect { fill: #000000; }
+    .filled { fill-opacity: 1; }
+    .empty { fill-opacity: 0.3; }
+  </style>
+
+  <rect class="empty" x="1" y="21" width="6" height="8" rx="1.5" />
+  <rect class="empty" x="9" y="15" width="6" height="14" rx="1.5" />
+  <rect class="empty" x="17" y="9" width="6" height="20" rx="1.5" />
+  <rect class="empty" x="25" y="3" width="6" height="26" rx="1.5" />
+</svg>

@@ -17,6 +17,7 @@ import { defaultConfig } from "../../src/config/defaults.js";
 import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
+import { trayImageFor } from "../../src/main/tray-icon.js";
 import type { Popover } from "../../src/main/popover.js";
 import type { PopoverModel } from "../../src/main/view-model.js";
 
@@ -24,17 +25,30 @@ import type { PopoverModel } from "../../src/main/view-model.js";
 const electron = vi.hoisted(() => ({
   dockHide: vi.fn(),
   setTitle: vi.fn(),
+  setImage: vi.fn(),
   on: vi.fn(),
   buildFromTemplate: vi.fn((template: unknown) => ({ template })),
+  createEmpty: vi.fn(() => ({ empty: true })),
+  createFromPath: vi.fn((path: string) => ({
+    path,
+    setTemplateImage: vi.fn(),
+  })),
+  /** The image each `new Tray(…)` was constructed with, in order. */
+  trayImages: [] as unknown[],
 }));
 
 vi.mock("electron", () => {
   class Tray {
     setTitle = electron.setTitle;
+    setImage = electron.setImage;
     setToolTip = vi.fn();
     setContextMenu = vi.fn();
     destroy = vi.fn();
     on = electron.on;
+
+    constructor(image: unknown) {
+      electron.trayImages.push(image);
+    }
   }
 
   return {
@@ -46,7 +60,10 @@ vi.mock("electron", () => {
     },
     Menu: { buildFromTemplate: electron.buildFromTemplate },
     Tray,
-    nativeImage: { createEmpty: vi.fn(() => ({ empty: true })) },
+    nativeImage: {
+      createEmpty: electron.createEmpty,
+      createFromPath: electron.createFromPath,
+    },
     // The panel's own channels are exercised in `test/main/popover.test.ts`;
     // here they only have to exist, for the tests that let `main.ts` build a
     // real popover.
@@ -223,8 +240,98 @@ describe("startMenuBarApp", () => {
   });
 });
 
+/** A reading whose router reports `signalBars` out of five. */
+function readingWithSignal(signalBars: number): SnapshotResult {
+  const taken = snapshot(5_830_718_387);
+
+  return {
+    online: true,
+    snapshot: { ...taken, status: { ...taken.status, signalBars } },
+  };
+}
+
+/** The path of the image last handed to `tray.setImage`. */
+function lastTrayImagePath(): string {
+  const calls = electron.setImage.mock.calls;
+
+  return (
+    (calls[calls.length - 1]?.[0] as { path: string } | undefined)?.path ?? ""
+  );
+}
+
 /** The default poll interval, so each advance is exactly one more poll. */
 const POLL_MS = 30_000;
+
+describe("startMenuBarApp — the menu bar glyph", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.setImage.mockClear();
+    electron.createEmpty.mockClear();
+    electron.trayImages.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("builds the tray from a real glyph, not an empty image", () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: { snapshot: () => Promise.resolve(READING) },
+    });
+
+    // A tray created from an empty image shows a bare number with nothing
+    // identifying it as this app.
+    expect(electron.createEmpty).not.toHaveBeenCalled();
+    expect((electron.trayImages[0] as { path?: string }).path).toBe(
+      trayImageFor(0),
+    );
+    app.stop();
+  });
+
+  it("follows the signal level the router reports", async () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: scriptedClient([readingWithSignal(5), readingWithSignal(3)]),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lastTrayImagePath()).toBe(trayImageFor(4));
+
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(lastTrayImagePath()).toBe(trayImageFor(2));
+
+    app.stop();
+  });
+
+  it("shows no bars while the router is unreachable", async () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: scriptedClient([readingWithSignal(5), OFFLINE]),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    // The title already says `offline`; a glyph still claiming five bars would
+    // contradict it.
+    expect(lastTrayImagePath()).toBe(trayImageFor(0));
+    app.stop();
+  });
+
+  it("reassigns the image only when the level changes", async () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: scriptedClient([readingWithSignal(5), readingWithSignal(5)]),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(electron.setImage).toHaveBeenCalledTimes(1);
+    app.stop();
+  });
+});
 
 describe("startMenuBarApp — the throughput history", () => {
   beforeEach(() => {
