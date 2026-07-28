@@ -23,9 +23,14 @@
 | T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17             |
 | T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05       |
 | T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20       |
-| T-22 | Make the packaged app find its own panel                                | todo   | S    | T-21             |
+| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21             |
 | T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21             |
 | T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23             |
+| T-25 | Measure the dial against the plan the user actually bought              | todo   | M    | T-21             |
+| T-26 | Make the menu bar agree with the panel                                  | todo   | S    | T-25             |
+| T-27 | Let the plan cap be typed into the panel                                | todo   | M    | T-25             |
+| T-28 | Sync by itself when there is nothing trustworthy to show                | todo   | S    | T-21             |
+| T-29 | Drop the reset countdown the carrier never agreed with                  | todo   | S    | T-25             |
 
 ## T-01 Set the project up so tests can run
 
@@ -855,7 +860,7 @@ no new dependency, and every message crosses the existing IPC bridge.
 
 ## T-22 Make the packaged app find its own panel
 
-T-22 · status: todo · size: S · needs: T-21 · files: package.json, tsconfig.build.json, src/main/popover.ts, test/project-setup.test.ts
+T-22 · status: done · size: S · needs: T-21 · files: package.json, src/main/popover.ts, src/renderer/index.html, test/project-setup.test.ts, test/main/popover.test.ts
 
 `npm start` works, but `npm run package` does not: the panel's `index.html` and
 `popover.css` are loaded from `src/renderer/` at runtime, while electron-forge's `ignore`
@@ -870,18 +875,32 @@ kept in the bundle by narrowing the `ignore` list. The first is preferable: it k
 
 ### Acceptance
 
-- [ ] `npm run build` puts `index.html` and `popover.css` under `dist/renderer/`
-- [ ] `src/main/popover.ts` resolves the page from the build output, not from `src/`
-- [ ] A packaged build launches and renders the panel, with the dial, sparklines and Sync button all present
-- [ ] `npm start` still works unchanged
-- [ ] A test asserts the two assets exist in the build output, so this cannot regress silently
+- [x] `npm run build` puts `index.html` and `popover.css` under `dist/renderer/`
+- [x] `src/main/popover.ts` resolves the page from the build output, not from `src/`
+- [x] A packaged build launches and renders the panel, with the dial, sparklines and Sync button all present
+- [x] `npm start` still works unchanged
+- [x] A test asserts the two assets exist in the build output, so this cannot regress silently
 
 ### Tasks
 
-- [ ] Failing test asserting `dist/renderer/index.html` and `dist/renderer/popover.css` exist after a build
-- [ ] Copy the two assets into `dist/renderer/` as part of `npm run build`
-- [ ] Point `src/main/popover.ts` at the built copy
-- [ ] Verify by hand: `npm run package`, launch the packaged app, confirm the panel renders and Sync still works
+- [x] Failing test asserting `dist/renderer/index.html` and `dist/renderer/popover.css` exist after a build
+- [x] Copy the two assets into `dist/renderer/` as part of `npm run build`
+- [x] Point `src/main/popover.ts` at the built copy
+- [x] Verify by hand: `npm run package`, launch the packaged app, confirm the panel renders and Sync still works
+
+### Notes
+
+The build copies with `cp` rather than a copy script — the app is macOS-only, so a
+portable copy step would be machinery for a platform that never runs.
+
+`index.html`'s script tag moved from `../../dist/renderer/popover.js` to
+`./popover.js`. Once the page ships inside `dist/renderer/`, a walk up two levels
+leaves the bundle entirely; the built page's own assertion in
+`test/project-setup.test.ts` guards that.
+
+The build-output test runs `npm run build` itself instead of inspecting whatever
+`dist/` happens to be lying around — an assertion about build output that a stale
+directory can satisfy proves nothing. It costs the suite about 3.5s.
 
 ## T-23 Say which error the router actually returned when a sync fails
 
@@ -1017,3 +1036,190 @@ why a login can still be scrambled against the untouched handshake token afterwa
 `logout()` was moved onto `#write` too — it is a write like any other, and a spent token
 there would otherwise leave the router-side session standing. `login()` deliberately was
 not: a retry of a login POST is a second login attempt, and five of those lock the account.
+
+## T-25 Measure the dial against the plan the user actually bought
+
+T-25 · status: todo · size: M · needs: T-21 · files: src/domain/allowance.ts, src/main/view-model.ts, src/main/main.ts, src/config/defaults.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts, docs/ARCHITECTURE.md
+
+The panel currently shows two numbers that describe different things and calls them one
+story: `10.17 Go used this month` is the router's month counter, while `143.82 Go left`
+comes from the carrier. The dial sits between them at 0%, because `buildDial` measures
+`planTotalBytes − remainingBytes` and `planTotalBytes` is the highest remaining ever
+anchored — with a single anchor those are the same number, so the ring is pinned to zero by
+construction until a second, larger sync happens.
+
+The fix is to state the denominator instead of inferring it. `config.planLimitBytes` — the
+cap the user bought, 150 Go — becomes the dial's 100%, and the consumed figure becomes
+`cap − remainingNow`. The router's counter keeps its one honest job, the delta inside
+`remainingNow`, and stops being a headline. Before the first sync there is no anchor and
+therefore no dial: the prompt asks for a sync rather than drawing a share of a number the
+carrier never confirmed.
+
+The high-water `planTotalBytes` machinery — `planTotalBytes()` in `allowance.ts` and the
+config field it persists in `main.ts` — is what produced the bug, so it goes with it.
+
+### Acceptance
+
+- [ ] `readAllowanceNow` takes the configured cap and reports `usedBytes` as `cap − remainingBytes`, clamped at zero
+- [ ] `percentUsed` on the reading is measured against the configured cap, not against any anchored remaining
+- [ ] A reading with cap 150 Go and remaining 143.82 Go reports 6.18 Go used and 4% — the screenshot's case no longer reads 0%
+- [ ] A reading whose anchor is stale reports `percentUsed` as null, unchanged from today
+- [ ] `readAllowanceNow` with no cap configured reports `percentUsed` as null and still reports `remainingBytes`
+- [ ] `monthTotal` in the popover model is the anchored used figure, not `totalUsedBytes` of the router's counter
+- [ ] `monthDownload` and `monthUpload` still show the router's raw counters — they are the delta's evidence and stay visible
+- [ ] With an anchor present and no cap set, the dial is unavailable and the prompt reads as an instruction to set a limit
+- [ ] With no anchor at all, the dial is unavailable and the prompt asks for a sync rather than mentioning a limit
+- [ ] With a trustworthy anchor and a cap, the dial's `sweep` and `label` both derive from `cap − remainingNow`
+- [ ] `planTotalBytes()` is gone from `src/domain/allowance.ts`, and `AppConfig.planTotalBytes` is no longer written by `main.ts`
+- [ ] A config file still carrying a `planTotalBytes` key loads without error and ignores it
+
+### Tasks
+
+- [ ] Failing test: `readAllowanceNow` with cap 150 Go and remaining 143.82 Go yields `usedBytes` 6.18 Go and `percentUsed` ~4; with no cap, `percentUsed` is null
+- [ ] Failing test: `buildPopoverModel` reports `monthTotal` as the anchored used figure while `monthDownload`/`monthUpload` stay the router's counters
+- [ ] Failing test: the three dial cases — no anchor, anchor without cap, anchor with cap — produce the sync prompt, the limit prompt, and a real percentage
+- [ ] Failing test: a config record containing `planTotalBytes` loads and the field is absent from the parsed config
+- [ ] Replace `AllowanceNowInput.planTotalBytes` with the configured cap, and add `usedBytes` to `AllowanceReading`
+- [ ] Delete `planTotalBytes()` and the high-water bookkeeping in `main.ts`; drop the config field and its reader
+- [ ] Rewrite `buildDial` to take the reading and the cap, and route `monthTotal` through the reading
+- [ ] Verify by hand: with the real anchor and a 150 Go cap, confirm the ring and the percentage agree with `cap − remaining`
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-26 Make the menu bar agree with the panel
+
+T-26 · status: todo · size: S · needs: T-25 · files: src/main/tray.ts, src/main/poller.ts, src/main/view-model.ts, test/main/tray.test.ts, test/main/poller.test.ts
+
+The tray title and the over-limit notification are computed in two more places that never
+learned about the anchor: `tray.ts:91` and `poller.ts:177` both divide the router's month
+counter by `config.planLimitBytes`. After T-25 the panel says one thing and the menu bar
+says another, which is a worse failure than the original bug — a warning that fires against
+the wrong numerator is a warning the user learns to ignore.
+
+Both call sites take the same figure the panel uses. The percentage has exactly one
+definition in this app, and it lives in `src/domain/`.
+
+### Acceptance
+
+- [ ] The tray title's percentage is derived from the anchored reading whenever a trustworthy anchor and a cap are present
+- [ ] The tray falls back to its current dash — not to the router counter — when there is no anchor or no cap
+- [ ] The warn/over notification threshold is evaluated against the same figure as the tray title
+- [ ] Given one snapshot, config and anchor, the tray's percentage and the popover model's `progress.label` are asserted equal in a test
+- [ ] The tray title still stays under 12 characters, asserted by the existing test
+- [ ] `percentUsed(routerMonthBytes, planLimitBytes)` appears nowhere in `src/main/`
+
+### Tasks
+
+- [ ] Failing test: tray title and `buildPopoverModel(...).progress.label` agree for a trustworthy anchor with a cap
+- [ ] Failing test: with no anchor, the tray shows its no-value title rather than a router-counter percentage
+- [ ] Failing test: the notification threshold fires on the anchored percentage, not the router counter's
+- [ ] Extract the shared "percentage to show" derivation so tray, poller and view-model call one function
+- [ ] Rework `tray.ts` and `poller.ts` onto it
+- [ ] Verify by hand: read the menu bar title and the panel percentage together and confirm they match
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-27 Let the plan cap be typed into the panel
+
+T-27 · status: todo · size: M · needs: T-25 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/renderer/preload.cts, src/main/popover.ts, src/main/main.ts, src/main/view-model.ts, src/config/config.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+T-25 makes the dial depend on a cap that today can only be set by hand-editing
+`config.json` — a setting nobody will find, which would leave the dial permanently showing
+its prompt. The panel needs a small field beside the dial: type `150`, press enter, the
+value is stored in Go and the ring appears.
+
+The password prompt added in T-21 is the pattern to follow — an input the renderer shows on
+demand, an IPC call into the main process, and a re-render from the model rather than the
+renderer patching its own DOM. The renderer still does no arithmetic: it sends the number
+typed and shows what comes back.
+
+### Acceptance
+
+- [ ] The popover model carries the current cap as a display string and a flag for whether the editor should be open
+- [ ] With no cap set, the dial's prompt area offers the editor rather than a bare sentence
+- [ ] Submitting a value writes `planLimitBytes` to `config.json` as bytes, using the same decimal Go scale as the display
+- [ ] A submitted value of `150` stores 150 000 000 000 bytes
+- [ ] A blank, negative, zero or non-numeric entry is rejected without writing, and the panel says why
+- [ ] The dial re-renders from the next model push after a successful save, with no renderer-side arithmetic
+- [ ] An existing cap is pre-filled in the field when the editor is reopened
+- [ ] The saved cap survives a restart, asserted through `config.ts` round-tripping the value
+
+### Tasks
+
+- [ ] Failing test: the view-model exposes the cap and the editor flag for the set and unset cases
+- [ ] Failing test: the renderer sends the typed value through the preload bridge and rejects blank, zero, negative and non-numeric input
+- [ ] Failing test: `config.ts` round-trips `planLimitBytes` written from a Go figure
+- [ ] Failing test: the value is converted at the boundary — `150` in, 150 000 000 000 bytes on disk
+- [ ] Add the cap field and its state to the popover model
+- [ ] Add the input, its styling and its submit handling to the renderer, following the password prompt's shape
+- [ ] Add the IPC channel through `preload.cts` and `main/popover.ts`, and the config write in `main.ts`
+- [ ] Verify by hand: set 150 in the panel, confirm the ring appears and `config.json` holds the bytes
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-28 Sync by itself when there is nothing trustworthy to show
+
+T-28 · status: todo · size: S · needs: T-21 · files: src/main/main.ts, src/main/sync.ts, test/main/sync.test.ts, test/main/main.test.ts
+
+A first launch currently shows an empty allowance section until the user finds the Sync
+button, and a launch after an expiry shows a figure marked stale until they press it again.
+Both are cases where the app knows it has nothing worth showing and could ask the carrier
+itself.
+
+It must ask sparingly. A USSD dialogue costs tens of seconds and a login against a device
+that locks the account after five refusals, so the trigger is narrow: no anchor, an expired
+one, or one invalidated by a counter reset. A healthy anchor is carried forward with no
+dialogue. A failed automatic sync is reported in the panel exactly like a failed press and
+is never retried on a timer.
+
+### Acceptance
+
+- [ ] An automatic sync is started at launch when no anchor is stored
+- [ ] An automatic sync is started at launch when the stored anchor is expired or reset-invalidated
+- [ ] No automatic sync is started when the stored anchor is trustworthy
+- [ ] No automatic sync is started when no router password is saved — the panel shows the existing needs-password state instead
+- [ ] A failed automatic sync leaves the panel in the same failed state a manual press would, and issues no second attempt
+- [ ] The automatic sync waits for a first successful snapshot, so the anchor has a counter to pin against
+- [ ] A manual press during an automatic sync is refused by the existing busy guard rather than starting a second dialogue
+
+### Tasks
+
+- [ ] Failing test: the four trigger cases — no anchor, expired, counter-reset, healthy — start a dialogue in the first three only
+- [ ] Failing test: with no saved password, no dialogue is started and the state is `needs-password`
+- [ ] Failing test: a failed automatic sync issues exactly one dialogue and leaves a failed state
+- [ ] Failing test: no dialogue is started before the first successful snapshot
+- [ ] Add the trigger decision as a pure predicate over the config and the snapshot, next to the staleness logic it mirrors
+- [ ] Wire it into the startup path in `main.ts`, reusing the existing sync runner and its busy guard
+- [ ] Verify by hand: clear the anchor from `config.json`, launch, and confirm one dialogue runs and the panel fills in
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-29 Drop the reset countdown the carrier never agreed with
+
+T-29 · status: todo · size: S · needs: T-25 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/domain/quota.ts, test/main/view-model.test.ts, test/domain/quota.test.ts
+
+"Resets in 27 days" is computed from the router's `StartDay`, which `docs/ARCHITECTURE.md`
+already records as disagreeing with the device's own `MonthLastClearTime` and which the
+carrier has never confirmed. Next to "Valid for 28 days" — the carrier's own expiry, from
+the USSD reply — it is a second, worse answer to the same question, and the two differing
+by a day invites the user to wonder which is lying.
+
+It goes. `nextResetDate`/`daysUntilReset` lose their only caller and go with it; `startDay`
+stays parsed at the router boundary, because removing a field from the wire format is a
+different change from removing a tile from a panel.
+
+### Acceptance
+
+- [ ] `PopoverModel` no longer has a `daysUntilReset` field
+- [ ] The "Resets in" term and value are gone from `index.html`, and the renderer no longer looks for that field
+- [ ] The remaining tile row still renders correctly with an odd number of tiles, asserted against the rendered DOM
+- [ ] "Valid for" is unchanged and still sourced from the allowance reading
+- [ ] `daysUntilReset` and `nextResetDate` are removed from `src/domain/quota.ts` along with their tests
+- [ ] `startDay` is still parsed by `src/hilink/parse.ts` and still present on the snapshot type
+- [ ] `npm run lint` reports no unused imports or dead exports after the removal
+
+### Tasks
+
+- [ ] Failing test: the popover model's keys no longer include `daysUntilReset`
+- [ ] Failing test: the rendered panel contains no "Resets in" term and the tile row layout holds
+- [ ] Remove the field from the model, the markup and the renderer's field map
+- [ ] Remove `daysUntilReset` and `nextResetDate` from `quota.ts` and delete their tests
+- [ ] Adjust `popover.css` if the tile row needs it after losing a cell
+- [ ] Verify by hand: open the panel and confirm the layout reads correctly without the tile
+- [ ] Update the `files:` line above to reflect everything actually touched

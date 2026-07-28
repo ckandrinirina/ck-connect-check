@@ -130,9 +130,31 @@ app restarts and long quits — the router keeps counting while nothing is watch
 anchor is invalidated, not silently corrected, when `MonthLastClearTime` changes, when the
 month counter moves backwards, or when `expiresAt` has passed.
 
-The plan total behind the dial is the **highest `remainingBytes` ever anchored**: right
-after a recharge that value _is_ the plan size, so the denominator calibrates itself
-instead of being typed in.
+The plan total behind the dial is the **plan cap the user typed in** — 150 Go, say — set
+from a field in the panel and stored in `config.json`. Everything the user reads as a
+share or a consumed volume is derived from the anchor against that cap:
+
+```
+usedNow    = planLimitBytes − remainingNow
+percentNow = usedNow / planLimitBytes
+```
+
+The router's month counter therefore appears in exactly one place in the arithmetic — as
+the `routerMonthBytes` delta inside `remainingNow`. Its absolute value is never a headline
+figure, because it counts from whenever the device last cleared itself and knows nothing
+about the carrier's billing period. Before the first successful sync there is no anchor and
+so no dial: the panel asks for a sync rather than showing a percentage of an unrelated
+number.
+
+An earlier design calibrated the denominator automatically from the highest
+`remainingBytes` ever anchored. It cannot work with a single anchor — the high-water mark
+_is_ that anchor's remaining, so the dial reads 0% by construction after every first sync,
+which is exactly what the panel showed on 2026-07-28. The cap is now stated, not inferred.
+
+The app syncs by itself **only when there is no usable anchor** — none stored, expired, or
+invalidated by a counter reset. A healthy anchor is carried forward with no dialogue at
+all. A failed automatic sync is reported in the panel and never retried on a timer, for the
+same reason a failed login is never retried: the account locks after five refusals.
 
 ## Folder structure
 
@@ -174,6 +196,13 @@ Append-only. One line each, always with the reason.
 - Menu navigation matches on reply labels (`Mes offres`, `Info conso`) and falls back to the recorded `1,1,1` digits — a carrier inserting a menu entry would otherwise land the app on the wrong screen silently
 - The verification token advances with every reply and a `125003` refreshes it and retries the `POST` once, never re-logging-in — the token is single-use per write, and treating a spent token as a credential problem would walk the account towards its five-failure lockout
 - An unrecognised router error code is carried to the surface with its code and endpoint, never collapsed into a bare "it failed" — the device's own numeric code is the only evidence of why it refused, and a reason string that discards it makes the failure undiagnosable
+- **Supersedes the high-water decision above:** the dial's 100% is the plan cap the user set, not the highest remaining ever anchored — with one anchor the high-water mark equals that anchor's own remaining, so the dial is forced to 0% after every first sync
+- Consumed volume is `cap − remainingNow`, never the router's month counter — the counter's absolute value is anchored to the device's own clear time, not to the carrier's billing period, so the two figures were describing different months on the same card
+- The router's month counter survives only as the delta inside `remainingNow` — it is a trustworthy accumulator and a meaningless absolute, and the anchor already uses it in exactly that shape
+- The dial is absent, not zero, until the first successful sync — a percentage of a number the carrier never confirmed is worse than an honest prompt
+- The plan cap is entered in the panel rather than only in `config.json` — a hand-edited config field is a setting nobody finds, and the panel already has an input for the router password
+- USSD is dialled automatically only when no usable anchor exists — that keeps first launch self-configuring without turning every start into a carrier dialogue and a login attempt against a device that locks after five failures
+- The "Resets in" countdown is gone — it was derived from the router's `StartDay`, which disagrees with the carrier's own expiry date, and "Valid for" states the date that actually governs the allowance
 
 ## Conventions
 
