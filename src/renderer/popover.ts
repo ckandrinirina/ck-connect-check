@@ -67,11 +67,9 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     planDaysUnit: model.planDays.unit,
     planDaysError: model.planDays.error,
     planCapMessage: model.planCapPrompt?.message ?? "",
-    paceBand: model.pace?.band ?? "",
     paceSustainable: model.pace?.sustainable ?? "",
-    paceAfforded: model.pace?.afforded ?? "",
-    paceConsumed: model.pace?.consumed ?? "",
-    paceNote: model.pace?.note ?? "",
+    paceAverage: model.pace?.meter?.average ?? "",
+    paceAfforded: model.pace?.meter?.afforded ?? "",
     paceHint: model.pace?.hint ?? "",
     percent: model.progress.label,
     prompt: model.progress.prompt,
@@ -471,6 +469,47 @@ function applyPlanCapPrompt(model: PopoverModel): void {
   }
 }
 
+/** A share of the meter's track, 0 to 1, as the CSS length it is drawn at. */
+function trackShare(share: number): string {
+  return `${(share * 100).toFixed(2)}%`;
+}
+
+/**
+ * Draws the meter, or takes it off the row.
+ *
+ * The only arithmetic is turning the model's two shares into percentages of a
+ * track whose width only the stylesheet knows — the same bargain the dial's
+ * sweep makes with the ring's circumference. Where the tick sits is the model's
+ * business, not a number this file happens to agree with.
+ */
+function applyPaceMeter(model: PopoverModel): void {
+  const host = document.querySelector<HTMLElement>("[data-pace-meter]");
+
+  if (host === null) return;
+
+  const meter = model.pace?.meter ?? null;
+
+  host.hidden = meter === null;
+
+  if (meter === null) return;
+
+  // The bar is a picture of the two numerals beside it, so it says in words
+  // what it says in hue: a greyscale screenshot still reads.
+  host.setAttribute("aria-label", meter.description);
+
+  const fill = host.querySelector<HTMLElement>("[data-pace-fill]");
+
+  if (fill !== null) {
+    fill.style.width = trackShare(meter.fill);
+  }
+
+  const tick = host.querySelector<HTMLElement>("[data-pace-tick]");
+
+  if (tick !== null) {
+    tick.style.left = trackShare(meter.tick);
+  }
+}
+
 /**
  * Shows the pace row, or takes it off the panel entirely.
  *
@@ -478,9 +517,9 @@ function applyPlanCapPrompt(model: PopoverModel): void {
  * no reading, but a section that still holds its space open reads as a figure
  * the app failed to produce, which is precisely what it is not.
  *
- * The band's state goes on the section rather than on the word, so the
- * stylesheet decides what `warning` and `over` look like — nothing here knows a
- * colour.
+ * The band's state goes on the section rather than on the bar, so the
+ * stylesheet decides what `safe`, `warning` and `over` look like — nothing here
+ * knows a colour.
  */
 function applyPace(model: PopoverModel): void {
   const row = document.querySelector<HTMLElement>("[data-pace]");
@@ -490,10 +529,12 @@ function applyPace(model: PopoverModel): void {
   row.hidden = model.pace === null;
 
   if (model.pace === null || model.pace.state === "") {
-    delete row.dataset["state"];
+    delete row.dataset["paceState"];
   } else {
-    row.dataset["state"] = model.pace.state;
+    row.dataset["paceState"] = model.pace.state;
   }
+
+  applyPaceMeter(model);
 }
 
 /** Puts the sync state on the button, the prompt and the root element. */

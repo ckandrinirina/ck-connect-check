@@ -1804,6 +1804,53 @@ describe("the pace row", () => {
     });
   }
 
+  /**
+   * The same row for a plan measured from now rather than from a written
+   * expiry, so the elapsed share — and with it the pace the meter draws — is
+   * exact rather than approximately a fortnight.
+   */
+  function modelMetering(options: {
+    usedGo: number;
+    limitGo: number;
+    planDays: number;
+    elapsedDays: number;
+    planCapConfirmed?: boolean;
+  }): PopoverModel {
+    const DAY_MS = 86_400_000;
+
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes: options.limitGo * GB,
+        planDays: options.planDays,
+        ...(options.planCapConfirmed === undefined
+          ? {}
+          : { planCapConfirmed: options.planCapConfirmed }),
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: (options.limitGo - options.usedGo) * GB,
+          expiresAt: new Date(
+            NOW.getTime() + (options.planDays - options.elapsedDays) * DAY_MS,
+          ),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  /** 100 Go of a 150 Go plan, 20 days into 30: a pace of exactly 1. */
+  const ON_BUDGET = {
+    usedGo: 100,
+    limitGo: 150,
+    planDays: 30,
+    elapsedDays: 20,
+  };
+
   function row(): HTMLElement {
     const element = document.querySelector<HTMLElement>("[data-pace]");
 
@@ -1812,6 +1859,35 @@ describe("the pace row", () => {
     }
 
     return element;
+  }
+
+  function meter(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-pace-meter]");
+
+    if (element === null) {
+      throw new Error("the panel has no pace meter");
+    }
+
+    return element;
+  }
+
+  /** A drawn share of the meter's track, as the renderer wrote it. */
+  function shareOf(selector: string, property: "width" | "left"): number {
+    const element = meter().querySelector<HTMLElement>(selector);
+
+    if (element === null) {
+      throw new Error(`the meter has no ${selector}`);
+    }
+
+    return Number.parseFloat(element.style[property]);
+  }
+
+  function fillShare(): number {
+    return shareOf("[data-pace-fill]", "width");
+  }
+
+  function tickShare(): number {
+    return shareOf("[data-pace-tick]", "left");
   }
 
   beforeEach(() => {
@@ -1826,57 +1902,122 @@ describe("the pace row", () => {
     expect(textOf("paceSustainable")).toContain("06/08/2026");
   });
 
-  it("shows no band word, no state and no budget at tier 1", () => {
+  it("draws no meter and sets no state at tier 1", () => {
     apply(modelPacing({ remainingGo: 30 }));
 
-    expect(textOf("paceBand")).toBe("");
-    expect(row().dataset["state"] ?? "").toBe("");
-    expect(textOf("paceAfforded")).toBe("");
+    expect(meter().hidden).toBe(true);
+    expect(row().dataset["paceState"] ?? "").toBe("");
   });
 
-  it("adds the consumed share at tier 2, and still no band word", () => {
+  it("draws no meter at tier 2 either — there is no afforded figure", () => {
     apply(modelPacing({ remainingGo: 30, limitGo: 150 }));
 
-    expect(textOf("paceConsumed")).toContain("80%");
-    expect(textOf("paceBand")).toBe("");
+    expect(row().hidden).toBe(false);
+    expect(meter().hidden).toBe(true);
+    expect(row().dataset["paceState"] ?? "").toBe("");
   });
 
-  it("shows the band, the budget and the sustainable figure together at tier 3", () => {
-    apply(modelPacing({ remainingGo: 100, limitGo: 150, planDays: 30 }));
+  it("draws the meter and its numerals at tier 3", () => {
+    apply(modelMetering(ON_BUDGET));
 
-    expect(row().dataset["state"]).toBe("safe");
-    expect(textOf("paceBand")).not.toBe("");
-    expect(textOf("paceAfforded")).toContain("5.00 Go");
+    expect(meter().hidden).toBe(false);
+    expect(textOf("paceAverage")).toBe("5.00 Go");
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
     expect(textOf("paceSustainable")).toContain("Go");
   });
 
-  it("gives warning and over distinct states the stylesheet paints", () => {
-    apply(modelPacing({ remainingGo: 30, limitGo: 150, planDays: 30 }));
-    const warning = row().dataset["state"];
+  it("marks the section with each band in turn", () => {
+    apply(modelMetering(ON_BUDGET));
+    const safe = row().dataset["paceState"];
 
-    apply(modelPacing({ remainingGo: 10, limitGo: 150, planDays: 30 }));
-    const over = row().dataset["state"];
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 110 }));
+    const warning = row().dataset["paceState"];
 
-    expect(warning).toBe("warning");
-    expect(over).toBe("over");
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+    const over = row().dataset["paceState"];
 
-    const colours = [
-      /\[data-state="warning"\][^{]*\{[^}]*color:\s*([^;]+);/,
-      /\[data-state="over"\][^{]*\{[^}]*color:\s*([^;]+);/,
-    ].map((pattern) => pattern.exec(POPOVER_CSS)?.[1]?.trim());
+    expect([safe, warning, over]).toEqual(["safe", "warning", "over"]);
+  });
 
-    expect(colours.every((colour) => colour !== undefined)).toBe(true);
-    expect(new Set(colours).size).toBe(2);
-    // The same visual language the threshold already speaks, not a new one.
-    expect(colours).toEqual(["var(--warn)", "var(--over)"]);
+  it("maps those three states to green, orange and red in the stylesheet", () => {
+    const colours = ["safe", "warning", "over"].map(
+      (state) =>
+        new RegExp(
+          `\\[data-pace-state="${state}"\\][^{]*\\{[^}]*:\\s*([^;]+);`,
+        ).exec(POPOVER_CSS)?.[1],
+    );
+
+    // The same visual language the dial already speaks, not a new one.
+    expect(colours).toEqual(["var(--safe)", "var(--warn)", "var(--over)"]);
+    // Green has to exist as a property of its own before it can be mapped to.
+    expect(POPOVER_CSS).toMatch(/--safe:\s*#[0-9a-f]{6}/i);
+  });
+
+  it("fills exactly to the tick when the spending matches the budget", () => {
+    apply(modelMetering(ON_BUDGET));
+
+    expect(fillShare()).toBeCloseTo(tickShare(), 5);
+  });
+
+  it("fills half of the tick when half the budget is being spent", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 50 }));
+
+    expect(fillShare()).toBeCloseTo(tickShare() / 2, 5);
+  });
+
+  it("pins a runaway pace at the drawn maximum, numerals still true", () => {
+    apply(
+      modelMetering({
+        usedGo: 112.5,
+        limitGo: 150,
+        planDays: 30,
+        elapsedDays: 7.5,
+      }),
+    );
+
+    expect(fillShare()).toBeCloseTo(100, 5);
+    expect(textOf("paceAverage")).toBe("15.00 Go");
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
+  });
+
+  it("names the meter in words, so the colour is never the only carrier", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(meter().getAttribute("aria-label")?.trim()).not.toBe("");
+  });
+
+  it("no longer narrates the band, the budget or the consumed share", () => {
+    apply(modelMetering(ON_BUDGET));
+
+    for (const field of ["paceBand", "paceConsumed", "paceNote"]) {
+      expect(document.querySelector(`[data-field="${field}"]`)).toBeNull();
+    }
+    // The afforded figure survives only as a numeral beside the bar.
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
   });
 
   it("hides the row entirely when there is no pace to report", () => {
     apply(modelPacing({ expiresAt: null }));
 
     expect(row().hidden).toBe(true);
+    expect(meter().hidden).toBe(true);
     expect(textOf("paceSustainable")).toBe("");
-    expect(textOf("paceBand")).toBe("");
+  });
+
+  it("draws no meter while the plan cap is unconfirmed", () => {
+    // A sync brought back a plan the stored cap cannot describe, so the pace
+    // drops to tier 1. Drawing a band from that cap is exactly the fault the
+    // confirmation exists to prevent.
+    apply(modelMetering({ ...ON_BUDGET, planCapConfirmed: true }));
+    expect(meter().hidden).toBe(false);
+
+    apply(modelMetering({ ...ON_BUDGET, planCapConfirmed: false }));
+
+    expect(row().hidden).toBe(false);
+    expect(meter().hidden).toBe(true);
+    expect(row().dataset["paceState"] ?? "").toBe("");
+    // The tier 1 line needs no cap, so it stays rather than the row vanishing.
+    expect(textOf("paceSustainable")).toContain("Go");
   });
 
   it("hints at the setting that would sharpen tiers 1 and 2, and none at tier 3", () => {
