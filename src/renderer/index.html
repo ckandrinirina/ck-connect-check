@@ -157,20 +157,31 @@
     <!--
       Whether that share is being spent faster than the month is passing. It
       grows with what is known: the daily figure alone needs only a sync, the
-      band underneath it needs the two typed fields above. Hidden outright when
+      meter underneath it needs the two typed fields above. Hidden outright when
       there is nothing honest to say — a rate over a period nobody stated is
       the same lie the dial refuses to draw before a sync.
+
+      The band is drawn rather than narrated: a bar whose full width is twice
+      the afforded figure, with a tick at the afforded figure itself, so an
+      overshoot reads as fill past the mark rather than as a bar that is merely
+      long. Colour is the fast answer, never the only one. The track's widths
+      come from the model; the stylesheet holds every colour and this page holds
+      neither.
     -->
     <section class="pace" data-pace hidden>
-      <p class="pace-line">
-        <span class="pace-band" data-field="paceBand"></span>
-        <span class="pace-sustainable" data-field="paceSustainable"></span>
-      </p>
-      <p class="pace-detail">
-        <span data-field="paceAfforded"></span>
-        <span data-field="paceConsumed"></span>
-      </p>
-      <p class="pace-note" data-field="paceNote"></p>
+      <p class="pace-sustainable" data-field="paceSustainable"></p>
+      <div class="pace-meter" data-pace-meter role="img" aria-label="" hidden>
+        <span class="pace-track">
+          <span class="pace-fill" data-pace-fill></span>
+          <span class="pace-tick" data-pace-tick></span>
+        </span>
+        <span class="pace-figures">
+          <span class="pace-average" data-field="paceAverage"></span>
+          <span class="pace-figures-rule">/</span>
+          <span data-field="paceAfforded"></span>
+          <span class="pace-figures-unit">a day</span>
+        </span>
+      </div>
       <p class="pace-hint" data-field="paceHint"></p>
     </section>
 

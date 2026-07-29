@@ -11,6 +11,11 @@
   --muted: #6d6d72;
   --line: rgb(0 0 0 / 10%);
   --accent: #0a84ff;
+
+  /* The three bands the pace is drawn in. Orange and red are the same two the
+     dial already uses for trouble, so the panel speaks one visual language;
+     green is the only one that had no name yet. */
+  --safe: #30d158;
   --warn: #ff9f0a;
   --over: #ff453a;
   --track: rgb(0 0 0 / 8%);
@@ -36,6 +41,7 @@
     --muted: #9a9aa0;
     --line: rgb(255 255 255 / 12%);
     --accent: #0a84ff;
+    --safe: #32d74b;
     --warn: #ffa726;
     --over: #ff6961;
     --track: rgb(255 255 255 / 12%);
@@ -611,53 +617,104 @@ body {
 
 /* The pace row. It sits under the dial because it explains the share the dial
    draws, and it grows with what the app knows: the daily figure alone after a
-   sync, the band and the budget once the two fields above are filled in. */
+   sync, the meter and the budget once the two fields above are filled in. */
 .pace {
   padding: 10px 14px;
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 2px;
+  gap: 4px;
+
+  /* The band's colour, swapped by the state below. Grey is what a row with no
+     band yet is drawn in, though at that point there is no bar to draw. */
+  --pace: var(--muted);
 }
 
-.pace-line {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 12px;
-}
-
-/* Collapsed rather than blank: below tier 3 there is no band, and an empty
-   word must not hold a gap open beside the figure. */
-.pace-band:empty,
-.pace-detail:empty,
-.pace-note:empty,
+/* Collapsed rather than blank: below tier 3 there is no hint, and an empty
+   line must not hold a gap open under the figure. */
+.pace-sustainable:empty,
 .pace-hint:empty {
   display: none;
 }
 
-.pace-band {
-  font-weight: 600;
+.pace-sustainable {
+  font-size: 12px;
 }
 
-.pace-detail,
-.pace-note,
 .pace-hint {
   color: var(--muted);
   font-size: 11px;
 }
 
-.pace-detail {
+/* The bar and its numerals: the colour says which band, the bar says by how
+   much, and only the numbers say the amounts. Hidden through the `hidden`
+   attribute below tier 3, so it costs no height at all. */
+.pace-meter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.pace-meter[hidden] {
+  display: none;
+}
+
+/* Twice the afforded figure wide, with the afforded figure marked at its
+   middle — the widths themselves are written by the renderer from the model. */
+.pace-track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.pace-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px;
+  background: var(--pace);
+  transition:
+    width 240ms ease-out,
+    background 240ms ease-out;
+}
+
+/* Fill crossing this mark is the verdict stated without hue, so it has to stand
+   out against the fill as well as against the track. */
+.pace-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--text);
+}
+
+.pace-figures {
   display: flex;
-  gap: 10px;
+  align-items: baseline;
+  flex: none;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
-/* The same two accents the dial already uses for trouble, so the panel speaks
-   one visual language rather than inventing a second. The state is decided in
-   the main process — nothing here compares a ratio to a threshold. */
-.pace[data-state="warning"] .pace-band {
-  color: var(--warn);
+.pace-average {
+  color: var(--pace);
+  font-weight: 600;
 }
 
-.pace[data-state="over"] .pace-band {
-  color: var(--over);
+/* The three bands. The state is decided in the main process — nothing here
+   compares a ratio to a threshold. */
+.pace[data-pace-state="safe"] {
+  --pace: var(--safe);
+}
+
+.pace[data-pace-state="warning"] {
+  --pace: var(--warn);
+}
+
+.pace[data-pace-state="over"] {
+  --pace: var(--over);
 }

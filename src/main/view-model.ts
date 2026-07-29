@@ -220,6 +220,39 @@ export interface PopoverPlanDays {
 }
 
 /**
+ * The bar the band is drawn as, or absent below tier 3.
+ *
+ * A band is a magnitude with three named regions, which a bar states faster
+ * than a sentence. The two shares are geometry rather than text — the third
+ * exception to the no-numbers rule, alongside {@link PopoverHistory} and the
+ * dial's sweep — because only the renderer knows how wide its own track is.
+ * Everything else here is already spelled the way it appears.
+ */
+export interface PopoverPaceMeter {
+  /**
+   * How much of the drawn track to fill, 0 to 1. Clamped at the full track, so
+   * a runaway month is visibly pinned rather than running off the panel; the
+   * numerals beside it stay exact, which is the part that must not be rounded
+   * away.
+   */
+  fill: number;
+  /**
+   * Where the afforded figure sits on that same track, 0 to 1. Fill past this
+   * mark is what says "over" without relying on hue, so it comes from here
+   * rather than being a number the stylesheet happens to agree with.
+   */
+  tick: number;
+  /** `safe`, `warning` or `over` — the band, for the stylesheet. */
+  state: PaceState;
+  /** `"6.10 Go"` — what is actually being spent a day. */
+  average: string;
+  /** `"5.00 Go"` — what the plan affords a day. */
+  afforded: string;
+  /** The meter's accessible name: the two volumes, and which band they fall in. */
+  description: string;
+}
+
+/**
  * The pace row, in whatever detail the stored figures allow.
  *
  * Every field is a finished string, empty when its tier has not been reached —
@@ -231,21 +264,18 @@ export interface PopoverPace {
   tier: number;
   /** Always present: `"3.00 Go a day until 06/08/2026"`. */
   sustainable: string;
-  /** Tier 2 and up: `"80% of the plan used"`. Empty below it. */
-  consumed: string;
-  /** Tier 3: `"5.00 Go a day budgeted"`. Empty below it. */
-  afforded: string;
-  /** Tier 3: the band as a word — the coloured one. Empty below it. */
-  band: string;
   /** Tier 3: `safe`, `warning` or `over`, for the stylesheet. Empty below it. */
   state: string;
-  /** Tier 3: which way it is going, as a sentence. Empty below it. */
-  note: string;
   /**
    * Tiers 1 and 2: which setting would sharpen this, so the reason the band is
    * missing sits next to its absence. Empty at tier 3, where nothing is.
    */
   hint: string;
+  /**
+   * Tier 3: the band drawn as a bar. Null below it — there is no afforded
+   * figure to measure against, so there is nothing to draw a track from.
+   */
+  meter: PopoverPaceMeter | null;
 }
 
 /**
@@ -653,12 +683,48 @@ const PACE_BAND_TEXT: Record<PaceState, string> = {
   over: "Too fast",
 };
 
-/** What each band means, in the one sentence that says which way it is going. */
-const PACE_NOTE_TEXT: Record<PaceState, string> = {
-  safe: "Less spent than the month has run — a quiet week keeps it there.",
-  warning: "Slightly ahead of the calendar. A lighter week pulls it back.",
-  over: "Well ahead of the calendar — at this rate the plan runs out early.",
-};
+/**
+ * How wide the meter is drawn, in multiples of the afforded figure. Twice, so
+ * the tick sits at the middle and an overshoot has somewhere to go: a pace of 8
+ * on a track exactly one budget wide would be indistinguishable from a pace of
+ * 2, and on an unclamped one it would leave the panel.
+ */
+const PACE_METER_SPAN = 2;
+
+/**
+ * The band drawn as a bar, or null below tier 3.
+ *
+ * Every tier 3 field is read together rather than trusting {@link
+ * PaceReading.tier}: the four are filled by the same branch, so a null in any
+ * of them is the same absence, and reading them is what convinces the compiler
+ * as well as the reader.
+ */
+function buildPaceMeter(reading: PaceReading): PopoverPaceMeter | null {
+  const { pace, averagePerDay, affordedPerDay, state } = reading;
+
+  if (
+    pace === null ||
+    averagePerDay === null ||
+    affordedPerDay === null ||
+    state === null
+  ) {
+    return null;
+  }
+
+  const average = formatBytes(averagePerDay);
+  const afforded = formatBytes(affordedPerDay);
+
+  return {
+    // Clamped for drawing only. A negative pace cannot arise — both sides of
+    // the ratio are volumes — but a bar drawn from one would run backwards.
+    fill: Math.min(Math.max(pace, 0), PACE_METER_SPAN) / PACE_METER_SPAN,
+    tick: 1 / PACE_METER_SPAN,
+    state,
+    average,
+    afforded,
+    description: `${average} a day against ${afforded} a day budgeted — ${PACE_BAND_TEXT[state]}`,
+  };
+}
 
 /**
  * What would sharpen a reading that has not reached tier 3, named so the reason
@@ -684,23 +750,12 @@ function buildPace(
 ): PopoverPace | null {
   if (reading === null || expiresAt === null) return null;
 
-  const { state } = reading;
-
   return {
     tier: reading.tier,
     sustainable: `${formatBytes(reading.sustainablePerDay)} a day until ${formatDate(expiresAt)}`,
-    consumed:
-      reading.usedShare === null
-        ? ""
-        : `${formatPercent(reading.usedShare * 100)} of the plan used`,
-    afforded:
-      reading.affordedPerDay === null
-        ? ""
-        : `${formatBytes(reading.affordedPerDay)} a day budgeted`,
-    band: state === null ? "" : PACE_BAND_TEXT[state],
-    state: state ?? "",
-    note: state === null ? "" : PACE_NOTE_TEXT[state],
+    state: reading.state ?? "",
     hint: PACE_HINT_TEXT[reading.tier] ?? "",
+    meter: buildPaceMeter(reading),
   };
 }
 
