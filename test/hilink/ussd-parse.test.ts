@@ -98,10 +98,62 @@ describe("parseAllowance", () => {
     expect(parsed?.remainingBytes).toBe(145_835_900_000);
   });
 
-  it("reads the expiry date", () => {
-    expect(parsed?.expiresAt?.getDate()).toBe(25);
-    expect((parsed?.expiresAt?.getMonth() ?? -1) + 1).toBe(8);
-    expect(parsed?.expiresAt?.getFullYear()).toBe(2026);
+  it("reads the expiry as the midnight that ends the stated day", () => {
+    // "jusqu'au 25/08/2026" means the plan is valid *through* the 25th — the
+    // carrier's own arithmetic says so, since a 30-day plan bought on 27/07
+    // only reaches 25/08 when the last day is counted. So the instant the plan
+    // stops being valid is the midnight that closes the 25th, not the one that
+    // opens it.
+    expect(parsed?.expiresAt).toEqual(new Date(2026, 7, 26));
+  });
+
+  it("puts that instant after every moment of the stated day", () => {
+    const lastMoment = new Date(2026, 7, 25, 23, 59, 59, 999);
+
+    expect(parsed?.expiresAt?.getTime()).toBeGreaterThan(lastMoment.getTime());
+  });
+
+  it("rolls the last day of a month into the first of the next", () => {
+    const parsedEnd = parseAllowance(
+      reply("X, il vous reste 2 Go jusqu'au 31/12/2026."),
+    );
+
+    expect(parsedEnd?.expiresAt).toEqual(new Date(2027, 0, 1));
+  });
+
+  it("rolls 28 February of a non-leap year into 1 March", () => {
+    const nonLeap = parseAllowance(
+      reply("X, il vous reste 2 Go jusqu'au 28/02/2027."),
+    );
+
+    expect(nonLeap?.expiresAt).toEqual(new Date(2027, 2, 1));
+  });
+
+  it("keeps 29 February of a leap year as its own day", () => {
+    const leap = parseAllowance(
+      reply("X, il vous reste 2 Go jusqu'au 28/02/2028."),
+    );
+
+    expect(leap?.expiresAt).toEqual(new Date(2028, 1, 29));
+  });
+
+  it("leaves the expiry null when the clause states none", () => {
+    expect(
+      parseAllowance(reply("X, il vous reste 2 Go."))?.expiresAt,
+    ).toBeNull();
+    expect(
+      parseAllowance(reply("X, il vous reste 2 Go jusqu'au prochain mois."))
+        ?.expiresAt,
+    ).toBeNull();
+  });
+
+  it("returns rather than throws on a reply whose date is unreadable", () => {
+    expect(() =>
+      parseAllowance(reply("X, il vous reste 2 Go jusqu'au //.")),
+    ).not.toThrow();
+    expect(
+      parseAllowance(reply("X, il vous reste 2 Go jusqu'au //."))?.expiresAt,
+    ).toBeNull();
   });
 
   it("reads the offer name as the plan label", () => {

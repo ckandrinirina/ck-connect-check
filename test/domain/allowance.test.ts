@@ -9,6 +9,10 @@ import {
   readAllowanceNow,
   type AllowanceAnchor,
 } from "../../src/domain/allowance.js";
+import {
+  parseAllowance,
+  parseUssdContent,
+} from "../../src/hilink/ussd-parse.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { Allowance, MonthStatistics } from "../../src/hilink/types.js";
 
@@ -609,6 +613,65 @@ describe("isNewPlan", () => {
     const bigger = anchor({ remainingBytes: ANCHORED_REMAINING * 2 });
 
     expect(isNewPlan(bigger, anchor(), null)).toBe(false);
+  });
+});
+
+describe("the carrier's last valid day, read end to end from its own reply", () => {
+  /**
+   * The reply behind the reported bug, verbatim in shape: a 30-day plan bought
+   * on 27/07/2026 that the carrier states as running "jusqu'au 25/08/2026".
+   */
+  const CARRIER_REPLY = parseUssdContent(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<content>NET MONTH 200 000, il vous reste 133.51 Go utilisable a toute heure jusqu'au 25/08/2026.</content>\n<date></date>\n</response>`,
+  );
+
+  function anchoredOnTheCarrierReply(): AllowanceAnchor {
+    const stated = parseAllowance(CARRIER_REPLY);
+    if (stated === null) {
+      throw new Error("the recorded carrier reply must state an allowance");
+    }
+
+    return anchorFrom(stated, month(ANCHORED_COUNTER), {
+      now: () => new Date(2026, 6, 27, 18, 0, 0),
+    });
+  }
+
+  function readAt(now: Date) {
+    return readAllowanceNow({
+      anchor: anchoredOnTheCarrierReply(),
+      month: month(ANCHORED_COUNTER),
+      clock: { now: () => now },
+    });
+  }
+
+  it("is not expired at the very start of the stated day", () => {
+    const reading = readAt(new Date(2026, 7, 25, 0, 0, 0));
+
+    expect(reading.trustworthy).toBe(true);
+    expect(reading.staleReason).toBeNull();
+  });
+
+  it("is not expired at the very end of the stated day", () => {
+    const reading = readAt(new Date(2026, 7, 25, 23, 59, 59, 999));
+
+    expect(reading.trustworthy).toBe(true);
+    expect(reading.staleReason).toBeNull();
+  });
+
+  it("is expired the day after the stated day", () => {
+    const reading = readAt(new Date(2026, 7, 26, 9, 30, 0));
+
+    expect(reading.trustworthy).toBe(false);
+    expect(reading.staleReason).toBe("expired");
+  });
+
+  it("still counts the stated day as a day of the plan", () => {
+    // 29/07 through 25/08 inclusive is 28 days, which is what the user counts.
+    expect(readAt(new Date(2026, 6, 29, 16, 33, 0)).daysUntilExpiry).toBe(28);
+  });
+
+  it("leaves one day on the stated day itself, not none", () => {
+    expect(readAt(new Date(2026, 7, 25, 9, 30, 0)).daysUntilExpiry).toBe(1);
   });
 });
 
