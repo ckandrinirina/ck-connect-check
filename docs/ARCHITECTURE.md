@@ -174,26 +174,54 @@ lockout.
 ## Reading the consumption pace
 
 Knowing that 40 Go of 150 are gone does not say whether that is calm or reckless — the
-answer depends on how far into the plan's life it happened. The pace compares two shares:
+answer depends on how far into the plan's life it happened. But a useful part of that
+answer needs nothing the app does not already hold, so the reading is built in **three
+tiers** and each input adds detail rather than unlocking the feature:
+
+**Tier 1 — the anchor alone.** A sync states a remaining volume and an expiry date, and
+those two give the number that matters most day to day:
 
 ```
-periodStart = anchor.expiresAt − planDays
+sustainablePerDay = remainingNow / daysUntilExpiry
+```
+
+"You can spend 2.4 Go a day between now and the 15th." No cap, no plan length, no typing.
+This appears as soon as anything has ever been synced.
+
+**Tier 2 — with `planLimitBytes`.** The cap turns the remainder into a consumed share,
+`usedShare = usedNow / planLimitBytes`, which is the dial T-25 already draws.
+
+**Tier 3 — with `planDays`.** Only the plan's length can say how far the calendar has
+travelled, and only then can consumption be compared against it:
+
+```
+periodStart  = anchor.expiresAt − planDays
 elapsedShare = (now − periodStart) / planDays
-usedShare    = usedNow / planLimitBytes
 pace         = usedShare / elapsedShare
 ```
 
 `pace` below 1 means less has been spent than the calendar has, which is the state a
 weekend of no usage produces. The bands are `safe` at or under 1.00, `warning` up to 1.20,
-and `over` above it. Two figures accompany the band: the daily volume the plan affords
-(`planLimitBytes / planDays`) and the daily volume the remainder still affords
-(`remainingNow / daysUntilExpiry`) — the second is the number that recovers when nothing is
-used, which is exactly the compensation the band already encodes.
+and `over` above it. `affordedPerDay` (`planLimitBytes / planDays`) accompanies the band as
+the flat budget, against which tier 1's `sustainablePerDay` reads as the recovery figure —
+it rises whenever nothing is used, which is exactly the compensation the band encodes.
 
-Both sides are **cumulative**, never per-day, so no daily usage is ever stored and the "no
-history database" decision stands. The cost is that the plan's length must be known:
-`planDays` joins `planLimitBytes` in the config and in the panel, and without it the panel
-shows the dial with no pace rather than guessing a period.
+Both sides of the ratio are **cumulative**, never per-day, so no daily usage is ever stored
+and the "no history database" decision stands.
+
+### Loading a new plan
+
+A top-up needs no reset. Every sync builds a whole new anchor through `anchorFrom` — label,
+remaining, expiry and both router counters — so nothing survives a sync that a reset button
+could usefully clear. What a sync cannot refresh is the two typed values, and a cap left
+over from the previous plan is a silent fault: `usedBytes` is `max(0, cap − remaining)`, so
+a remainder above a stale cap clamps consumption to zero and the dial reads 0% forever.
+
+So the new plan is _detected_ instead. A synced anchor belongs to a different plan when its
+`planLabel` differs from the previous one, its `expiresAt` moves later, or its
+`remainingBytes` exceeds the configured cap. Any of those marks the cap unconfirmed: the
+panel keeps the tier 1 reading, drops the dial and the pace rather than drawing them from a
+contradicted cap, and asks for the cap and length to be confirmed.
 
 ## Folder structure
 
@@ -264,6 +292,10 @@ Append-only. One line each, always with the reason.
 - The pace compares the share of the allowance spent against the share of the period elapsed, both cumulative — a per-day comparison would need stored daily usage, and cumulative shares already give the weekend-offsets-a-heavy-Monday behaviour for free
 - The plan's length in days is entered by the user next to the cap, not derived — the period start is `expiresAt − planDays`, and the carrier's USSD reply states the expiry but never the duration
 - The pace is absent, not `safe`, until both a cap and a plan length are set — the same reason the dial is absent before the first sync
+- **Supersedes the line above:** the pace reading is tiered, and a synced anchor alone already yields `remainingNow / daysUntilExpiry` — the app holds a remaining volume and an expiry date from its first sync, so gating the most useful daily figure behind two typed values withheld an answer it could already give
+- Only the band and `affordedPerDay` still require a cap and a plan length — those two are genuinely un-derivable from the carrier's reply, whereas the sustainable daily figure is not
+- Loading a new plan needs no reset control — every sync replaces the whole anchor through `anchorFrom`, so a reset button would clear nothing a sync does not already overwrite
+- A synced anchor that contradicts the stored cap marks the cap unconfirmed instead of being reconciled — `usedBytes` is `max(0, cap − remaining)`, so a top-up above a stale cap silently clamps the dial to 0%, and a silently corrected number is the unreliability the anchor design exists to remove
 
 ## Conventions
 

@@ -42,7 +42,8 @@
 | T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
 | T-39 | Know when the carrier figure has gone stale                             | todo   | S    | T-28             |
 | T-40 | Re-sync by itself on open and after a long silence                      | todo   | M    | T-39             |
-| T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40       |
+| T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42 |
+| T-42 | Notice a new plan instead of reporting the old one's share              | todo   | M    | T-27, T-28       |
 
 ## T-01 Set the project up so tests can run
 
@@ -1706,11 +1707,15 @@ test asserts they stay stated.
 T-36 · status: todo · size: M · needs: T-27 · files: src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, src/main/main.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, test/config/config.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 The cap answers "how much"; nothing yet answers "over how long". T-27 put a cap
-field in the panel and this puts a plan-length field beside it, because the pace
-in T-37 divides by a period the carrier's USSD reply never states — it gives an
-expiry date, not a duration. With `planDays` set, the period start is
-`expiresAt − planDays` and the whole pace calculation becomes arithmetic on
-figures already in hand.
+field in the panel and this puts a plan-length field beside it, because the
+`pace` band in T-37 divides by a period the carrier's USSD reply never states —
+it gives an expiry date, not a duration. With `planDays` set, the period start is
+`expiresAt − planDays` and the band becomes arithmetic on figures already in hand.
+
+This field is a **refinement, not a precondition**. T-37's tier 1 reading
+(`remainingNow / daysUntilExpiry`) needs neither this nor the cap, so the panel is
+useful before this is ever typed. Filling it in adds the band and the flat daily
+budget, and nothing else stops working while it is blank.
 
 `planDays` is `number | null` like `planLimitBytes`, so an unset value
 round-trips rather than defaulting to 30 and quietly inventing a period.
@@ -1742,83 +1747,123 @@ The arithmetic from `## Reading the consumption pace` in `docs/ARCHITECTURE.md`,
 as a pure function in `src/domain/` with no Electron and no network — the same
 boundary `allowance.ts` keeps.
 
+The reading is **tiered**, because the app already holds most of what the answer
+needs. A sync states a remaining volume and an expiry date, and those two alone
+give the number that gets looked at daily. The cap and the plan length each add a
+layer on top; neither gates the others.
+
 ```
-readPace({ anchor, planLimitBytes, planDays, now })
-  → null                                    // no anchor, or no cap, or no planDays
-  | { state: 'safe' | 'warning' | 'over',
-      pace,                 // usedShare / elapsedShare
-      elapsedShare, usedShare,
+readPace({ anchor, month, planLimitBytes, planDays, clock })
+  → null                                     // no anchor, or no expiry, or expired
+  | { tier: 1 | 2 | 3,
       daysUntilExpiry,
-      affordedPerDay,       // planLimitBytes / planDays
-      sustainablePerDay }   // remainingNow / daysUntilExpiry
+      sustainablePerDay,        // tier 1+: remainingNow / daysUntilExpiry
+      usedShare:         null,  // tier 2+: usedNow / planLimitBytes
+      elapsedShare:      null,  // tier 3:  (now − periodStart) / planDays
+      pace:              null,  // tier 3:  usedShare / elapsedShare
+      affordedPerDay:    null,  // tier 3:  planLimitBytes / planDays
+      state:             null } // tier 3:  'safe' | 'warning' | 'over'
 ```
+
+Tier 1 needs the anchor only. Tier 2 adds `planLimitBytes`. Tier 3 adds
+`planDays`. Fields belonging to an unreached tier are `null`, never absent, so the
+caller reads one shape and the renderer branches on `tier`.
 
 The bands are `safe` at `pace ≤ 1.00`, `warning` up to `1.20`, `over` above it.
 The weekend case in the request needs no special handling: both shares are
 cumulative, so a week of nothing pulls `usedShare` back under `elapsedShare` on
 its own.
 
-Two edges decide whether this is trustworthy or noise. On the plan's first hours
+Three edges decide whether this is trustworthy or noise. On the plan's first hours
 `elapsedShare` is near zero and the ratio explodes, so a period less than one day
 elapsed reports `safe` regardless. Past the expiry `daysUntilExpiry` is zero and
-`sustainablePerDay` would divide by it, so an expired anchor yields `null` — the
-same answer `allowance.ts` already gives it.
+every division would blow up, so an expired anchor yields `null` outright — the
+same answer `allowance.ts` already gives it. And a carrier reply that stated no
+expiry at all leaves `daysUntilExpiry` null, which is the same `null` for the same
+reason: there is no period to divide by.
+
+An untrustworthy anchor — T-28's `counter-reset` — also yields `null`. Its
+`remainingNow` is the anchored figure with no delta applied, so a pace drawn from
+it would describe a moment that has already passed.
 
 ### Acceptance
 
-- [ ] 30 Go over 30 days with 2 Go used on day 1 reports `over` — one day elapsed, two days' worth spent
+- [ ] **tier 1** — an anchor with 30 Go remaining and 10 days to expiry, no cap and no `planDays`, reports `tier: 1` and a `sustainablePerDay` of 3 Go
+- [ ] a tier 1 result has `pace`, `state`, `usedShare`, `elapsedShare` and `affordedPerDay` all exactly `null`
+- [ ] **tier 2** — adding a 150 Go cap reports `tier: 2`, a `usedShare` matching `readAllowanceNow`'s share, and still a `null` `state`
+- [ ] **tier 3** — 30 Go over 30 days with 2 Go used on day 1 reports `tier: 3` and `over` — one day elapsed, two days' worth spent
 - [ ] the same plan with 2 Go used on day 8 reports `safe`, and `pace` is below 1
 - [ ] 30 Go over 30 days with 20 Go used on day 15 reports `over`, and 16 Go on day 15 reports `warning`
-- [ ] a missing cap, a missing `planDays` or a missing anchor each yield `null`
-- [ ] an anchor whose `expiresAt` has passed yields `null` and never divides by zero
+- [ ] a missing anchor, an anchor with a null `expiresAt`, and an anchor past its expiry each yield `null` and never divide by zero
+- [ ] an anchor whose staleness is `counter-reset` yields `null`
 - [ ] under one elapsed day the state is `safe` whatever has been used, and `pace` is not `Infinity` or `NaN`
-- [ ] `affordedPerDay` is 1 Go for a 30 Go / 30 day plan, and `sustainablePerDay` rises as usage stops
+- [ ] `affordedPerDay` is 1 Go for a 30 Go / 30 day plan, and `sustainablePerDay` rises as usage stops while `affordedPerDay` does not
+- [ ] `sustainablePerDay` is computed from `readAllowanceNow(...).remainingBytes`, asserted by a case where the router counter has advanced since the anchor
 - [ ] `src/domain/pace.ts` imports neither `electron` nor anything under `src/hilink/`
 - [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above, with a fixed clock
-- [ ] Implement `readPace` and its band thresholds as named constants
-- [ ] Reuse `readAllowanceNow` for `remainingNow` rather than recomputing the delta
+- [ ] Failing tests for every criterion above, with a fixed clock, one describe block per tier
+- [ ] Implement the tier 1 core — `daysUntilExpiry` and `sustainablePerDay` — and its null cases
+- [ ] Layer tier 2's `usedShare` and tier 3's `elapsedShare`, `pace`, `affordedPerDay` and band on top
+- [ ] Name the band thresholds and the one-day floor as constants
+- [ ] Reuse `readAllowanceNow` for `remainingNow` and `daysUntilExpiry` rather than recomputing either
 - [ ] Update the `files:` line above to reflect everything actually touched
 
 ## T-38 Show the pace and its warning on the panel
 
 T-38 · status: todo · size: M · needs: T-37 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
-One row under the dial, in the same shape as the existing tiles: the band as a
-coloured word, the two daily figures in French octets through `format.ts`, and a
-sentence that says which way the pace is going. `over` uses the same accent the
-warning threshold already uses so the panel has one visual language for trouble.
+One row under the dial, in the same shape as the existing tiles, growing with the
+tier T-37 reports:
 
-When `readPace` yields `null` the row is absent rather than empty — a pace of a
+- **tier 1** — `sustainablePerDay` alone: "2.40 Go/jour jusqu'au 15 août". This is
+  the row every synced user sees, with nothing typed in.
+- **tier 2** — the same, plus the consumed share already on the dial, so the row
+  says what the ring shows in words.
+- **tier 3** — the band as a coloured word, `affordedPerDay` beside
+  `sustainablePerDay`, and a sentence saying which way the pace is going.
+
+`over` uses the same accent the warning threshold already uses so the panel has
+one visual language for trouble. Below tier 3 there is no band and no colour — an
+uncoloured row is the honest rendering of "here is the figure, no judgement".
+
+When `readPace` yields `null` the row is absent rather than empty — a pace over a
 period nobody stated is the same lie the dial refuses to draw before a sync.
+
+Tiers 1 and 2 hint at what would sharpen them, pointing at the cap and plan-length
+fields T-27 and T-36 put in the panel, so the reason the band is missing is on
+screen next to its absence.
 
 ### Acceptance
 
-- [ ] the popover model carries a `pace` field that is `null` exactly when `readPace` returns `null`
-- [ ] the rendered panel shows the band word, `affordedPerDay` and `sustainablePerDay` for a `safe` model
+- [ ] the popover model carries a `pace` field that is `null` exactly when `readPace` returns `null`, and otherwise carries the tier through unchanged
+- [ ] a tier 1 model renders `sustainablePerDay` and the expiry, and no band word, no `data-state` and no `affordedPerDay`
+- [ ] a tier 2 model renders the consumed share as well, and still no band word
+- [ ] a tier 3 `safe` model renders the band word, `affordedPerDay` and `sustainablePerDay` together
 - [ ] `warning` and `over` models render with distinct `data-state` values, asserted against the stylesheet's selectors
 - [ ] a `null` pace renders no pace row at all, and the panel's height is unchanged in every other respect
+- [ ] tiers 1 and 2 render a hint naming the missing setting, and tier 3 renders none
 - [ ] the daily figures are formatted with the octet helper, so a 1 000 000 000-byte figure reads `1.00 Go`
 - [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above
+- [ ] Failing tests for every criterion above, one per tier
 - [ ] Thread `readPace` into `buildPopoverModel`
-- [ ] Render the row and its three states
+- [ ] Render the row, branching on `tier`, with the three band states inside tier 3
 - [ ] Style the bands against the existing accent variables, adding none that duplicate them
-- [ ] Manual: open the panel with a real anchor and confirm the band matches a hand calculation
+- [ ] Manual: with a real anchor and no cap typed, confirm the tier 1 row reads correctly
+- [ ] Manual: type the cap and the length, confirm the band appears and matches a hand calculation
 - [ ] Update the `files:` line above to reflect everything actually touched
 
 ## T-39 Know when the carrier figure has gone stale
 
 T-39 · status: todo · size: S · needs: T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, test/domain/allowance.test.ts, test/config/config.test.ts
 
-T-28 decides whether an anchor is *usable*. This adds the second question —
-whether a usable anchor is *recent* — as a pure predicate beside it, so T-40 wires
+T-28 decides whether an anchor is _usable_. This adds the second question —
+whether a usable anchor is _recent_ — as a pure predicate beside it, so T-40 wires
 policy without holding any arithmetic:
 
 ```
@@ -1888,20 +1933,21 @@ lockout, and each is a test rather than a comment:
 
 ## T-41 Release the pace and the automatic sync as 0.2.0
 
-T-41 · status: todo · size: S · needs: T-38, T-40 · files: package.json, package-lock.json, README.md, test/readme.test.ts, test/project-setup.test.ts
+T-41 · status: todo · size: S · needs: T-38, T-40, T-42 · files: package.json, package-lock.json, README.md, test/readme.test.ts, test/project-setup.test.ts
 
-Version 0.2.0, and a README that describes the app as it now behaves: a pace
-reading under the dial, a plan length to enter beside the cap, and a sync that
-happens by itself when the carrier figure is over half an hour old. T-35's README
-test already asserts the document matches reality, so this extends that test
-rather than trusting prose.
+Version 0.2.0, and a README that describes the app as it now behaves: a tiered
+pace reading under the dial, a plan length to enter beside the cap, a sync that
+happens by itself when the carrier figure is over half an hour old, and what to do
+after a top-up. T-35's README test already asserts the document matches reality,
+so this extends that test rather than trusting prose.
 
 ### Acceptance
 
 - [ ] `package.json` reads `0.2.0` and `package-lock.json` agrees
 - [ ] `app-info.ts`'s version, or whatever the app reports as its version, reads 0.2.0
-- [ ] the README documents the plan-length setting, the pace bands and the 30-minute automatic sync
-- [ ] the README test asserts each of those three claims against the source that implements it
+- [ ] the README documents the plan-length setting, the three pace tiers and their bands, the 30-minute automatic sync, and the top-up flow
+- [ ] the README states that loading a new plan needs a Sync and a cap confirmation, and no reset
+- [ ] the README test asserts each of those claims against the source that implements it
 - [ ] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
 - [ ] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
 
@@ -1909,6 +1955,65 @@ rather than trusting prose.
 
 - [ ] Failing README and project-setup tests for the claims above
 - [ ] Bump the version in `package.json` and refresh the lockfile
-- [ ] Write the three README sections
+- [ ] Write the four README sections
 - [ ] Manual: package the app and confirm it reports 0.2.0
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-42 Notice a new plan instead of reporting the old one's share
+
+T-42 · status: todo · size: M · needs: T-27, T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Loading a new plan needs no reset control: `anchorFrom` builds a whole new anchor
+on every sync — label, remaining, expiry and both router counters — so a reset
+button would clear nothing a Sync does not already overwrite. What a sync cannot
+refresh is the two values the user typed, and a cap left over from the previous
+plan is a **silent fault**. `readAllowanceNow` computes
+`usedBytes = max(0, cap − remainingBytes)`, so topping up from a 50 Go plan to a
+150 Go one without retyping the cap clamps consumption to zero and the dial reads
+0% indefinitely, with nothing on screen suggesting why.
+
+So the new plan is detected instead, as a pure predicate beside the existing
+staleness one:
+
+```
+isNewPlan(anchor, previous, planLimitBytes) → boolean
+```
+
+True when the anchor's `planLabel` differs from the previous anchor's, when its
+`expiresAt` moves later, or when its `remainingBytes` exceeds the configured cap —
+that last one alone catches a top-up the carrier labelled identically.
+
+Detection sets `planCapConfirmed: false` in the config. While it is false the
+panel keeps T-37's tier 1 reading, which needs no cap and is therefore still true,
+and drops the dial and the band rather than drawing either from a cap the carrier
+has contradicted. Confirming or retyping the cap sets it back to true.
+
+`previous` is the anchor being replaced, so the comparison happens inside the sync
+that writes the new one; a first-ever sync has no previous and is not a new plan.
+
+### Acceptance
+
+- [ ] `isNewPlan` is true for a differing `planLabel`, for an `expiresAt` later than the previous one, and for `remainingBytes` above the configured cap
+- [ ] it is false when label, expiry and remaining are all unchanged, and false when there is no previous anchor
+- [ ] it is false for an `expiresAt` that moved _earlier_, and throws nothing when either `expiresAt` is null
+- [ ] it is false when no cap is configured and only the remaining volume grew — with no cap there is nothing to contradict
+- [ ] `config.ts` round-trips `planCapConfirmed` as a boolean, defaulting to `true` so an existing config is not flagged on first launch
+- [ ] a sync whose new anchor is a new plan writes `planCapConfirmed: false`, and one that is not leaves the flag untouched
+- [ ] with the flag false the popover model's `percentUsed` and `pace.tier` 2 and 3 fields are null, while the tier 1 reading is unchanged
+- [ ] with the flag false the panel renders the confirmation prompt and no dial, asserted against the stylesheet's selectors
+- [ ] submitting the cap through the existing T-27 setter sets the flag true, and the dial returns in the same model build
+- [ ] confirming without changing the cap also sets it true, so an unchanged plan size costs one click
+- [ ] the tray title follows the same rule as the dial, never showing a share computed from an unconfirmed cap
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for every criterion above, with a fixed clock
+- [ ] Implement `isNewPlan` beside `stalenessOf`, exported and pure
+- [ ] Add `planCapConfirmed` to `AppConfig`, its default and its validation
+- [ ] Call the predicate where the sync writes its anchor, and clear the flag there only
+- [ ] Gate `percentUsed` and the tier 2/3 pace fields on the flag in the view-model
+- [ ] Render the confirmation prompt and wire its two actions to the existing cap setter
+- [ ] Manual: edit `config.json` to a cap below the anchored remaining, open the panel, confirm the prompt appears and the dial does not
+- [ ] Manual: confirm the cap and watch the dial and the band return
 - [ ] Update the `files:` line above to reflect everything actually touched
