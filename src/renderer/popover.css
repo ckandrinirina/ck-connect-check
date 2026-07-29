@@ -165,6 +165,71 @@ body {
   background: var(--muted);
 }
 
+/*
+  The panel shows one view or the other, never both. `display` of their own, so
+  the UA rule for `hidden` would not take the put-away one off the panel — the
+  same bargain `.pace-meter` and `.password-prompt` already make.
+*/
+.view {
+  display: block;
+}
+
+.view[hidden] {
+  display: none;
+}
+
+/* Room to breathe: three rows in a 320×520 window, entered a few times a year. */
+.settings-view {
+  padding-top: 4px;
+}
+
+/*
+  The way through to the three typed values. A glyph rather than a word: the
+  header already carries a carrier name that can run long, and this is the one
+  control on it that is not read every time the panel is opened.
+*/
+.settings-toggle {
+  position: relative;
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+  cursor: default;
+}
+
+.settings-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Pressed reads as pressed: the panel behind it has changed, so the control
+   that changed it has to look held down rather than merely clicked. */
+.settings-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/*
+  Nothing is stored to sign in with, and the form that would ask is behind this
+  button. A dot, not a colour on the button itself: the wording inside says what
+  is missing, and this only makes it findable.
+*/
+.settings-toggle[data-attention="true"]::after {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  content: "";
+}
+
 .usage {
   display: flex;
   align-items: center;
@@ -412,6 +477,21 @@ body {
   flex: none;
 }
 
+/* When the volume above runs out, on the line under it: two former tiles that
+   qualify the figure they now sit beneath. */
+.allowance-validity {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.allowance-days-left::before {
+  margin-right: 6px;
+  content: "·";
+}
+
 /* The re-sync marker. Colour is the second signal here, never the only one —
    the sentence itself says the figure can no longer be trusted. */
 .allowance-note {
@@ -422,6 +502,7 @@ body {
 
 /* Nothing synced yet: the strip has no figure to show, so it says so instead. */
 :root[data-allowance="none"] .allowance-meta,
+:root[data-allowance="none"] .allowance-validity,
 :root[data-allowance="none"] .allowance-figure .caption {
   display: none;
 }

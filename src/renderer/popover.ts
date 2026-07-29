@@ -46,6 +46,13 @@ declare global {
   interface Window {
     /** Called by `src/main/popover.ts` after every poll, and once on load. */
     applyPopoverModel(model: PopoverModel): void;
+    /**
+     * Called by `src/main/popover.ts` on every open, to put the page back on
+     * its main view. The window is hidden rather than destroyed between opens,
+     * so settings left showing would still be showing the next time the tray
+     * item is clicked — and the figures are what the panel is opened for.
+     */
+    resetPopoverView(): void;
     popoverBridge?: PopoverBridge;
   }
 }
@@ -57,8 +64,6 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     networkType: model.networkType,
     freshness: model.freshness.label,
     monthTotal: model.monthTotal,
-    monthDownload: model.monthDownload,
-    monthUpload: model.monthUpload,
     downloadRate: model.downloadRate,
     uploadRate: model.uploadRate,
     connectedDevices: model.connectedDevices,
@@ -320,6 +325,49 @@ function planCapPrompt(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-plan-cap-prompt]");
 }
 
+function mainView(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-main-view]");
+}
+
+function settingsView(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-settings-view]");
+}
+
+function settingsToggle(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("[data-settings-toggle]");
+}
+
+/**
+ * Shows one of the panel's two views and hides the other.
+ *
+ * The pressed state is on the toggle rather than on a variable here: the button
+ * has to say which view it is offering anyway, so keeping the answer anywhere
+ * else would be a second copy of it that could disagree.
+ */
+function showSettings(open: boolean): void {
+  const toggle = settingsToggle();
+
+  if (toggle !== null) {
+    toggle.setAttribute("aria-pressed", String(open));
+  }
+
+  const main = mainView();
+
+  if (main !== null) {
+    main.hidden = open;
+  }
+
+  const settings = settingsView();
+
+  if (settings !== null) {
+    settings.hidden = !open;
+  }
+}
+
+function settingsAreOpen(): boolean {
+  return settingsToggle()?.getAttribute("aria-pressed") === "true";
+}
+
 function planCapConfirm(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>("[data-plan-cap-confirm]");
 }
@@ -396,6 +444,15 @@ function bindControls(): void {
       event.preventDefault();
 
       window.popoverBridge?.setPlanDays(fieldValue("[data-plan-days-input]"));
+    });
+  }
+
+  const settings = settingsToggle();
+
+  if (settings !== null && settings.dataset["bound"] !== "true") {
+    settings.dataset["bound"] = "true";
+    settings.addEventListener("click", () => {
+      showSettings(!settingsAreOpen());
     });
   }
 
@@ -556,6 +613,15 @@ function applySync(model: PopoverModel): void {
     prompt.hidden = !sync.needsPassword;
   }
 
+  // The same flag, worn by the control that now stands between the user and
+  // that form: a password nobody is asked for is a panel that silently cannot
+  // sync. The marker goes as soon as the form has nothing left to ask.
+  const settings = settingsToggle();
+
+  if (settings !== null) {
+    settings.dataset["attention"] = String(sync.needsPassword);
+  }
+
   document.documentElement.dataset["allowance"] = allowance.available
     ? allowance.stale
       ? "stale"
@@ -608,6 +674,11 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPlanCapPrompt(model);
   applyPace(model);
   applySync(model);
+};
+
+window.resetPopoverView = (): void => {
+  bindControls();
+  showSettings(false);
 };
 
 // The page is static and the script is deferred, so the controls exist by now.

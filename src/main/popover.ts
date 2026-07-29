@@ -189,6 +189,29 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       .catch(() => undefined);
   }
 
+  /**
+   * Puts the page back on its main view.
+   *
+   * The window is hidden rather than destroyed between opens, so a panel left
+   * on its settings would still be on them the next time the tray item is
+   * clicked. The figures are what the panel is opened for; the settings are
+   * typed once a month.
+   *
+   * Rejects while the page is still loading, which is exactly the case where
+   * there is nothing to reset — a freshly loaded page opens on the main view.
+   */
+  function resetView(): void {
+    const open = alive();
+
+    if (open === null) {
+      return;
+    }
+
+    void open.webContents
+      .executeJavaScript("window.resetPopoverView?.()")
+      .catch(() => undefined);
+  }
+
   function create(): BrowserWindow {
     const created = new BrowserWindow({
       width,
@@ -247,6 +270,8 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       position(open, bounds);
     }
 
+    // Before the push, so the model lands on the view the user is about to see.
+    resetView();
     push();
     open.show();
   }

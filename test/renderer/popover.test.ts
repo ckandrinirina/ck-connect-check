@@ -467,20 +467,19 @@ describe("the popover page", () => {
   });
 
   it("keeps the dial and the sparklines small enough for the panel to fit its window", () => {
-    // No layout engine, so this is a budget rather than a measurement: the
-    // room everything other than the dial and the two sparklines takes, which
-    // is 30px of body padding, ~29px of header and its rule, 22px of padding
-    // around the dial, ~56px for the allowance strip and its rule, 23px of rule
-    // and spacing above the sparklines, ~160px for the three-row stats grid
-    // with its own rule and ~46px for the sync row — call it 330px, rounded up
-    // to 350 so a stray line of text does not silently overrun. Anything that
-    // outgrows what is left pushes the panel past POPOVER_HEIGHT and raises a
-    // scrollbar, which a popover has no room for. The password prompt is
-    // `hidden` until it is needed, so it costs nothing here.
+    // No layout engine, so this is a budget rather than a measurement: the room
+    // the main view takes other than the dial and the two sparklines, which is
+    // 30px of body padding, ~35px of header and its rule, 22px of padding
+    // around the dial, ~57px for the pace section at its tallest, ~85px for the
+    // allowance strip and its validity line, 23px of rule and spacing above the
+    // sparklines, ~59px for the one-tile stats grid with its own rule and ~38px
+    // for the sync row — call it 349px, rounded up to 350 so a stray line of
+    // text does not silently overrun. Anything that outgrows what is left
+    // pushes the panel past POPOVER_HEIGHT and raises a scrollbar, which a
+    // popover has no room for.
     //
-    // The plan-size field and its refusal line sit in the column beside the
-    // dial, not under it, so they are free until that column outgrows the
-    // dial's own height — which is what the extra 10px covers.
+    // The three typed fields cost nothing here: they are in the settings view,
+    // which is `hidden` whenever this one is not.
     const CHROME_HEIGHT = 350;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
