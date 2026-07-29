@@ -151,10 +151,21 @@
             <span class="pace-fill" data-pace-fill></span>
             <span class="pace-tick" data-pace-tick></span>
           </span>
+          <!--
+            The two numerals say which is which themselves. There is no legend
+            anywhere else on the panel, and read cold against the recovery line
+            above them — a third daily figure, answering a third question — an
+            unlabelled `6.15 Go / 5.00 Go` looks like the app contradicting
+            itself. The words are static text like every other caption on the
+            page; only the figures come from the model. `a day` still trails
+            the pair and governs both, as it always did.
+          -->
           <span class="pace-figures">
             <span class="pace-average" data-field="paceAverage"></span>
+            <span class="pace-figures-label">spent</span>
             <span class="pace-figures-rule">/</span>
             <span data-field="paceAfforded"></span>
+            <span class="pace-figures-label">budget</span>
             <span class="pace-figures-unit">a day</span>
           </span>
         </div>

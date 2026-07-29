@@ -1905,6 +1905,11 @@ describe("the pace row", () => {
     return element;
   }
 
+  /** Everything the meter reads out on the panel, whitespace collapsed. */
+  function meterText(): string {
+    return (meter().textContent ?? "").replace(/\s+/g, " ").trim();
+  }
+
   /** A drawn share of the meter's track, as the renderer wrote it. */
   function shareOf(selector: string, property: "width" | "left"): number {
     const element = meter().querySelector<HTMLElement>(selector);
@@ -1934,6 +1939,42 @@ describe("the pace row", () => {
     expect(row().hidden).toBe(false);
     expect(textOf("paceSustainable")).toContain("3.00 Go");
     expect(textOf("paceSustainable")).toContain("05/08/2026");
+  });
+
+  it("says the recovery figure is what is left to spend, not what has gone", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(textOf("paceSustainable")).toContain("left to spend");
+  });
+
+  it("says which numeral is spent and which is the budget, in the pair itself", () => {
+    // No legend anywhere else on the panel: the pair has to name its own two
+    // halves, or `6.00 / 5.00` beside `3.00` reads as a contradiction.
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(meterText()).toBe("6.00 Go spent / 5.00 Go budget a day");
+  });
+
+  it("keeps tier 1 free of meter vocabulary it has no figures for", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(meter().hidden).toBe(true);
+    expect(textOf("paceSustainable")).not.toMatch(/spent|budget/i);
+    expect(textOf("paceHint")).not.toMatch(/spent|budget/i);
+  });
+
+  it("keeps the drawn figures byte-identical while the labels move", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(textOf("paceAverage")).toBe("6.00 Go");
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
+    expect(textOf("paceSustainable")).toContain("3.00 Go");
+  });
+
+  it("keeps the band's verdict on the meter's accessible name", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(meter().getAttribute("aria-label")).toContain("Too fast");
   });
 
   it("draws no meter and sets no state at tier 1", () => {
@@ -2052,6 +2093,10 @@ describe("the pace row", () => {
     expect(row().dataset["paceState"] ?? "").toBe("");
     // The tier 1 line needs no cap, so it stays rather than the row vanishing.
     expect(textOf("paceSustainable")).toContain("Go");
+    // And it has to stand on its own here: the pair that names the budget is
+    // off the panel, so a label leaning on it would label nothing.
+    expect(textOf("paceSustainable")).toContain("left to spend");
+    expect(textOf("paceSustainable")).not.toMatch(/spent|budget/i);
   });
 
   it("hints at the setting that would sharpen tiers 1 and 2, and none at tier 3", () => {

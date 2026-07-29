@@ -728,7 +728,15 @@ body {
 
 /* The bar and its numerals: the colour says which band, the bar says by how
    much, and only the numbers say the amounts. Hidden through the `hidden`
-   attribute below tier 3, so it costs no height at all. */
+   attribute below tier 3, so it costs no height at all.
+
+   The numerals take their width first and the bar keeps the rest — the second
+   column is `auto` and the first shrinks to nothing. That is the right way
+   round: the pair now carries `spent` and `budget` beside the figures, which
+   is what stops the row being read as a contradiction, and a legend the panel
+   has clipped names nothing. The bar pays for those two words in width rather
+   than the row paying for them in height, which is the budget that has no
+   slack. */
 .pace-meter {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
