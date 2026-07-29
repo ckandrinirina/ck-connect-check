@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { readPace } from "../../src/domain/pace.js";
 import { readAllowanceNow } from "../../src/domain/allowance.js";
 import type { AllowanceAnchor } from "../../src/domain/allowance.js";
+import {
+  parseAllowance,
+  parseUssdContent,
+} from "../../src/hilink/ussd-parse.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { MonthStatistics } from "../../src/hilink/types.js";
 
@@ -343,6 +347,90 @@ describe("readPace — when there is nothing honest to report", () => {
     });
 
     expect(reading).toBeNull();
+  });
+});
+
+describe("readPace — the case reported from the router itself", () => {
+  /**
+   * 29 July 2026, 16:33: a 150 Go plan bought on 27/07 and stated by the
+   * carrier as running "jusqu'au 25/08/2026", with 133.51 Go left — so 16.49 Go
+   * spent. The panel called that 4.47 Go a day and green; the user counted
+   * 6.13 Go a day against a 5 Go budget, which is over. The whole gap was the
+   * expiry instant being read as the midnight that *opens* 25/08, which pushes
+   * the period's start back to 26/07 and so invents an extra elapsed day.
+   *
+   * Parsed from the carrier's own words rather than hand-dated, because the
+   * date arithmetic under test begins at the parser.
+   */
+  const CARRIER_REPLY =
+    "NET MONTH 200 000, il vous reste 133.51 Go utilisable a toute heure jusqu'au 25/08/2026.";
+
+  const PLAN_LIMIT = 150 * GB;
+  const PLAN_DAYS = 30;
+  const OBSERVED_AT = new Date(2026, 6, 29, 16, 33, 0);
+
+  const stated = parseAllowance(
+    parseUssdContent(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<content>${CARRIER_REPLY}</content>\n<date></date>\n</response>`,
+    ),
+  );
+  if (stated === null) {
+    throw new Error("the recorded carrier reply must state an allowance");
+  }
+
+  const anchoredOnTheReply = anchor({
+    remainingBytes: stated.remainingBytes,
+    expiresAt: stated.expiresAt,
+    syncedAt: new Date(2026, 6, 29, 16, 0, 0),
+  });
+
+  function readingAt(now: Date) {
+    return readPace({
+      anchor: anchoredOnTheReply,
+      month: month(ANCHORED_COUNTER),
+      planLimitBytes: PLAN_LIMIT,
+      planDays: PLAN_DAYS,
+      clock: at(now),
+    });
+  }
+
+  it("reports the daily volume actually spent, not one diluted by a day never lived", () => {
+    const reading = readingAt(OBSERVED_AT);
+
+    expect((reading?.averagePerDay ?? Number.NaN) / GB).toBeCloseTo(6.13, 2);
+    expect(reading?.affordedPerDay).toBe(5 * GB);
+  });
+
+  it("bands that spending over rather than safe", () => {
+    const reading = readingAt(OBSERVED_AT);
+
+    expect(reading?.pace ?? Number.NaN).toBeGreaterThanOrEqual(1.2);
+    expect(reading?.pace ?? Number.NaN).toBeCloseTo(1.23, 2);
+    expect(reading?.state).toBe("over");
+  });
+
+  it("leaves the user's own count of days remaining", () => {
+    expect(readingAt(OBSERVED_AT)?.daysUntilExpiry).toBe(28);
+  });
+
+  it("starts the period on the day the plan was bought", () => {
+    // Elapsed plus remaining is the plan's whole length and no more: at
+    // midnight opening 29/07 two days have passed and twenty-eight are left.
+    const reading = readingAt(new Date(2026, 6, 29, 0, 0, 0));
+    const elapsedDays = (reading?.elapsedShare ?? Number.NaN) * PLAN_DAYS;
+
+    expect(elapsedDays).toBeCloseTo(2, 10);
+    expect(elapsedDays + (reading?.daysUntilExpiry ?? Number.NaN)).toBeCloseTo(
+      PLAN_DAYS,
+      10,
+    );
+  });
+
+  it("still reports a pace on the carrier's last valid day", () => {
+    const reading = readingAt(new Date(2026, 7, 25, 12, 0, 0));
+
+    expect(reading).not.toBeNull();
+    expect(reading?.daysUntilExpiry).toBe(1);
   });
 });
 
