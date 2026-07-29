@@ -116,6 +116,7 @@ It is written by the app; you can edit it by hand while the app is not running.
 | `activePollIntervalSeconds` | Seconds between polls while the panel is open. Default `2`, minimum `1`    |
 | `warnThresholdPercent`      | Share of the plan at which the menu bar starts warning. Default `90`       |
 | `planLimitBytes`            | Your plan size in bytes, or `null` when unset. Set it from the panel       |
+| `syncStaleAfterMinutes`     | Minutes before the carrier figure counts as old. Default `30`              |
 | `routerUsername`            | Router admin username. Absent until a credential has been saved            |
 | `routerPasswordBlob`        | The password **as encrypted by the Keychain**, base64-encoded — see below  |
 | `allowanceAnchor`           | The last carrier reading and the router counter it was pinned to           |

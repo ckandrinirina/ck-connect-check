@@ -31,6 +31,7 @@ import {
 import type { Allowance, MonthStatistics } from "../hilink/types.js";
 
 const MILLISECONDS_PER_DAY = 86_400_000;
+const MILLISECONDS_PER_MINUTE = 60_000;
 
 /**
  * One USSD reading pinned to the router's counter at the instant it was taken.
@@ -176,6 +177,32 @@ export function needsAutomaticSync(
   if (anchor === undefined) return true;
 
   return !readAllowanceNow({ anchor, month, clock }).trustworthy;
+}
+
+/**
+ * Whether a usable anchor has simply gone old.
+ *
+ * The second of the two questions asked about an anchor, and deliberately
+ * separate from {@link needsAutomaticSync}'s first one. That asks whether the
+ * anchor can be trusted at all; this asks whether a trustworthy one is recent
+ * enough to keep carrying forward. No anchor is *not* stale — that case belongs
+ * to the usability check, and conflating the two would run the same dialogue
+ * for two different reasons.
+ *
+ * The boundary is exclusive, so an anchor exactly at the window is not yet
+ * stale. A `syncedAt` in the future — a clock moved back, a hand-edited config —
+ * yields a negative age and is likewise not stale.
+ */
+export function isAnchorStale(
+  anchor: AllowanceAnchor | null | undefined,
+  now: Date,
+  staleAfterMinutes: number,
+): boolean {
+  if (anchor === null || anchor === undefined) return false;
+
+  const age = now.getTime() - anchor.syncedAt.getTime();
+
+  return age > staleAfterMinutes * MILLISECONDS_PER_MINUTE;
 }
 
 /** Record one USSD reading against the router's counter at this instant. */

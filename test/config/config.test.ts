@@ -25,6 +25,7 @@ import {
   DEFAULT_HOST,
   DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_SYNC_STALE_AFTER_MINUTES,
   DEFAULT_WARN_THRESHOLD_PERCENT,
   MIN_ACTIVE_POLL_INTERVAL_SECONDS,
   MIN_POLL_INTERVAL_SECONDS,
@@ -58,6 +59,7 @@ describe("defaults", () => {
       activePollIntervalSeconds: 2,
       warnThresholdPercent: 90,
       planLimitBytes: null,
+      syncStaleAfterMinutes: 30,
     });
   });
 
@@ -95,6 +97,7 @@ describe("save and load round-trip", () => {
       activePollIntervalSeconds: 3,
       warnThresholdPercent: 75,
       planLimitBytes: gigabytesToBytes(20),
+      syncStaleAfterMinutes: 45,
     };
 
     saveConfig(path(), written);
@@ -309,6 +312,73 @@ describe("plan limit validation", () => {
     } catch (error) {
       expect((error as ConfigValidationError).field).toBe("planLimitBytes");
     }
+  });
+});
+
+describe("syncStaleAfterMinutes — how old a carrier figure may get", () => {
+  it("defaults to half an hour", () => {
+    expect(DEFAULT_SYNC_STALE_AFTER_MINUTES).toBe(30);
+    expect(defaultConfig().syncStaleAfterMinutes).toBe(30);
+  });
+
+  it("reads an absent key as the default", () => {
+    expect(parseConfig({}).syncStaleAfterMinutes).toBe(30);
+  });
+
+  it("round-trips a configured window", () => {
+    saveConfig(path(), { ...defaultConfig(), syncStaleAfterMinutes: 45 });
+
+    expect(loadConfig(path()).config.syncStaleAfterMinutes).toBe(45);
+  });
+
+  it.each([0, -5])(
+    "falls back to the default on a window of %s, keeping the rest of the file",
+    (minutes) => {
+      // Deliberately not fatal, unlike the other bounded settings: a hand-typed
+      // zero here must not cost the stored anchor and force a fresh USSD
+      // dialogue to recover from a one-character mistake.
+      writeFileSync(
+        path(),
+        JSON.stringify({ host: "10.0.0.1", syncStaleAfterMinutes: minutes }),
+        "utf8",
+      );
+
+      const loaded = loadConfig(path());
+
+      expect(loaded.config.syncStaleAfterMinutes).toBe(30);
+      expect(loaded.config.host).toBe("10.0.0.1");
+      expect(loaded.problem).toBeUndefined();
+    },
+  );
+
+  it("falls back to the default on a value that is not a number at all", () => {
+    expect(
+      parseConfig({ syncStaleAfterMinutes: "soon" }).syncStaleAfterMinutes,
+    ).toBe(30);
+  });
+
+  it("keeps a stored anchor when the window is invalid", () => {
+    const anchor: AllowanceAnchor = {
+      planLabel: "NET MONTH 200 000",
+      remainingBytes: 145_835_900_000,
+      expiresAt: new Date(2026, 7, 12),
+      routerMonthBytes: 1_000_000_000,
+      routerClearTime: "2026-7-27",
+      syncedAt: new Date(2026, 6, 27, 10, 0, 0),
+    };
+
+    saveConfig(path(), { ...defaultConfig(), allowanceAnchor: anchor });
+    const stored = JSON.parse(readFileSync(path(), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    writeFileSync(
+      path(),
+      JSON.stringify({ ...stored, syncStaleAfterMinutes: 0 }),
+      "utf8",
+    );
+
+    expect(loadConfig(path()).config.allowanceAnchor).toEqual(anchor);
   });
 });
 

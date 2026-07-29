@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as allowanceModule from "../../src/domain/allowance.js";
 import {
   anchorFrom,
+  isAnchorStale,
   needsAutomaticSync,
   readAllowanceNow,
   type AllowanceAnchor,
@@ -501,6 +502,56 @@ describe("readAllowanceNow — daysUntilExpiry", () => {
     });
 
     expect(reading.daysUntilExpiry).toBeNull();
+  });
+});
+
+describe("isAnchorStale — whether a usable anchor is still recent", () => {
+  const STALE_AFTER_MINUTES = 30;
+
+  /** An anchor stamped `minutes` (and `milliseconds`) before {@link NOW}. */
+  function syncedAgo(minutes: number, milliseconds = 0): AllowanceAnchor {
+    return anchor({
+      syncedAt: new Date(NOW.getTime() - minutes * 60_000 - milliseconds),
+    });
+  }
+
+  it("is stale 31 minutes after the sync", () => {
+    expect(isAnchorStale(syncedAgo(31), NOW, STALE_AFTER_MINUTES)).toBe(true);
+  });
+
+  it("is not stale 29 minutes after the sync", () => {
+    expect(isAnchorStale(syncedAgo(29), NOW, STALE_AFTER_MINUTES)).toBe(false);
+  });
+
+  it("is not yet stale at exactly the window, to the millisecond", () => {
+    expect(isAnchorStale(syncedAgo(30), NOW, STALE_AFTER_MINUTES)).toBe(false);
+    expect(isAnchorStale(syncedAgo(30, 1), NOW, STALE_AFTER_MINUTES)).toBe(
+      true,
+    );
+  });
+
+  it("honours the configured window rather than a hardcoded 30 minutes", () => {
+    expect(isAnchorStale(syncedAgo(45), NOW, 60)).toBe(false);
+    expect(isAnchorStale(syncedAgo(45), NOW, 10)).toBe(true);
+  });
+
+  it("reports no anchor as not stale, leaving that case to the usability check", () => {
+    // Conflating the two would run the same dialogue for two different
+    // reasons — "nothing has ever been synced" is not "the figure is old".
+    expect(isAnchorStale(undefined, NOW, STALE_AFTER_MINUTES)).toBe(false);
+    expect(isAnchorStale(null, NOW, STALE_AFTER_MINUTES)).toBe(false);
+    expect(needsAutomaticSync(undefined, month(ANCHORED_COUNTER), clock)).toBe(
+      true,
+    );
+  });
+
+  it("is not stale when the sync is stamped in the future, and throws nothing", () => {
+    // A clock moved backwards, or a config hand-edited. Neither is a reason to
+    // dial the carrier.
+    const ahead = anchor({ syncedAt: new Date(NOW.getTime() + 60 * 60_000) });
+
+    expect(() => isAnchorStale(ahead, NOW, STALE_AFTER_MINUTES)).not.toThrow();
+    expect(isAnchorStale(ahead, NOW, STALE_AFTER_MINUTES)).toBe(false);
   });
 });
 

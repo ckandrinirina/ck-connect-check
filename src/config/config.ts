@@ -15,6 +15,7 @@ import {
   DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
   DEFAULT_HOST,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_SYNC_STALE_AFTER_MINUTES,
   DEFAULT_WARN_THRESHOLD_PERCENT,
   MIN_ACTIVE_POLL_INTERVAL_SECONDS,
   MIN_POLL_INTERVAL_SECONDS,
@@ -226,6 +227,30 @@ function readPlanLimit(raw: Record<string, unknown>): number | null {
 }
 
 /**
+ * How stale a carrier reading may get before the app re-anchors it.
+ *
+ * The only setting that falls back rather than throwing. Every other bounded
+ * value takes the whole config down with it, which is right for a router
+ * address but wrong here: a hand-typed `0` would discard the stored allowance
+ * anchor along with it, and recovering that costs a full USSD dialogue and a
+ * login against a device that locks after five refusals. A window nobody can
+ * use is simply the default window.
+ */
+function readSyncStaleAfter(raw: Record<string, unknown>): number {
+  const minutes = raw.syncStaleAfterMinutes;
+
+  if (
+    typeof minutes !== "number" ||
+    !Number.isFinite(minutes) ||
+    minutes <= 0
+  ) {
+    return DEFAULT_SYNC_STALE_AFTER_MINUTES;
+  }
+
+  return minutes;
+}
+
+/**
  * Reads one of the two credential fields. Both are optional — every config file
  * written before the router needed a login is still valid — but a field that is
  * present has to be a real non-empty string, since a blank blob or username is
@@ -365,6 +390,7 @@ export function parseConfig(raw: unknown): AppConfig {
     ),
     warnThresholdPercent: readWarnThreshold(record),
     planLimitBytes: readPlanLimit(record),
+    syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
     ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),

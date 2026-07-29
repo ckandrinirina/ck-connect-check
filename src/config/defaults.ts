@@ -28,6 +28,13 @@ export interface AppConfig {
   /** Monthly quota in bytes, or `null` when the user has not set one. */
   planLimitBytes: number | null;
   /**
+   * How many minutes a carrier reading may age before the app re-anchors it by
+   * itself. Never below one minute — a window of zero would mean every anchor
+   * is stale the instant it is written, and dialogues cost a login against a
+   * device that locks after five refusals.
+   */
+  syncStaleAfterMinutes: number;
+  /**
    * Router admin username. Absent until a credential has been saved — a router
    * that needs no login never grows either credential field.
    */
@@ -62,6 +69,13 @@ export const DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS = 2;
 /** Warn at 90% of the plan, matching the router's own default threshold. */
 export const DEFAULT_WARN_THRESHOLD_PERCENT = 90;
 
+/**
+ * Half an hour before a carrier figure counts as old. Long enough that a day of
+ * normal use costs a handful of dialogues rather than dozens, short enough that
+ * the panel is never showing a figure from this morning.
+ */
+export const DEFAULT_SYNC_STALE_AFTER_MINUTES = 30;
+
 /** Floor on the poll interval — below this we would hammer the router. */
 export const MIN_POLL_INTERVAL_SECONDS = 5;
 
@@ -89,6 +103,7 @@ export function defaultConfig(): AppConfig {
     activePollIntervalSeconds: DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
     warnThresholdPercent: DEFAULT_WARN_THRESHOLD_PERCENT,
     planLimitBytes: null,
+    syncStaleAfterMinutes: DEFAULT_SYNC_STALE_AFTER_MINUTES,
   };
 }
 

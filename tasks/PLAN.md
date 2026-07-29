@@ -40,7 +40,7 @@
 | T-36 | Ask how long the plan lasts so the pace has a period                    | todo   | M    | T-27             |
 | T-37 | Work out whether the connection is being used moderately                | todo   | M    | T-36             |
 | T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
-| T-39 | Know when the carrier figure has gone stale                             | todo   | S    | T-28             |
+| T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28             |
 | T-40 | Re-sync by itself on open and after a long silence                      | todo   | M    | T-39             |
 | T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42 |
 | T-42 | Notice a new plan instead of reporting the old one's share              | todo   | M    | T-27, T-28       |
@@ -1860,7 +1860,7 @@ screen next to its absence.
 
 ## T-39 Know when the carrier figure has gone stale
 
-T-39 · status: todo · size: S · needs: T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, test/domain/allowance.test.ts, test/config/config.test.ts
+T-39 · status: done · size: S · needs: T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, README.md, test/domain/allowance.test.ts, test/config/config.test.ts
 
 T-28 decides whether an anchor is _usable_. This adds the second question —
 whether a usable anchor is _recent_ — as a pure predicate beside it, so T-40 wires
@@ -1876,19 +1876,31 @@ two would make the caller run the same dialogue for two different reasons.
 
 ### Acceptance
 
-- [ ] an anchor synced 31 minutes ago with a 30-minute setting is stale, and one synced 29 minutes ago is not
-- [ ] the boundary is exact — 30 minutes to the millisecond is not yet stale
-- [ ] a `null` anchor is reported not-stale, and the existing usability check still reports it unusable
-- [ ] an anchor with a `syncedAt` in the future is not stale and throws nothing
-- [ ] `config.ts` round-trips `syncStaleAfterMinutes`, defaults it to 30, and rejects zero or negative values back to the default
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] an anchor synced 31 minutes ago with a 30-minute setting is stale, and one synced 29 minutes ago is not
+- [x] the boundary is exact — 30 minutes to the millisecond is not yet stale
+- [x] a `null` anchor is reported not-stale, and the existing usability check still reports it unusable
+- [x] an anchor with a `syncedAt` in the future is not stale and throws nothing
+- [x] `config.ts` round-trips `syncStaleAfterMinutes`, defaults it to 30, and rejects zero or negative values back to the default
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above, with a fixed clock
-- [ ] Implement `isAnchorStale` next to the existing usability predicate
-- [ ] Add the config key, its default and its validation
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing tests for every criterion above, with a fixed clock
+- [x] Implement `isAnchorStale` next to the existing usability predicate
+- [x] Add the config key, its default and its validation
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+An invalid `syncStaleAfterMinutes` falls back for that key alone rather than
+throwing, which is the one setting in `config.ts` that does not take the whole
+file down with it. A hand-typed `0` would otherwise discard the stored allowance
+anchor, and recovering that costs a full USSD dialogue and a login against a
+device that locks after five refusals. Decided with the user during the build.
+
+`README.md` joined the `files:` list: `readme.test.ts` derives the documented
+settings list from the `AppConfig` interface, so a new config key without a
+README row fails the suite.
 
 ## T-40 Re-sync by itself on open and after a long silence
 
