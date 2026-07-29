@@ -1198,6 +1198,30 @@ describe("buildPopoverModel — the pace row", () => {
     expect(pace?.sustainable).toContain("05/08/2026");
   });
 
+  it("says the figure is what is left to spend, not what has been spent", () => {
+    // Read beside the meter's `6.00 Go / 5.00 Go`, an unlabelled `3.00 Go a
+    // day` looks like a third opinion on the same question. It is not: this one
+    // answers what remains to spend from now, and has to say so itself.
+    expect(paceOf({ remainingGo: 30 })?.sustainable).toBe(
+      "3.00 Go a day left to spend until 05/08/2026",
+    );
+  });
+
+  it("keeps the three daily figures byte-identical while the labels move", () => {
+    // The guard for T-48: labelling the row must not move a number. These
+    // three were settled by T-43, T-44, T-46 and T-47 — the recovery figure
+    // sits *below* the budget precisely because the average sits above it, and
+    // that compensation is the thing the labels exist to make legible.
+    const pace = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
+
+    expect(/(\d+\.\d\d Go) a day/.exec(pace?.sustainable ?? "")?.[1]).toBe(
+      "3.00 Go",
+    );
+    expect(pace?.meter?.average).toBe("5.79 Go");
+    expect(pace?.meter?.afforded).toBe("5.00 Go");
+    expect(pace?.sustainable).toContain("05/08/2026");
+  });
+
   it("leaves tier 1 with no state and no meter to measure against", () => {
     const pace = paceOf({ remainingGo: 30 });
 
@@ -1379,6 +1403,31 @@ describe("buildPopoverModel — the pace meter", () => {
 
     expect(meter?.average).toBe("5.50 Go");
     expect(meter?.afforded).toBe("5.00 Go");
+  });
+
+  it("keeps both meter figures byte-identical while the labels move", () => {
+    // The other half of T-48's guard: whatever words end up beside these two
+    // numerals, the numerals themselves are settled.
+    expect(paceOf(ON_BUDGET)?.meter?.average).toBe("5.00 Go");
+    expect(paceOf(ON_BUDGET)?.meter?.afforded).toBe("5.00 Go");
+    expect(paceOf({ ...ON_BUDGET, usedGo: 120 })?.meter?.average).toBe(
+      "6.00 Go",
+    );
+    expect(paceOf({ ...ON_BUDGET, usedGo: 120 })?.meter?.afforded).toBe(
+      "5.00 Go",
+    );
+  });
+
+  it("keeps the band's verdict in the meter's accessible name", () => {
+    // Whatever the visible labels say, the bar's own name still carries the
+    // band in words — colour is never the only carrier of the verdict.
+    expect(paceOf(ON_BUDGET)?.meter?.description).toContain("On track");
+    expect(paceOf({ ...ON_BUDGET, usedGo: 110 })?.meter?.description).toContain(
+      "A little fast",
+    );
+    expect(paceOf({ ...ON_BUDGET, usedGo: 120 })?.meter?.description).toContain(
+      "Too fast",
+    );
   });
 });
 
