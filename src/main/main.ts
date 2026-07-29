@@ -19,7 +19,11 @@ import {
   type PlanLimitRefusal,
 } from "../config/config.js";
 import { defaultConfigPath } from "../config/defaults.js";
-import { anchorFrom, needsAutomaticSync } from "../domain/allowance.js";
+import {
+  anchorFrom,
+  isAnchorStale,
+  needsAutomaticSync,
+} from "../domain/allowance.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import { RouterClient, type SnapshotResult } from "../hilink/client.js";
@@ -36,6 +40,16 @@ import {
   type SyncState,
 } from "./sync.js";
 import { buildPopoverModel, type UsageReading } from "./view-model.js";
+
+/**
+ * How often the staleness of the anchor is looked at, with the panel shut.
+ *
+ * A minute, against a window measured in tens of them: this only decides how
+ * promptly an elapsed window is noticed, never how often the carrier is dialled
+ * — the check is arithmetic on two dates, and almost every one of them decides
+ * to do nothing.
+ */
+const STALE_CHECK_INTERVAL_MS = 60_000;
 
 export interface MenuBarOptions {
   /** Where the config lives. Injected so tests never touch the user directory. */
@@ -286,6 +300,36 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     }
   }
 
+  /**
+   * Re-anchors a figure that has simply gone old.
+   *
+   * The other half of {@link syncAutomaticallyOnce}: that one asks whether the
+   * anchor is *usable*, this one whether a usable anchor is still *recent*. It
+   * is evaluated at two moments — the panel opening, and a timer for an app
+   * nobody has opened all afternoon — and never on a poll tick, because a poll
+   * comes round every few seconds and a dialogue takes tens of them.
+   *
+   * Everything that could make this the wrong moment is checked here rather
+   * than inside the sync: no reading yet means no counter to anchor against,
+   * and an unreachable router means the dialogue would fail and park automatic
+   * syncing over a problem that fixes itself.
+   */
+  function syncIfStale(): void {
+    if (lastReading === null || result === null || !result.online) {
+      return;
+    }
+
+    if (
+      isAnchorStale(
+        config.allowanceAnchor,
+        systemClock.now(),
+        config.syncStaleAfterMinutes,
+      )
+    ) {
+      void sync.startAutomatic();
+    }
+  }
+
   const client: SnapshotSource = {
     async snapshot(): Promise<SnapshotResult> {
       // The panel dismisses itself when the user clicks elsewhere, which the
@@ -339,6 +383,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     show(bounds) {
       popover.show(bounds);
       poller.setActive(true);
+      syncIfStale();
     },
     hide() {
       popover.hide();
@@ -347,8 +392,20 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     toggle(bounds) {
       popover.toggle(bounds);
       poller.setActive(popover.isOpen());
+
+      // Only on the way open. Closing the panel is not a moment anyone wants a
+      // carrier dialogue to start.
+      if (popover.isOpen()) {
+        syncIfStale();
+      }
     },
   };
+
+  // Its own timer rather than a share of the poll loop: the poll runs every few
+  // seconds and this must not. The interval only decides how promptly a window
+  // that has come round is noticed — `syncStaleAfterMinutes` decides whether
+  // there is anything to notice.
+  const staleCheck = setInterval(syncIfStale, STALE_CHECK_INTERVAL_MS);
 
   // A context menu would swallow the left click on macOS, so Quit moves to the
   // right button and the left one belongs to the popover.
@@ -365,6 +422,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     setPlanLimit,
     setPlanDays,
     stop() {
+      clearInterval(staleCheck);
       poller.stop();
       popover.destroy();
       tray.destroy();

@@ -1183,3 +1183,234 @@ describe("startMenuBarApp — syncing by itself", () => {
     app.stop();
   });
 });
+
+describe("startMenuBarApp — re-syncing on open and after a long silence", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** An anchor synced `minutesAgo`, whose arithmetic otherwise still holds. */
+  function anchorSynced(minutesAgo: number): Record<string, unknown> {
+    return {
+      ...HEALTHY_ANCHOR,
+      syncedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    };
+  }
+
+  /** Launches against `anchor` and lets the first poll settle. */
+  async function launched(
+    anchor: Record<string, unknown>,
+    options: {
+      credential?: RouterCredential | null;
+      answer?: () => Promise<AllowanceResult>;
+      client?: { snapshot: () => Promise<SnapshotResult> };
+    } = {},
+  ): Promise<{
+    router: AllowanceSource & { dialogues: number };
+    popover: RecordingPopover;
+    app: MenuBarApp;
+  }> {
+    const router = allowanceRouter(
+      options.answer ??
+        (() => Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE })),
+    );
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: configHolding(anchor),
+      client: options.client ?? countingClient(),
+      popover,
+      allowance: router,
+      credentials: storeHolding(
+        options.credential === undefined ? CREDENTIAL : options.credential,
+      ),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { router, popover, app };
+  }
+
+  /** Opens the panel the way a user does, and lets the dialogue settle. */
+  async function openPanel(): Promise<void> {
+    clickTray();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it("dials once when the panel is opened on a stale anchor", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    expect(router.dialogues).toBe(0);
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("dials nothing when the panel is opened on a fresh one", async () => {
+    const { router, app } = await launched(anchorSynced(29));
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("dials once for a stale anchor with the panel never opened", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("dials once in total when the panel is opened twice in one stale window", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    await openPanel();
+    // Closed and opened again: the anchor is fresh now, so nothing follows.
+    await openPanel();
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("never joins a dialogue already in flight", async () => {
+    let release = (): void => undefined;
+    const pending = new Promise<AllowanceResult>((resolve) => {
+      release = () => {
+        resolve({ ok: true, allowance: CARRIER_ALLOWANCE });
+      };
+    });
+    const { router, app } = await launched(anchorSynced(31), {
+      answer: () => pending,
+    });
+
+    await openPanel();
+    await vi.advanceTimersByTimeAsync(60_000 * 3);
+
+    expect(router.dialogues).toBe(1);
+
+    release();
+    app.stop();
+  });
+
+  it("tries once when the automatic dialogue fails, however long it stays stale", async () => {
+    const { router, app } = await launched(anchorSynced(31), {
+      answer: () => Promise.resolve({ ok: false, reason: "busy" }),
+    });
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(60_000 * 10);
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("lets an explicit press through after that failure, and re-arms on success", async () => {
+    let answer: AllowanceResult = { ok: false, reason: "busy" };
+    const { router, app } = await launched(anchorSynced(31), {
+      answer: () => Promise.resolve(answer),
+    });
+
+    await openPanel();
+    expect(router.dialogues).toBe(1);
+
+    answer = { ok: true, allowance: CARRIER_ALLOWANCE };
+    await app.sync();
+
+    expect(router.dialogues).toBe(2);
+
+    app.stop();
+  });
+
+  it("dials nothing with no password stored", async () => {
+    const { router, popover, app } = await launched(anchorSynced(31), {
+      credential: null,
+    });
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(0);
+    // And it does not raise the prompt on its own, either.
+    expect(latest(popover).sync.needsPassword).toBe(false);
+
+    app.stop();
+  });
+
+  it("dials nothing while the router is unreachable", async () => {
+    const { router, app } = await launched(anchorSynced(31), {
+      client: scriptedClient([OFFLINE, OFFLINE, OFFLINE]),
+    });
+
+    await openPanel();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("dials nothing before the first snapshot has landed", async () => {
+    const router = allowanceRouter(() =>
+      Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+    );
+    const app = startMenuBarApp({
+      configPath: configHolding(anchorSynced(31)),
+      client: { snapshot: () => new Promise<SnapshotResult>(() => undefined) },
+      popover: recordingPopover(),
+      allowance: router,
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    clickTray();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("never starts a dialogue on a poll tick alone", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    // The poller runs, the panel stays shut, and no auto-sync timer has come
+    // round yet: a poll on its own is not a reason to dial the carrier.
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("reports the automatic dialogue in the same status line a press uses", async () => {
+    const { popover, app } = await launched(anchorSynced(31), {
+      answer: () => Promise.resolve({ ok: false, reason: "busy" }),
+    });
+
+    await openPanel();
+
+    expect(latest(popover).sync.status).toMatch(/busy/i);
+    expect(latest(popover).sync.automatic).toBe(true);
+
+    app.stop();
+  });
+});

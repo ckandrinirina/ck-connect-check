@@ -41,7 +41,7 @@
 | T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36             |
 | T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
 | T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28             |
-| T-40 | Re-sync by itself on open and after a long silence                      | todo   | M    | T-39             |
+| T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39             |
 | T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42 |
 | T-42 | Notice a new plan instead of reporting the old one's share              | todo   | M    | T-27, T-28       |
 
@@ -1937,7 +1937,7 @@ README row fails the suite.
 
 ## T-40 Re-sync by itself on open and after a long silence
 
-T-40 · status: todo · size: M · needs: T-39 · files: src/main/sync.ts, src/main/main.ts, src/main/popover.ts, src/main/view-model.ts, test/main/sync.test.ts, test/main/main.test.ts
+T-40 · status: done · size: M · needs: T-39 · files: src/main/sync.ts, src/main/main.ts, src/main/view-model.ts, test/main/sync.test.ts, test/main/main.test.ts
 
 Both halves of the request are the same rule evaluated at two moments: if the
 anchor is stale, run one dialogue. Opening the panel evaluates it, and a
@@ -1955,26 +1955,42 @@ lockout, and each is a test rather than a comment:
 
 ### Acceptance
 
-- [ ] opening the panel with a stale anchor starts exactly one dialogue, and opening it with a fresh one starts none
-- [ ] the background timer starts a dialogue for a stale anchor with the panel closed
-- [ ] opening the panel twice inside one stale window starts exactly one dialogue in total
-- [ ] a dialogue already in flight is never joined by a second, asserted with a deferred stub
-- [ ] a failed automatic sync issues exactly one dialogue, and no further automatic dialogue is issued however long the anchor stays stale
-- [ ] an explicit Sync press after that failure runs, and a success re-arms automatic syncing
-- [ ] no dialogue starts with no stored password, with the router unreachable, or before the first snapshot
-- [ ] a poll tick alone never starts a dialogue
-- [ ] the panel reports an automatic sync's steps in the same status line an explicit press uses, marked as automatic
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] opening the panel with a stale anchor starts exactly one dialogue, and opening it with a fresh one starts none
+- [x] the background timer starts a dialogue for a stale anchor with the panel closed
+- [x] opening the panel twice inside one stale window starts exactly one dialogue in total
+- [x] a dialogue already in flight is never joined by a second, asserted with a deferred stub
+- [x] a failed automatic sync issues exactly one dialogue, and no further automatic dialogue is issued however long the anchor stays stale
+- [x] an explicit Sync press after that failure runs, and a success re-arms automatic syncing
+- [x] no dialogue starts with no stored password, with the router unreachable, or before the first snapshot
+- [x] a poll tick alone never starts a dialogue
+- [x] the panel reports an automatic sync's steps in the same status line an explicit press uses, marked as automatic
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above, with a fake timer and a stubbed dialogue
-- [ ] Extend `sync.ts` with the stale-triggered entry point and the in-flight and parked flags
-- [ ] Call it from the popover's show path and from a timer in `main.ts`
-- [ ] Surface the automatic marker through the view-model
-- [ ] Manual: back-date `syncedAt` in `config.json`, open the panel, confirm one dialogue runs and a second open does not
-- [ ] Manual: with a wrong password stored, confirm one attempt is made and none follow
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing tests for every criterion above, with a fake timer and a stubbed dialogue
+- [x] Extend `sync.ts` with the stale-triggered entry point and the in-flight and parked flags
+- [x] Call it from the popover's show path and from a timer in `main.ts`
+- [x] Surface the automatic marker through the view-model
+- [x] Manual: back-date `syncedAt` in `config.json`, open the panel, confirm one dialogue runs and a second open does not
+- [x] Manual: with a wrong password stored, confirm one attempt is made and none follow
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+`src/main/popover.ts` was in the planned `files:` list but needed no change: the
+panel's show and toggle both run through the `panel` wrapper in `main.ts`, which
+already existed to keep the poller's cadence in step with visibility, and that is
+where the staleness check belongs. A tray click is the only route to a visible
+panel and it goes through the same wrapper.
+
+`parked` is set by *any* failed dialogue, not only an automatic one, and cleared
+by any that succeeds. A failed press parks the timer too — the account locks
+after five refused sign-ins, and a press that just failed is not evidence the
+next automatic attempt would fare better.
+
+The staleness check is deliberately never reached from `client.snapshot`: a poll
+comes round every couple of seconds and a dialogue takes tens of them.
 
 ## T-41 Release the pace and the automatic sync as 0.2.0
 

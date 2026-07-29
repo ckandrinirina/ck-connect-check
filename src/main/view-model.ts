@@ -168,6 +168,13 @@ export interface PopoverSync {
   buttonDescription: string;
   /** The line under the button: progress, failure, or empty when idle. */
   status: string;
+  /**
+   * True when the dialogue behind {@link PopoverSync.status} started on its
+   * own rather than from a press. The line reads the same either way — the
+   * steps and the failures are the same steps and failures — but a panel that
+   * lights up unbidden should say that it did.
+   */
+  automatic: boolean;
 }
 
 /**
@@ -467,6 +474,9 @@ function buildSync(state: SyncState, attention: boolean): PopoverSync {
   return {
     busy,
     attention,
+    automatic:
+      (state.phase === "running" || state.phase === "failed") &&
+      state.automatic === true,
     needsPassword: state.phase === "needs-password",
     buttonLabel: busy ? "Syncing…" : "Sync",
     buttonDescription: busy

@@ -339,3 +339,149 @@ describe("createAllowanceSync — the dialogue itself fails", () => {
     expect(anchored).toEqual([]);
   });
 });
+
+/** A router whose dialogue answers are scripted in order, then repeat the last. */
+function scriptedRouter(
+  answers: readonly AllowanceResult[],
+): AllowanceSource & { dialogues: number } {
+  const router = {
+    dialogues: 0,
+    login: (): Promise<LoginResult> => Promise.resolve({ ok: true }),
+    readAllowance: (): Promise<AllowanceResult> => {
+      const answer = answers[Math.min(router.dialogues, answers.length - 1)];
+      router.dialogues += 1;
+
+      return Promise.resolve(answer as AllowanceResult);
+    },
+    logout: (): Promise<void> => Promise.resolve(),
+  };
+
+  return router;
+}
+
+describe("createAllowanceSync — a dialogue nobody asked for", () => {
+  it("runs one and reports that it started", async () => {
+    const router = fakeRouter({ ok: true }, SUCCESS);
+    const { sync, anchored } = harness(router, fakeStore(CREDENTIAL));
+
+    expect(await sync.startAutomatic()).toBe(true);
+    expect(router.dialogues).toBe(1);
+    expect(anchored).toEqual([ALLOWANCE]);
+  });
+
+  it("marks its steps automatic, where a press leaves them unmarked", async () => {
+    const automatic = harness(
+      fakeRouter({ ok: true }, SUCCESS),
+      fakeStore(CREDENTIAL),
+    );
+    const pressed = harness(
+      fakeRouter({ ok: true }, SUCCESS),
+      fakeStore(CREDENTIAL),
+    );
+
+    await automatic.sync.startAutomatic();
+    await pressed.sync.start();
+
+    const running = (states: readonly SyncState[]): (boolean | undefined)[] =>
+      states
+        .filter((state) => state.phase === "running")
+        .map((state) => (state.phase === "running" ? state.automatic : false));
+
+    expect(running(automatic.states)).toEqual([true, true]);
+    expect(running(pressed.states)).toEqual([undefined, undefined]);
+  });
+
+  it("dials nothing and asks nothing when no credential is stored", async () => {
+    // A press asks for a password. A dialogue nobody asked for must not: the
+    // prompt would appear on its own, over and over.
+    const router = fakeRouter({ ok: true }, SUCCESS);
+    const { sync, states } = harness(router, fakeStore(null));
+
+    expect(await sync.startAutomatic()).toBe(false);
+    expect(router.dialogues).toBe(0);
+    expect(states).toEqual([]);
+    expect(sync.state()).toEqual({ phase: "idle" });
+  });
+
+  it("refuses to join a dialogue already in flight", async () => {
+    let release = (): void => undefined;
+    const pending = new Promise<AllowanceResult>((resolve) => {
+      release = () => {
+        resolve(SUCCESS);
+      };
+    });
+    const router = {
+      dialogues: 0,
+      login: (): Promise<LoginResult> => Promise.resolve({ ok: true }),
+      readAllowance: (): Promise<AllowanceResult> => {
+        router.dialogues += 1;
+
+        return pending;
+      },
+      logout: (): Promise<void> => Promise.resolve(),
+    };
+    const { sync } = harness(router, fakeStore(CREDENTIAL));
+
+    const first = sync.startAutomatic();
+    await vi.waitFor(() => {
+      expect(router.dialogues).toBe(1);
+    });
+
+    expect(await sync.startAutomatic()).toBe(false);
+    expect(router.dialogues).toBe(1);
+
+    release();
+    await first;
+  });
+
+  it("parks after a failure, so no second automatic dialogue follows", async () => {
+    // The router locks the account after five refused sign-ins, so a window
+    // that keeps coming round must not keep trying.
+    const router = fakeRouter({ ok: true }, { ok: false, reason: "busy" });
+    const { sync } = harness(router, fakeStore(CREDENTIAL));
+
+    expect(await sync.startAutomatic()).toBe(true);
+    expect(await sync.startAutomatic()).toBe(false);
+    expect(await sync.startAutomatic()).toBe(false);
+    expect(router.dialogues).toBe(1);
+  });
+
+  it("parks after a failed press too, so a timer does not pick it up", async () => {
+    const router = fakeRouter({ ok: true }, { ok: false, reason: "busy" });
+    const { sync } = harness(router, fakeStore(CREDENTIAL));
+
+    await sync.start();
+
+    expect(await sync.startAutomatic()).toBe(false);
+    expect(router.dialogues).toBe(1);
+  });
+
+  it("still lets an explicit press through once parked", async () => {
+    const router = scriptedRouter([
+      { ok: false, reason: "busy" },
+      { ok: false, reason: "busy" },
+    ]);
+    const { sync } = harness(router, fakeStore(CREDENTIAL));
+
+    await sync.startAutomatic();
+    await sync.start();
+
+    expect(router.dialogues).toBe(2);
+  });
+
+  it("re-arms automatic syncing once a press succeeds", async () => {
+    const router = scriptedRouter([
+      { ok: false, reason: "busy" },
+      SUCCESS,
+      SUCCESS,
+    ]);
+    const { sync } = harness(router, fakeStore(CREDENTIAL));
+
+    await sync.startAutomatic();
+    // Parked by that failure, released by the press that worked.
+    await sync.start();
+
+    expect(await sync.startAutomatic()).toBe(true);
+    expect(router.dialogues).toBe(3);
+  });
+});
