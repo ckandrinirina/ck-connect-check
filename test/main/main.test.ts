@@ -583,7 +583,9 @@ describe("startMenuBarApp — the allowance sync", () => {
     await app.sync();
 
     expect(latest(popover).allowance.remaining).toBe("145.84 Go");
-    expect(latest(popover).allowance.expires).toBe("12/08/2026");
+    // The stored instant is the midnight *ending* the last valid day, so an
+    // allowance expiring at midnight on the 12th is valid through the 11th.
+    expect(latest(popover).allowance.expires).toBe("11/08/2026");
     expect(latest(popover).sync.busy).toBe(false);
 
     app.stop();

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { defaultConfig, type AppConfig } from "../../src/config/defaults.js";
@@ -5,10 +8,17 @@ import {
   createRateHistory,
   type RateSample,
 } from "../../src/domain/history.js";
-import type { AllowanceAnchor } from "../../src/domain/allowance.js";
+import {
+  anchorFrom,
+  type AllowanceAnchor,
+} from "../../src/domain/allowance.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import {
+  parseAllowance,
+  parseUssdContent,
+} from "../../src/hilink/ussd-parse.js";
 import type { SyncFailure, SyncState } from "../../src/main/sync.js";
 import type {
   PlanDaysRefusal,
@@ -735,7 +745,11 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
   it("shows the expiry as a date and the days left", () => {
     const model = withAnchor(ANCHOR);
 
-    expect(model.allowance.expires).toBe("12/08/2026");
+    // The stored instant is the midnight that *ends* the last valid day, so
+    // the day printed is the one before it: an anchor expiring at midnight on
+    // the 12th is valid through the 11th, and the carrier says so too. The day
+    // count is measured against the stored instant and is unaffected.
+    expect(model.allowance.expires).toBe("11/08/2026");
     expect(model.allowance.daysUntilExpiry).toBe("16 days");
   });
 
@@ -800,6 +814,81 @@ describe("buildPopoverModel — a real allowance anchored from a sync", () => {
 
     expect(model.allowance.available).toBe(false);
     expect(model.allowance.remaining).toBe("—");
+  });
+});
+
+/**
+ * The panel against the parser, with nothing hand-built in between.
+ *
+ * Every other test in this file writes its own `expiresAt` with `new Date(…)`,
+ * so none of them ever sees the instant the parser actually produces — a whole
+ * layer insulated from its own input by construction. These drive the recorded
+ * carrier reply the whole way through, so a change to how the parser reads
+ * "jusqu'au 25/08/2026" cannot pass unnoticed here.
+ */
+describe("buildPopoverModel — the recorded carrier reply, end to end", () => {
+  const allowance = parseAllowance(
+    parseUssdContent(
+      readFileSync(
+        fileURLToPath(
+          new URL("../fixtures/hilink/ussd-4-allowance.xml", import.meta.url),
+        ),
+        "utf8",
+      ),
+    ),
+  );
+
+  function model(): PopoverModel {
+    if (allowance === null) throw new Error("the fixture states an allowance");
+
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        allowanceAnchor: anchorFrom(allowance, snapshot().month, clock),
+      },
+      clock,
+    });
+  }
+
+  it("prints the day the carrier itself stated, not the one after it", () => {
+    // The reply reads "jusqu au 25/08/2026 inclus".
+    expect(model().allowance.expires).toBe("25/08/2026");
+  });
+
+  it("runs the sustainable figure to that same day", () => {
+    expect(model().pace?.sustainable).toContain("25/08/2026");
+  });
+
+  it("still counts the stated day as a day of the plan", () => {
+    // 27 July through 25 August inclusive. T-46 settled this count; printing
+    // the right day must not move it.
+    expect(model().allowance.daysUntilExpiry).toBe("30 days");
+  });
+});
+
+describe("buildPopoverModel — an allowance the carrier gave no expiry for", () => {
+  function model(): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWith(
+        20_000_000_000,
+        anchorOf(12_000_000_000, { expiresAt: null }),
+      ),
+      clock,
+    });
+  }
+
+  it("marks the expiry absent rather than throwing", () => {
+    expect(() => model()).not.toThrow();
+    expect(model().allowance.expires).toBe("—");
+    expect(model().allowance.daysUntilExpiry).toBe("—");
+  });
+
+  it("has no pace row to run to a date it does not have", () => {
+    expect(model().pace).toBeNull();
   });
 });
 
@@ -1104,7 +1193,9 @@ describe("buildPopoverModel — the pace row", () => {
 
     expect(pace?.tier).toBe(1);
     expect(pace?.sustainable).toContain("3.00 Go");
-    expect(pace?.sustainable).toContain("06/08/2026");
+    // Ten whole days of plan run to the midnight opening the 6th, which is the
+    // end of the 5th — the last day the figure is meant to cover.
+    expect(pace?.sustainable).toContain("05/08/2026");
   });
 
   it("leaves tier 1 with no state and no meter to measure against", () => {

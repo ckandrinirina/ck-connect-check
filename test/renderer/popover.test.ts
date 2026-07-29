@@ -1127,7 +1127,7 @@ describe("the allowance — a successful sync", () => {
   });
 
   it("renders the expiry as a date and the days left", () => {
-    expect(textOf("allowanceExpires")).toBe("12/08/2026");
+    expect(textOf("allowanceExpires")).toBe("11/08/2026");
     expect(textOf("allowanceDaysLeft")).toBe("16 days");
   });
 
@@ -1933,7 +1933,7 @@ describe("the pace row", () => {
 
     expect(row().hidden).toBe(false);
     expect(textOf("paceSustainable")).toContain("3.00 Go");
-    expect(textOf("paceSustainable")).toContain("06/08/2026");
+    expect(textOf("paceSustainable")).toContain("05/08/2026");
   });
 
   it("draws no meter and sets no state at tier 1", () => {
