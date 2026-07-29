@@ -51,7 +51,7 @@
         >Waiting for the router</span
       >
       <!--
-        The one control on the panel, in the row the eye reaches first. USSD
+        The control the panel exists for, in the row the eye reaches first. USSD
         takes tens of seconds and holds carrier-side state, so it is only ever
         driven from here — never by the poll timer. Its status line stays at the
         foot of the panel: the step names arrive over tens of seconds and run to
@@ -67,223 +67,260 @@
       >
         Sync
       </button>
+
+      <!--
+        The other control: it swaps the whole panel for the three values that
+        have to be typed. They are entered once a month and read never, so they
+        cost a third of a 320×520 popover for nothing the rest of the time —
+        and a popover that closes on blur cannot usefully be scrolled.
+
+        Its marker is how a missing router password stays discoverable now that
+        the form asking for one is behind it.
+      -->
+      <button
+        class="settings-toggle"
+        type="button"
+        data-settings-toggle
+        data-attention="false"
+        aria-pressed="false"
+        aria-label="Settings"
+      >
+        <span aria-hidden="true">⚙</span>
+      </button>
     </header>
 
-    <section class="usage">
-      <!--
-        The ring itself is built by `popover.ts`: its geometry comes from the
-        model, and an SVG whose only job is to be redrawn belongs where the
-        redrawing happens. The percentage stays here as ordinary text so the
-        page reads the same as every other field.
-      -->
-      <div class="dial" data-dial role="img" aria-label="No usage read yet">
-        <span class="dial-value" data-field="percent">—</span>
-      </div>
-
-      <div class="usage-figures">
-        <span class="total" data-field="monthTotal">—</span>
-        <span class="caption">used this month</span>
-        <p class="prompt" data-field="prompt"></p>
-
+    <!--
+      The figures. One of the two views the panel shows, never both — the other
+      is the settings below, and the toggle in the header decides which.
+    -->
+    <div class="view" data-main-view>
+      <section class="usage">
         <!--
-          The one figure the carrier never states, so it has to be typed. It
-          stays on the panel rather than appearing only when unset: a plan that
-          changes has to be correctable. The value is filled from the model and
-          the refusal is worded in the main process — this is a field, not a
-          validator.
+          The ring itself is built by `popover.ts`: its geometry comes from the
+          model, and an SVG whose only job is to be redrawn belongs where the
+          redrawing happens. The percentage stays here as ordinary text so the
+          page reads the same as every other field.
         -->
-        <form class="plan-limit" data-plan-limit>
-          <label class="plan-limit-label" for="plan-limit">Plan</label>
-          <input
-            id="plan-limit"
-            class="plan-limit-input"
-            data-plan-limit-input
-            type="text"
-            inputmode="decimal"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="150"
-          />
-          <span class="plan-limit-unit" data-field="planLimitUnit">Go</span>
-          <button class="plan-limit-submit" type="submit">Set</button>
-        </form>
-        <p
-          class="plan-limit-error"
-          data-field="planLimitError"
-          role="status"
-        ></p>
-
-        <!--
-          The other figure the carrier never states. It sits beside the cap
-          because the two are the same kind of thing, and because the pace band
-          needs both — an expiry date is not a duration.
-        -->
-        <form class="plan-limit" data-plan-days>
-          <label class="plan-limit-label" for="plan-days">Lasts</label>
-          <input
-            id="plan-days"
-            class="plan-limit-input"
-            data-plan-days-input
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="30"
-          />
-          <span class="plan-limit-unit" data-field="planDaysUnit">days</span>
-          <button class="plan-limit-submit" type="submit">Set</button>
-        </form>
-        <p
-          class="plan-limit-error"
-          data-field="planDaysError"
-          role="status"
-        ></p>
-
-        <!--
-          Shown only when a sync brought back a plan the stored cap cannot
-          describe. Confirming re-submits whatever is already in the field
-          above, so an unchanged plan size costs one press rather than a
-          retype — the panel has no separate "confirm" message to send.
-        -->
-        <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
-          <p class="plan-cap-message" data-field="planCapMessage"></p>
-          <button class="plan-cap-confirm" type="button" data-plan-cap-confirm>
-            Confirm
-          </button>
+        <div class="dial" data-dial role="img" aria-label="No usage read yet">
+          <span class="dial-value" data-field="percent">—</span>
         </div>
-      </div>
-    </section>
 
-    <!--
-      Whether that share is being spent faster than the month is passing. It
-      grows with what is known: the daily figure alone needs only a sync, the
-      meter underneath it needs the two typed fields above. Hidden outright when
-      there is nothing honest to say — a rate over a period nobody stated is
-      the same lie the dial refuses to draw before a sync.
+        <div class="usage-figures">
+          <span class="total" data-field="monthTotal">—</span>
+          <span class="caption">used this month</span>
+          <p class="prompt" data-field="prompt"></p>
 
-      The band is drawn rather than narrated: a bar whose full width is twice
-      the afforded figure, with a tick at the afforded figure itself, so an
-      overshoot reads as fill past the mark rather than as a bar that is merely
-      long. Colour is the fast answer, never the only one. The track's widths
-      come from the model; the stylesheet holds every colour and this page holds
-      neither.
-    -->
-    <section class="pace" data-pace hidden>
-      <p class="pace-sustainable" data-field="paceSustainable"></p>
-      <div class="pace-meter" data-pace-meter role="img" aria-label="" hidden>
-        <span class="pace-track">
-          <span class="pace-fill" data-pace-fill></span>
-          <span class="pace-tick" data-pace-tick></span>
-        </span>
-        <span class="pace-figures">
-          <span class="pace-average" data-field="paceAverage"></span>
-          <span class="pace-figures-rule">/</span>
-          <span data-field="paceAfforded"></span>
-          <span class="pace-figures-unit">a day</span>
-        </span>
-      </div>
-      <p class="pace-hint" data-field="paceHint"></p>
-    </section>
+          <!--
+            Shown only when a sync brought back a plan the stored cap cannot
+            describe. Confirming re-submits whatever is already in the field
+            above, so an unchanged plan size costs one press rather than a
+            retype — the panel has no separate "confirm" message to send.
+          -->
+          <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
+            <p class="plan-cap-message" data-field="planCapMessage"></p>
+            <button
+              class="plan-cap-confirm"
+              type="button"
+              data-plan-cap-confirm
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </section>
 
-    <!--
-      The carrier's own figure, carried forward from the last sync. It is a
-      different question from the dial above it — that is a share of the plan,
-      this is the exact volume the carrier said was left — so it gets its own
-      strip rather than another number in the grid.
-    -->
-    <section class="allowance">
-      <div class="allowance-figure">
-        <span class="allowance-remaining" data-field="allowanceRemaining"
-          >—</span
-        >
-        <span class="caption">left with the carrier</span>
-      </div>
-      <div class="allowance-meta">
-        <span class="allowance-plan" data-field="allowancePlan">—</span>
-        <span class="allowance-synced" data-field="allowanceSynced">—</span>
-      </div>
       <!--
-        The re-sync marker. It is text, never a colour on its own: a figure that
-        can no longer be trusted has to say so out loud.
+        Whether that share is being spent faster than the month is passing. It
+        grows with what is known: the daily figure alone needs only a sync, the
+        meter underneath it needs the two figures typed into the settings
+        view. Hidden outright when there is nothing honest to say — a rate over
+        a period nobody stated is the same lie the dial refuses to draw before
+        a sync.
+
+        The band is drawn rather than narrated: a bar whose full width is twice
+        the afforded figure, with a tick at the afforded figure itself, so an
+        overshoot reads as fill past the mark rather than as a bar that is
+        merely long. Colour is the fast answer, never the only one. The track's
+        widths come from the model; the stylesheet holds every colour and this
+        page holds neither.
       -->
-      <p class="allowance-note" data-field="allowanceNote"></p>
-    </section>
+      <section class="pace" data-pace hidden>
+        <p class="pace-sustainable" data-field="paceSustainable"></p>
+        <div class="pace-meter" data-pace-meter role="img" aria-label="" hidden>
+          <span class="pace-track">
+            <span class="pace-fill" data-pace-fill></span>
+            <span class="pace-tick" data-pace-tick></span>
+          </span>
+          <span class="pace-figures">
+            <span class="pace-average" data-field="paceAverage"></span>
+            <span class="pace-figures-rule">/</span>
+            <span data-field="paceAfforded"></span>
+            <span class="pace-figures-unit">a day</span>
+          </span>
+        </div>
+        <p class="pace-hint" data-field="paceHint"></p>
+      </section>
+
+      <!--
+        The carrier's own figure, carried forward from the last sync. It is a
+        different question from the dial above it — that is a share of the plan,
+        this is the exact volume the carrier said was left — so it gets its own
+        strip rather than another number in the grid.
+      -->
+      <section class="allowance">
+        <div class="allowance-figure">
+          <span class="allowance-remaining" data-field="allowanceRemaining"
+            >—</span
+          >
+          <span class="caption">left with the carrier</span>
+        </div>
+        <div class="allowance-meta">
+          <span class="allowance-plan" data-field="allowancePlan">—</span>
+          <span class="allowance-synced" data-field="allowanceSynced">—</span>
+        </div>
+        <!--
+          When the volume above runs out, on one line with it. They were two
+          tiles of the grid below until the panel outgrew its window; they are
+          the same carrier's answer about the same allowance, so they read
+          better here than as boxes three sections from the figure they qualify.
+        -->
+        <div class="allowance-validity">
+          <span class="caption">Expires</span>
+          <span data-field="allowanceExpires">—</span>
+          <span class="allowance-days-left" data-field="allowanceDaysLeft"
+            >—</span
+          >
+        </div>
+        <!--
+          The re-sync marker. It is text, never a colour on its own: a figure
+          that can no longer be trusted has to say so out loud.
+        -->
+        <p class="allowance-note" data-field="allowanceNote"></p>
+      </section>
+
+      <!--
+        Live throughput, as a shape rather than a figure. Each row is a label,
+        the sparkline the last few minutes drew, and the current rate as text.
+        The two SVGs are built by `popover.ts` for the same reason the dial's
+        is: they exist to be redrawn, so they belong where the redrawing happens.
+      -->
+      <section class="rates">
+        <div class="rate">
+          <span class="rate-label">Down</span>
+          <span class="spark" data-spark="download" data-empty="true"></span>
+          <span class="rate-value" data-field="downloadRate">—</span>
+        </div>
+        <div class="rate">
+          <span class="rate-label">Up</span>
+          <span class="spark" data-spark="upload" data-empty="true"></span>
+          <span class="rate-value" data-field="uploadRate">—</span>
+        </div>
+      </section>
+
+      <!--
+        What is left once every figure stated somewhere else has gone. The
+        month's download and upload totals went because the plan is billed on
+        their sum, and both the dial and the allowance already state that sum;
+        the expiry and the days left went up to the strip they qualify.
+      -->
+      <dl class="stats">
+        <div class="stat">
+          <dt>Devices</dt>
+          <dd data-field="connectedDevices">—</dd>
+        </div>
+      </dl>
+
+      <!--
+        What the dialogue is doing, reported where there is room for it to run
+        to several lines. A live region: the step names arriving in it are the
+        proof the panel has not frozen. The button that starts it is in the
+        header.
+      -->
+      <footer class="sync">
+        <p class="sync-status" data-field="syncStatus" role="status"></p>
+      </footer>
+    </div>
 
     <!--
-      Live throughput, as a shape rather than a figure. Each row is a label, the
-      sparkline the last few minutes drew, and the current rate as text. The two
-      SVGs are built by `popover.ts` for the same reason the dial's is: they
-      exist to be redrawn, so they belong where the redrawing happens.
+      The three values the app cannot read anywhere and has to be told. They are
+      typed once a month, so they live behind the header's toggle rather than
+      taking a third of the panel from the figures that are read every time it
+      is opened. The panel shows this view or the one above it, never both.
     -->
-    <section class="rates">
-      <div class="rate">
-        <span class="rate-label">Down</span>
-        <span class="spark" data-spark="download" data-empty="true"></span>
-        <span class="rate-value" data-field="downloadRate">—</span>
-      </div>
-      <div class="rate">
-        <span class="rate-label">Up</span>
-        <span class="spark" data-spark="upload" data-empty="true"></span>
-        <span class="rate-value" data-field="uploadRate">—</span>
-      </div>
-    </section>
+    <div class="view settings-view" data-settings-view hidden>
+      <!--
+        The one figure the carrier never states, so it has to be typed. It is
+        always here rather than appearing only when unset: a plan that changes
+        has to be correctable. The value is filled from the model and the
+        refusal is worded in the main process — this is a field, not a
+        validator.
+      -->
+      <form class="plan-limit" data-plan-limit>
+        <label class="plan-limit-label" for="plan-limit">Plan</label>
+        <input
+          id="plan-limit"
+          class="plan-limit-input"
+          data-plan-limit-input
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="150"
+        />
+        <span class="plan-limit-unit" data-field="planLimitUnit">Go</span>
+        <button class="plan-limit-submit" type="submit">Set</button>
+      </form>
+      <p class="plan-limit-error" data-field="planLimitError" role="status"></p>
 
-    <dl class="stats">
-      <div class="stat">
-        <dt>Downloaded</dt>
-        <dd data-field="monthDownload">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Uploaded</dt>
-        <dd data-field="monthUpload">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Devices</dt>
-        <dd data-field="connectedDevices">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Expires</dt>
-        <dd data-field="allowanceExpires">—</dd>
-      </div>
-      <div class="stat">
-        <dt>Valid for</dt>
-        <dd data-field="allowanceDaysLeft">—</dd>
-      </div>
-    </dl>
+      <!--
+        The other figure the carrier never states. It sits beside the cap
+        because the two are the same kind of thing, and because the pace meter
+        needs both — an expiry date is not a duration.
+      -->
+      <form class="plan-limit" data-plan-days>
+        <label class="plan-limit-label" for="plan-days">Lasts</label>
+        <input
+          id="plan-days"
+          class="plan-limit-input"
+          data-plan-days-input
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="30"
+        />
+        <span class="plan-limit-unit" data-field="planDaysUnit">days</span>
+        <button class="plan-limit-submit" type="submit">Set</button>
+      </form>
+      <p class="plan-limit-error" data-field="planDaysError" role="status"></p>
 
-    <!--
-      What the dialogue is doing, reported where there is room for it to run to
-      several lines. A live region: the step names arriving in it are the proof
-      the panel has not frozen. The button that starts it is in the header.
-    -->
-    <footer class="sync">
-      <p class="sync-status" data-field="syncStatus" role="status"></p>
-    </footer>
-
-    <!--
-      Shown only when nothing is stored: the password goes straight to the
-      Keychain through the main process, and is never written to the config.
-    -->
-    <form class="password-prompt" data-password-prompt hidden>
-      <label class="password-label" for="router-username">Router user</label>
-      <input
-        id="router-username"
-        class="password-input"
-        data-password-username
-        type="text"
-        value="admin"
-        autocomplete="username"
-        spellcheck="false"
-      />
-      <label class="password-label" for="router-password">Password</label>
-      <input
-        id="router-password"
-        class="password-input"
-        data-password-password
-        type="password"
-        autocomplete="current-password"
-      />
-      <button class="password-submit" type="submit">Save and sync</button>
-    </form>
+      <!--
+        Shown only when nothing is stored: the password goes straight to the
+        Keychain through the main process, and is never written to the config.
+        Behind the toggle it would be undiscoverable on its own, so the toggle
+        wears a marker for exactly as long as this form is asking for one.
+      -->
+      <form class="password-prompt" data-password-prompt hidden>
+        <label class="password-label" for="router-username">Router user</label>
+        <input
+          id="router-username"
+          class="password-input"
+          data-password-username
+          type="text"
+          value="admin"
+          autocomplete="username"
+          spellcheck="false"
+        />
+        <label class="password-label" for="router-password">Password</label>
+        <input
+          id="router-password"
+          class="password-input"
+          data-password-password
+          type="password"
+          autocomplete="current-password"
+        />
+        <button class="password-submit" type="submit">Save and sync</button>
+      </form>
+    </div>
   </body>
 </html>

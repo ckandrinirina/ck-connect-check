@@ -297,8 +297,13 @@ export interface PopoverPlanCapPrompt {
 
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
-  monthDownload: string;
-  monthUpload: string;
+  /**
+   * The plan consumed this month, as the carrier counts it.
+   *
+   * There is deliberately no download/upload split beside it: the plan is
+   * billed on their sum, which this figure and the carrier's own remaining
+   * already state twice over, and the panel had outgrown its window.
+   */
   monthTotal: string;
   progress: PopoverProgress;
   /** Live throughput, e.g. `"2.4 Ko/s"`. */
@@ -779,8 +784,6 @@ function emptyModel(
   planCapPrompt: PopoverPlanCapPrompt | null,
 ): PopoverModel {
   return {
-    monthDownload: NO_VALUE,
-    monthUpload: NO_VALUE,
     monthTotal: NO_VALUE,
     progress: buildDial(null, null, warnThresholdPercent),
     downloadRate: NO_VALUE,
@@ -904,12 +907,10 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
 
   return {
-    // Download and upload stay the router's own counters: they are the evidence
-    // behind the delta, and the user can see them move. The total is the plan
-    // figure — a different month from the two lines above it, and the only one
-    // the carrier stands behind.
-    monthDownload: formatBytes(month.monthDownloadBytes),
-    monthUpload: formatBytes(month.monthUploadBytes),
+    // The plan figure, which is the only month the carrier stands behind. The
+    // router's own download and upload counters are still read — the anchor is
+    // carried forward with them — but they are not shown: they measure a
+    // different month from this one, and the panel has no room to explain that.
     monthTotal:
       allowance?.usedBytes === undefined || allowance.usedBytes === null
         ? NO_VALUE

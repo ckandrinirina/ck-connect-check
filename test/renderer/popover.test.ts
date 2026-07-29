@@ -467,20 +467,19 @@ describe("the popover page", () => {
   });
 
   it("keeps the dial and the sparklines small enough for the panel to fit its window", () => {
-    // No layout engine, so this is a budget rather than a measurement: the
-    // room everything other than the dial and the two sparklines takes, which
-    // is 30px of body padding, ~29px of header and its rule, 22px of padding
-    // around the dial, ~56px for the allowance strip and its rule, 23px of rule
-    // and spacing above the sparklines, ~160px for the three-row stats grid
-    // with its own rule and ~46px for the sync row — call it 330px, rounded up
-    // to 350 so a stray line of text does not silently overrun. Anything that
-    // outgrows what is left pushes the panel past POPOVER_HEIGHT and raises a
-    // scrollbar, which a popover has no room for. The password prompt is
-    // `hidden` until it is needed, so it costs nothing here.
+    // No layout engine, so this is a budget rather than a measurement: the room
+    // the main view takes other than the dial and the two sparklines, which is
+    // 30px of body padding, ~35px of header and its rule, 22px of padding
+    // around the dial, ~57px for the pace section at its tallest, ~85px for the
+    // allowance strip and its validity line, 23px of rule and spacing above the
+    // sparklines, ~59px for the one-tile stats grid with its own rule and ~38px
+    // for the sync row — call it 349px, rounded up to 350 so a stray line of
+    // text does not silently overrun. Anything that outgrows what is left
+    // pushes the panel past POPOVER_HEIGHT and raises a scrollbar, which a
+    // popover has no room for.
     //
-    // The plan-size field and its refusal line sit in the column beside the
-    // dial, not under it, so they are free until that column outgrows the
-    // dial's own height — which is what the extra 10px covers.
+    // The three typed fields cost nothing here: they are in the settings view,
+    // which is `hidden` whenever this one is not.
     const CHROME_HEIGHT = 350;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
@@ -707,16 +706,32 @@ describe("the stat tiles", () => {
   it("keeps the carrier's own expiry, which is the figure that governs", () => {
     apply(modelUsing(10 * GB));
 
-    expect(tileTerms()).toContain("Valid for");
+    // It reads on the allowance line now rather than as a tile of its own, but
+    // it is still on the panel and still filled from the model.
     expect(textOf("allowanceDaysLeft")).not.toBe("");
+    expect(textOf("allowanceExpires")).not.toBe("");
   });
 
-  it("lays out an odd number of tiles without leaving an empty one", () => {
+  it("no longer splits the month into a download and an upload total", () => {
+    // The plan is billed on their sum, which the dial and the carrier's
+    // remaining already state twice over. The split is a question nobody asks
+    // of a menu bar app, and it cost two of the five tiles.
+    apply(modelUsing(10 * GB));
+
+    expect(tileTerms()).not.toContain("Downloaded");
+    expect(tileTerms()).not.toContain("Uploaded");
+    expect(document.querySelector('[data-field="monthDownload"]')).toBeNull();
+    expect(document.querySelector('[data-field="monthUpload"]')).toBeNull();
+    expect(INDEX_HTML).not.toContain("monthDownload");
+    expect(INDEX_HTML).not.toContain("monthUpload");
+  });
+
+  it("keeps only what neither the allowance line nor the dial already says", () => {
     apply(modelUsing(10 * GB));
 
     const tiles = [...document.querySelectorAll(".stat")];
 
-    expect(tiles).toHaveLength(5);
+    expect(tileTerms()).toEqual(["Devices"]);
 
     // Every tile still carries both halves — a term and a value bound to the
     // model. A cell left behind by the removal would show up as a missing one.
@@ -724,6 +739,25 @@ describe("the stat tiles", () => {
       expect(tile.querySelector("dt")?.textContent?.trim()).toBeTruthy();
       expect(tile.querySelector("dd[data-field]")).not.toBeNull();
     }
+  });
+
+  it("reads the expiry and the days left on one line with the allowance", () => {
+    apply(modelUsing(10 * GB));
+
+    const expires = document.querySelector('[data-field="allowanceExpires"]');
+    const daysLeft = document.querySelector('[data-field="allowanceDaysLeft"]');
+
+    if (expires === null || daysLeft === null) {
+      throw new Error("the allowance strip has no validity line");
+    }
+
+    // Both inside the allowance strip, and both in the same row element — one
+    // line rather than two tiles that happen to have moved.
+    expect(expires.closest(".allowance")).not.toBeNull();
+    expect(daysLeft.closest(".allowance")).not.toBeNull();
+    expect(expires.parentElement).toBe(daysLeft.parentElement);
+    expect(expires.closest(".stat")).toBeNull();
+    expect(daysLeft.closest(".stat")).toBeNull();
   });
 });
 
@@ -2043,5 +2077,330 @@ describe("the pace row", () => {
     expect(
       figures.compareDocumentPosition(row()) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeGreaterThan(0);
+  });
+});
+
+/*
+ * The panel shows one of two views, never both: the figures, or the three
+ * values that have to be typed. jsdom lays nothing out, so "it fits" is
+ * asserted structurally — which sections each view holds, and which of the two
+ * is carrying the `hidden` attribute.
+ */
+
+function mainView(): HTMLElement {
+  const element = document.querySelector<HTMLElement>("[data-main-view]");
+
+  if (element === null) {
+    throw new Error("the panel has no main view");
+  }
+
+  return element;
+}
+
+function settingsView(): HTMLElement {
+  const element = document.querySelector<HTMLElement>("[data-settings-view]");
+
+  if (element === null) {
+    throw new Error("the panel has no settings view");
+  }
+
+  return element;
+}
+
+function settingsToggle(): HTMLButtonElement {
+  const element = document.querySelector<HTMLButtonElement>(
+    "[data-settings-toggle]",
+  );
+
+  if (element === null) {
+    throw new Error("the panel has no settings toggle");
+  }
+
+  return element;
+}
+
+/** The three things the panel asks the user to type, by their form element. */
+function typedForms(): Record<string, HTMLElement> {
+  const forms = {
+    cap: document.querySelector<HTMLElement>("form[data-plan-limit]"),
+    length: document.querySelector<HTMLElement>("form[data-plan-days]"),
+    password: document.querySelector<HTMLElement>("[data-password-prompt]"),
+  };
+
+  for (const [name, form] of Object.entries(forms)) {
+    if (form === null) {
+      throw new Error(`the panel has no ${name} form`);
+    }
+  }
+
+  return forms as Record<string, HTMLElement>;
+}
+
+describe("the panel's two views", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("opens on the main view, with the settings put away", () => {
+    expect(mainView().hidden).toBe(false);
+    expect(settingsView().hidden).toBe(true);
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("carries the toggle in the header, where the panel is read first", () => {
+    expect(settingsToggle().closest(".header")).not.toBeNull();
+    expect(settingsToggle().tagName).toBe("BUTTON");
+    expect(settingsToggle().getAttribute("type")).toBe("button");
+  });
+
+  it("swaps which view is hidden when the toggle is pressed", () => {
+    settingsToggle().click();
+
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("true");
+    expect(mainView().hidden).toBe(true);
+    expect(settingsView().hidden).toBe(false);
+  });
+
+  it("comes back to the figures on a second press", () => {
+    settingsToggle().click();
+    settingsToggle().click();
+
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+    expect(mainView().hidden).toBe(false);
+    expect(settingsView().hidden).toBe(true);
+  });
+
+  it("holds all three typed values in the settings view", () => {
+    settingsToggle().click();
+
+    for (const form of Object.values(typedForms())) {
+      expect(form.closest("[data-settings-view]")).toBe(settingsView());
+      expect(form.closest("[data-main-view]")).toBeNull();
+    }
+  });
+
+  it("keeps the cap and length fields readable once settings are open", () => {
+    settingsToggle().click();
+
+    const { cap, length } = typedForms();
+
+    expect(cap.hidden).toBe(false);
+    expect(length.hidden).toBe(false);
+  });
+
+  it("puts every typed form away again with the settings closed", () => {
+    expect(settingsView().hidden).toBe(true);
+
+    for (const form of Object.values(typedForms())) {
+      expect(form.closest("[data-settings-view]")).toBe(settingsView());
+    }
+  });
+
+  it("keeps the figures in the main view rather than behind the toggle", () => {
+    for (const selector of [
+      "[data-dial]",
+      "[data-pace]",
+      "[data-pace-meter]",
+      ".allowance",
+      ".rates",
+      ".stats",
+    ]) {
+      const section = document.querySelector(selector);
+
+      if (section === null) {
+        throw new Error(`the panel has no ${selector}`);
+      }
+
+      expect(section.closest("[data-main-view]")).toBe(mainView());
+      expect(section.closest("[data-settings-view]")).toBeNull();
+    }
+
+    expect(mainView().hidden).toBe(false);
+  });
+
+  it("costs no height at all for whichever view is put away", () => {
+    // Asserted against the stylesheet, since jsdom lays nothing out: both views
+    // are given a `display` of their own, so the UA rule for `hidden` alone
+    // would not take them off the panel.
+    expect(POPOVER_CSS).toMatch(/\.view\[hidden\]\s*\{[^}]*display:\s*none/);
+  });
+
+  it("does not reopen the settings when a poll lands", () => {
+    settingsToggle().click();
+
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(settingsView().hidden).toBe(false);
+    expect(mainView().hidden).toBe(true);
+  });
+
+  it("marks the toggle while no router password is stored", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+
+    expect(settingsToggle().dataset["attention"]).toBe("true");
+    // The form itself is still behind the toggle, so the marker is the only
+    // thing that makes a missing password discoverable.
+    expect(typedForms()["password"]?.closest("[data-settings-view]")).toBe(
+      settingsView(),
+    );
+  });
+
+  it("drops the marker once a password is stored", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(settingsToggle().dataset["attention"]).toBe("false");
+  });
+
+  it("styles that marker at all, rather than leaving it invisible", () => {
+    expect(POPOVER_CSS).toMatch(
+      /\.settings-toggle\[data-attention="true"\][^{]*\{[^}]*\}/,
+    );
+  });
+
+  it("is reachable without a mouse and says what it opens", () => {
+    expect(settingsToggle().tabIndex).toBeGreaterThanOrEqual(0);
+
+    const name =
+      settingsToggle().getAttribute("aria-label") ??
+      settingsToggle().textContent ??
+      "";
+
+    expect(name.trim()).not.toBe("");
+    expect(name).toMatch(/setting/i);
+  });
+
+  it("returns to the main view when the panel is opened again", () => {
+    settingsToggle().click();
+    expect(settingsView().hidden).toBe(false);
+
+    // What `src/main/popover.ts` calls on every open. The window is hidden
+    // rather than destroyed between opens, so without this a panel left on
+    // the settings would still be on them the next time it is clicked.
+    window.resetPopoverView();
+
+    expect(mainView().hidden).toBe(false);
+    expect(settingsView().hidden).toBe(true);
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("the typed settings — driven from inside the settings view", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+    settingsToggle().click();
+  });
+
+  function submit(form: string, input: string, typed: string): void {
+    const field = document.querySelector<HTMLInputElement>(input);
+    const element = document.querySelector<HTMLFormElement>(form);
+
+    if (field === null || element === null) {
+      throw new Error(`the settings view has no ${form}`);
+    }
+
+    field.value = typed;
+    element.dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+  }
+
+  it("still sends the cap over the same channel it always did", () => {
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "150");
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+
+  it("still sends the plan length over its own channel", () => {
+    submit("form[data-plan-days]", "[data-plan-days-input]", "30");
+
+    expect(bridge.setPlanDays).toHaveBeenCalledWith("30");
+  });
+
+  it("still shows a refusal, where the field that caused it now lives", () => {
+    apply(modelRefusing("not-a-number"));
+
+    const error = document.querySelector('[data-field="planLimitError"]');
+
+    expect(error?.textContent).not.toBe("");
+    expect(error?.closest("[data-settings-view]")).toBe(settingsView());
+  });
+
+  it("still shows a refused plan length beside its own field", () => {
+    apply(
+      buildPopoverModel({
+        result: { online: true, snapshot: snapshot(10 * GB) },
+        lastReading: null,
+        config: configWithLimit(150 * GB),
+        planDaysProblem: "not-whole",
+        clock,
+      }),
+    );
+
+    const error = document.querySelector('[data-field="planDaysError"]');
+
+    expect(error?.textContent).not.toBe("");
+    expect(error?.closest("[data-settings-view]")).toBe(settingsView());
+  });
+});
+
+describe("the new-plan confirmation — which view it belongs to", () => {
+  /** A live 150 Go plan whose stored cap the last sync contradicted. */
+  function modelUnconfirmed(): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(150 * GB),
+        planDays: 30,
+        planCapConfirmed: false,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 30 * GB,
+          expiresAt: new Date(2026, 7, 6),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("stays in the main view, where the dial it replaces was", () => {
+    // It is an alert about a figure the carrier contradicted, not a setting.
+    // Behind the toggle, a user whose cap was contradicted would open the panel,
+    // find no dial and no explanation, and no reason to look in the settings.
+    apply(modelUnconfirmed());
+
+    const prompt = document.querySelector("[data-plan-cap-prompt]");
+
+    if (prompt === null) {
+      throw new Error("the panel has no plan-cap prompt");
+    }
+
+    expect(prompt.closest("[data-main-view]")).toBe(mainView());
+    expect(prompt.closest("[data-settings-view]")).toBeNull();
+    expect(mainView().hidden).toBe(false);
+    expect((prompt as HTMLElement).hidden).toBe(false);
+  });
+
+  it("still confirms from there, without a trip through the settings", () => {
+    const bridge = stubBridge();
+    apply(modelUnconfirmed());
+
+    document
+      .querySelector<HTMLButtonElement>("[data-plan-cap-confirm]")
+      ?.click();
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
   });
 });
