@@ -10,15 +10,20 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { defaultConfig, type AppConfig } from "../../src/config/defaults.js";
+import type { AllowanceAnchor } from "../../src/domain/allowance.js";
+import type { Clock } from "../../src/domain/quota.js";
 import type { AllowanceResult } from "../../src/hilink/client.js";
 import type {
   Allowance,
   LoginResult,
+  MonthStatistics,
   RouterCredential,
 } from "../../src/hilink/types.js";
 import type { CredentialSaveResult } from "../../src/main/credentials.js";
 import {
   createAllowanceSync,
+  recordAnchor,
   type AllowanceSource,
   type CredentialStore,
   type SyncState,
@@ -483,5 +488,93 @@ describe("createAllowanceSync — a dialogue nobody asked for", () => {
 
     expect(await sync.startAutomatic()).toBe(true);
     expect(router.dialogues).toBe(3);
+  });
+});
+
+describe("recordAnchor — writing down the anchor a sync produced", () => {
+  const CLEAR_TIME = "2026-7-27";
+
+  /** 27 July 2026, 17:46 local. */
+  const NOW = new Date(2026, 6, 27, 17, 46, 0);
+  const clock: Clock = { now: () => NOW };
+
+  const MONTH: MonthStatistics = {
+    monthDownloadBytes: 1_000_000_000,
+    monthUploadBytes: 0,
+    monthDurationSeconds: 27_960,
+    monthLastClearTime: CLEAR_TIME,
+  };
+
+  function anchor(overrides: Partial<AllowanceAnchor> = {}): AllowanceAnchor {
+    return {
+      planLabel: ALLOWANCE.planLabel,
+      remainingBytes: ALLOWANCE.remainingBytes,
+      expiresAt: ALLOWANCE.expiresAt,
+      routerMonthBytes: 1_000_000_000,
+      routerClearTime: CLEAR_TIME,
+      syncedAt: new Date(2026, 6, 27, 10, 0, 0),
+      ...overrides,
+    };
+  }
+
+  function configWith(
+    previous: AllowanceAnchor | undefined,
+    planLimitBytes: number | null,
+  ): AppConfig {
+    return {
+      ...defaultConfig(),
+      planLimitBytes,
+      planCapConfirmed: true,
+      ...(previous === undefined ? {} : { allowanceAnchor: previous }),
+    };
+  }
+
+  it("writes the carrier's figure as the new anchor", () => {
+    const config = configWith(anchor(), 200_000_000_000);
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.allowanceAnchor?.remainingBytes).toBe(
+      ALLOWANCE.remainingBytes,
+    );
+    expect(config.allowanceAnchor?.syncedAt).toEqual(NOW);
+  });
+
+  it("clears the cap flag when the anchor belongs to a new plan", () => {
+    // A 50 Go cap against 145 Go left: the cap cannot describe this plan, and
+    // `usedBytes` would clamp to zero and read 0% for as long as it stood.
+    const config = configWith(anchor(), 50_000_000_000);
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.planCapConfirmed).toBe(false);
+  });
+
+  it("clears it for a relabelled plan too", () => {
+    const config = configWith(
+      anchor({ planLabel: "NET WEEK 20 000" }),
+      200_000_000_000,
+    );
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.planCapConfirmed).toBe(false);
+  });
+
+  it("leaves the flag untouched when the plan has not changed", () => {
+    const config = configWith(anchor(), 200_000_000_000);
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.planCapConfirmed).toBe(true);
+  });
+
+  it("leaves it untouched on a first-ever sync, which replaces nothing", () => {
+    const config = configWith(undefined, 50_000_000_000);
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.planCapConfirmed).toBe(true);
+    expect(config.allowanceAnchor).toBeDefined();
   });
 });

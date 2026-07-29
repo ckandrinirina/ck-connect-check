@@ -1170,3 +1170,80 @@ describe("buildPopoverModel — the pace row", () => {
     }
   });
 });
+
+describe("buildPopoverModel — an unconfirmed plan cap", () => {
+  const GO = 1_000_000_000;
+
+  /** Ten whole days after {@link NOW}, so the pace has a run of days. */
+  const IN_TEN_DAYS = new Date(2026, 7, 6);
+
+  /** A live model for a 150 Go plan with 30 Go left, cap confirmed or not. */
+  function modelWith(planCapConfirmed: boolean): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes: 150 * GO,
+        planDays: 30,
+        planCapConfirmed,
+        allowanceAnchor: anchorOf(30 * GO, { expiresAt: IN_TEN_DAYS }),
+      },
+      clock,
+    });
+  }
+
+  const unconfirmed = modelWith(false);
+  const confirmed = modelWith(true);
+
+  it("draws no dial, because the share would come from a contradicted cap", () => {
+    expect(confirmed.progress.available).toBe(true);
+    expect(unconfirmed.progress.available).toBe(false);
+    expect(unconfirmed.progress.label).toBe("—");
+    expect(unconfirmed.progress.sweep).toBe(0);
+  });
+
+  it("states no consumed volume either — that is the same subtraction", () => {
+    expect(unconfirmed.monthTotal).toBe("—");
+  });
+
+  it("drops the pace to tier 1, keeping the reading that needs no cap", () => {
+    expect(confirmed.pace?.tier).toBe(3);
+    expect(unconfirmed.pace?.tier).toBe(1);
+    // Tier 1 is the anchor alone — remaining over days left — so it is still
+    // true whatever the cap says.
+    expect(unconfirmed.pace?.sustainable).toBe(confirmed.pace?.sustainable);
+  });
+
+  it("empties every tier 2 and tier 3 field of the pace", () => {
+    expect(unconfirmed.pace?.consumed).toBe("");
+    expect(unconfirmed.pace?.afforded).toBe("");
+    expect(unconfirmed.pace?.band).toBe("");
+    expect(unconfirmed.pace?.state).toBe("");
+    expect(unconfirmed.pace?.note).toBe("");
+  });
+
+  it("asks for the cap to be confirmed instead of leaving a hole", () => {
+    expect(confirmed.planCapPrompt).toBeNull();
+    expect(unconfirmed.planCapPrompt).not.toBeNull();
+    expect(unconfirmed.planCapPrompt?.message).not.toBe("");
+    expect(unconfirmed.planCapPrompt?.confirmLabel).not.toBe("");
+    expect(unconfirmed.planCapPrompt?.description).not.toBe("");
+  });
+
+  it("says so on the dial's own prompt, where the ring used to be", () => {
+    expect(unconfirmed.progress.prompt).not.toBe("");
+    // Not the "set a plan limit" line: one is stored, it is simply in doubt.
+    expect(unconfirmed.progress.prompt).not.toMatch(/^Set a plan limit/);
+  });
+
+  it("keeps the stored cap in the field, so confirming costs no retyping", () => {
+    expect(unconfirmed.planLimit.value).toBe("150");
+  });
+
+  it("hands the renderer only strings and numbers it need not format", () => {
+    for (const leaf of leaves(unconfirmed.planCapPrompt)) {
+      expect(typeof leaf === "string" || typeof leaf === "number").toBe(true);
+    }
+  });
+});

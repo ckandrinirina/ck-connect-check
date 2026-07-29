@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   ConfigValidationError,
+  confirmedPlanLimit,
   gigabytesToBytes,
   loadConfig,
   parseConfig,
@@ -100,6 +101,7 @@ describe("save and load round-trip", () => {
       warnThresholdPercent: 75,
       planLimitBytes: gigabytesToBytes(20),
       planDays: 30,
+      planCapConfirmed: true,
       syncStaleAfterMinutes: 45,
     };
 
@@ -315,6 +317,65 @@ describe("plan limit validation", () => {
     } catch (error) {
       expect((error as ConfigValidationError).field).toBe("planLimitBytes");
     }
+  });
+});
+
+describe("planCapConfirmed — whether the stored cap still describes the plan", () => {
+  it("defaults to true, so an existing config is not flagged on first launch", () => {
+    expect(defaultConfig().planCapConfirmed).toBe(true);
+    expect(parseConfig({}).planCapConfirmed).toBe(true);
+  });
+
+  it("round-trips a cleared flag through save and load", () => {
+    saveConfig(path(), { ...defaultConfig(), planCapConfirmed: false });
+
+    expect(loadConfig(path()).config.planCapConfirmed).toBe(false);
+  });
+
+  it("round-trips a confirmed flag through save and load", () => {
+    saveConfig(path(), { ...defaultConfig(), planCapConfirmed: true });
+
+    expect(loadConfig(path()).config.planCapConfirmed).toBe(true);
+  });
+
+  it.each([0, "false", null, "yes"])(
+    "reads %s as confirmed rather than as a flag",
+    (value) => {
+      // Anything but a boolean is a file nobody wrote deliberately, and a panel
+      // demanding confirmation of a cap the user never changed is the worse
+      // failure of the two.
+      expect(parseConfig({ planCapConfirmed: value }).planCapConfirmed).toBe(
+        true,
+      );
+    },
+  );
+});
+
+describe("confirmedPlanLimit — the cap the app may measure against", () => {
+  it("hands back the stored cap while it is confirmed", () => {
+    expect(
+      confirmedPlanLimit({
+        ...defaultConfig(),
+        planLimitBytes: gigabytesToBytes(150),
+        planCapConfirmed: true,
+      }),
+    ).toBe(gigabytesToBytes(150));
+  });
+
+  it("hands back nothing while the cap is unconfirmed", () => {
+    // The one rule the dial and the tray title both read, so neither can quote
+    // a share the other has withdrawn.
+    expect(
+      confirmedPlanLimit({
+        ...defaultConfig(),
+        planLimitBytes: gigabytesToBytes(150),
+        planCapConfirmed: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("hands back nothing when no cap is stored at all", () => {
+    expect(confirmedPlanLimit(defaultConfig())).toBeNull();
   });
 });
 

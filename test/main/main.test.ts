@@ -928,6 +928,125 @@ describe("startMenuBarApp — setting the plan limit", () => {
   });
 });
 
+describe("startMenuBarApp — confirming the cap after a new plan", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A config holding a cap, an anchor, and the state of the confirmation flag. */
+  function configUnconfirming(
+    planLimitBytes: number | null,
+    planCapConfirmed: boolean,
+  ): string {
+    const configPath = scratchConfig();
+
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...defaultConfig(),
+        planLimitBytes,
+        planCapConfirmed,
+        allowanceAnchor: HEALTHY_ANCHOR,
+      }),
+    );
+
+    return configPath;
+  }
+
+  /** Whether the file on disk still calls the cap confirmed. */
+  function storedFlag(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as {
+        planCapConfirmed?: unknown;
+      }
+    ).planCapConfirmed;
+  }
+
+  function appOn(
+    configPath: string,
+    popover: ReturnType<typeof recordingPopover>,
+  ): ReturnType<typeof startMenuBarApp> {
+    return startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+  }
+
+  it("puts the dial back the moment the cap is submitted", async () => {
+    const configPath = configUnconfirming(150_000_000_000, false);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).progress.available).toBe(false);
+    expect(latest(popover).planCapPrompt).not.toBeNull();
+
+    app.setPlanLimit("150");
+
+    // The same model build: one click, and the dial and the prompt swap over.
+    expect(latest(popover).progress.available).toBe(true);
+    expect(latest(popover).planCapPrompt).toBeNull();
+    expect(storedFlag(configPath)).toBe(true);
+
+    app.stop();
+  });
+
+  it("counts an unchanged size as a confirmation, so it costs one click", async () => {
+    const configPath = configUnconfirming(150_000_000_000, false);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    // Exactly what the panel's confirm button re-submits: the stored cap.
+    app.setPlanLimit(latest(popover).planLimit.value);
+
+    expect(latest(popover).planCapPrompt).toBeNull();
+    expect(storedFlag(configPath)).toBe(true);
+
+    app.stop();
+  });
+
+  it("clears the flag when a sync brings back a plan the cap cannot describe", async () => {
+    // A 50 Go cap against the 145.8 Go the carrier reports left.
+    const configPath = configUnconfirming(50_000_000_000, true);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(storedFlag(configPath)).toBe(false);
+    expect(latest(popover).planCapPrompt).not.toBeNull();
+
+    app.stop();
+  });
+
+  it("leaves the flag alone when the sync brings back the same plan", async () => {
+    const configPath = configUnconfirming(200_000_000_000, true);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(storedFlag(configPath)).toBe(true);
+    expect(latest(popover).planCapPrompt).toBeNull();
+
+    app.stop();
+  });
+});
+
 describe("startMenuBarApp — setting the plan length", () => {
   beforeEach(() => {
     vi.useFakeTimers();

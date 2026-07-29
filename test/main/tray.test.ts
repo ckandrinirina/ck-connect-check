@@ -82,6 +82,8 @@ interface Case {
   /** False for the case where nothing has ever been synced. */
   anchored?: boolean;
   warnThresholdPercent?: number;
+  /** False once a sync has brought back a plan the stored cap cannot describe. */
+  planCapConfirmed?: boolean;
 }
 
 function configFor({
@@ -89,6 +91,7 @@ function configFor({
   cap = 20 * GB,
   anchored = true,
   warnThresholdPercent = 90,
+  planCapConfirmed = true,
 }: Case): AppConfig {
   return {
     host: "192.168.8.1",
@@ -96,6 +99,7 @@ function configFor({
     activePollIntervalSeconds: 2,
     warnThresholdPercent,
     planLimitBytes: cap,
+    planCapConfirmed,
     ...(anchored
       ? { allowanceAnchor: anchorOf(Math.max(0, (cap ?? 20 * GB) - usedBytes)) }
       : {}),
@@ -303,5 +307,27 @@ describe("buildTrayTitle — the warning marker", () => {
       TRAY_WARN_MARKER,
     );
     expect(titleFor({ anchored: false })).not.toContain(TRAY_WARN_MARKER);
+  });
+});
+
+describe("buildTrayTitle — an unconfirmed plan cap", () => {
+  it("shows a dash rather than a share computed from a contradicted cap", () => {
+    // The same rule the dial follows: a menu bar quoting a figure the panel has
+    // withdrawn is worse than one saying nothing.
+    expect(
+      titleFor({ usedBytes: ROUTER_COUNTER, planCapConfirmed: false }),
+    ).toBe(NO_TRAY_VALUE);
+  });
+
+  it("never marks such a title either", () => {
+    expect(
+      titleFor({ usedBytes: 19 * GB, planCapConfirmed: false }),
+    ).not.toContain(TRAY_WARN_MARKER);
+  });
+
+  it("quotes the share again once the cap is confirmed", () => {
+    expect(
+      titleFor({ usedBytes: ROUTER_COUNTER, planCapConfirmed: true }),
+    ).toBe("5.8Go · 29%");
   });
 });

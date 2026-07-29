@@ -4,6 +4,7 @@ import * as allowanceModule from "../../src/domain/allowance.js";
 import {
   anchorFrom,
   isAnchorStale,
+  isNewPlan,
   needsAutomaticSync,
   readAllowanceNow,
   type AllowanceAnchor,
@@ -552,6 +553,62 @@ describe("isAnchorStale — whether a usable anchor is still recent", () => {
 
     expect(() => isAnchorStale(ahead, NOW, STALE_AFTER_MINUTES)).not.toThrow();
     expect(isAnchorStale(ahead, NOW, STALE_AFTER_MINUTES)).toBe(false);
+  });
+});
+
+describe("isNewPlan", () => {
+  /** The cap the anchored 145.8359 Go comfortably fits inside. */
+  const CAP = 200_000_000_000;
+
+  it("is true when the carrier states a different offer name", () => {
+    expect(
+      isNewPlan(anchor({ planLabel: "NET MONTH 400 000" }), anchor(), CAP),
+    ).toBe(true);
+  });
+
+  it("is true when the expiry moves later", () => {
+    const topped = anchor({ expiresAt: new Date(2026, 8, 12) });
+
+    expect(isNewPlan(topped, anchor(), CAP)).toBe(true);
+  });
+
+  it("is true when the remaining volume passes the configured cap", () => {
+    // The case a carrier that reuses its offer name would otherwise hide: a
+    // 50 Go cap with 145 Go left is a cap that no longer describes the plan.
+    expect(isNewPlan(anchor(), anchor(), 50_000_000_000)).toBe(true);
+  });
+
+  it("is false when the label, the expiry and the remaining are unchanged", () => {
+    expect(isNewPlan(anchor(), anchor(), CAP)).toBe(false);
+  });
+
+  it("is false when there is no previous anchor to differ from", () => {
+    // A first-ever sync replaces nothing, so it contradicts nothing either.
+    expect(isNewPlan(anchor(), undefined, CAP)).toBe(false);
+    expect(isNewPlan(anchor(), null, CAP)).toBe(false);
+  });
+
+  it("is false when the expiry moved earlier", () => {
+    const earlier = anchor({ expiresAt: new Date(2026, 6, 30) });
+
+    expect(isNewPlan(earlier, anchor(), CAP)).toBe(false);
+  });
+
+  it("throws nothing when either expiry is null", () => {
+    const undated = anchor({ expiresAt: null });
+
+    expect(() => isNewPlan(undated, anchor(), CAP)).not.toThrow();
+    expect(() => isNewPlan(anchor(), undated, CAP)).not.toThrow();
+    expect(() => isNewPlan(undated, undated, CAP)).not.toThrow();
+    expect(isNewPlan(undated, anchor(), CAP)).toBe(false);
+    expect(isNewPlan(anchor(), undated, CAP)).toBe(false);
+  });
+
+  it("is false when only the remaining grew and no cap is configured", () => {
+    // With no cap there is nothing for a larger remainder to contradict.
+    const bigger = anchor({ remainingBytes: ANCHORED_REMAINING * 2 });
+
+    expect(isNewPlan(bigger, anchor(), null)).toBe(false);
   });
 });
 
