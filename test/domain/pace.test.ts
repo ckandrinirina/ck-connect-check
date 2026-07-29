@@ -62,6 +62,7 @@ describe("readPace — tier 1, the anchor alone", () => {
     expect(reading?.usedShare).toBeNull();
     expect(reading?.elapsedShare).toBeNull();
     expect(reading?.pace).toBeNull();
+    expect(reading?.averagePerDay).toBeNull();
     expect(reading?.affordedPerDay).toBeNull();
     expect(reading?.state).toBeNull();
   });
@@ -115,6 +116,7 @@ describe("readPace — tier 2, with the plan cap", () => {
     expect(reading?.state).toBeNull();
     expect(reading?.pace).toBeNull();
     expect(reading?.elapsedShare).toBeNull();
+    expect(reading?.averagePerDay).toBeNull();
     expect(reading?.affordedPerDay).toBeNull();
   });
 
@@ -197,6 +199,92 @@ describe("readPace — tier 3, with the plan's length", () => {
 
     expect(reading?.state).toBe("safe");
     expect(Number.isFinite(reading?.pace ?? Number.NaN)).toBe(true);
+  });
+});
+
+describe("readPace — the pace stated as two daily volumes", () => {
+  const PLAN_DAYS = 30;
+  /** 150 Go over 30 days: the worked example, which affords 5 Go a day. */
+  const PLAN_LIMIT = 150 * GB;
+  /** 1 July 2026, 09:00 — the instant the period began. */
+  const PERIOD_START = new Date(2026, 6, 1, 9, 0, 0);
+  const EXPIRES_AT = new Date(
+    PERIOD_START.getTime() + PLAN_DAYS * MILLISECONDS_PER_DAY,
+  );
+
+  /** The reading `daysElapsed` into the period, with `usedGo` spent. */
+  function paceOn(daysElapsed: number, usedGo: number) {
+    return readPace({
+      anchor: anchor({
+        remainingBytes: PLAN_LIMIT - usedGo * GB,
+        expiresAt: EXPIRES_AT,
+      }),
+      month: month(ANCHORED_COUNTER),
+      planLimitBytes: PLAN_LIMIT,
+      planDays: PLAN_DAYS,
+      clock: at(
+        new Date(PERIOD_START.getTime() + daysElapsed * MILLISECONDS_PER_DAY),
+      ),
+    });
+  }
+
+  it("states 60 Go over ten days as 6 Go a day against a budget of 5", () => {
+    const reading = paceOn(10, 60);
+
+    expect(reading?.averagePerDay).toBeCloseTo(6 * GB, -3);
+    expect(reading?.affordedPerDay).toBe(5 * GB);
+  });
+
+  it("restates the ratio rather than recomputing it, in every tier 3 case", () => {
+    const cases: readonly (readonly [number, number])[] = [
+      [0, 25],
+      [0.25, 25],
+      [1, 6],
+      [10, 60],
+      [15, 90],
+      [15, 75],
+      [29, 150],
+    ];
+
+    for (const [daysElapsed, usedGo] of cases) {
+      const reading = paceOn(daysElapsed, usedGo);
+      const restated =
+        (reading?.averagePerDay ?? Number.NaN) /
+        (reading?.affordedPerDay ?? Number.NaN);
+
+      expect(restated).toBeCloseTo(reading?.pace ?? Number.NaN, 10);
+    }
+  });
+
+  it("calls 6 Go a day against a budget of 5 over, not a warning", () => {
+    // Half the period gone, 90 Go of 150 spent: a ratio of exactly 1.20.
+    const reading = paceOn(15, 90);
+
+    expect(reading?.pace).toBe(1.2);
+    expect(reading?.state).toBe("over");
+  });
+
+  it("keeps the band just under that boundary a warning", () => {
+    const reading = paceOn(15, 89);
+
+    expect(reading?.pace).toBeLessThan(1.2);
+    expect(reading?.state).toBe("warning");
+  });
+
+  it("keeps spending that matches the calendar exactly safe", () => {
+    const reading = paceOn(15, 75);
+
+    expect(reading?.pace).toBe(1);
+    expect(reading?.state).toBe("safe");
+  });
+
+  it("divides by the elapsed floor inside the first day, never by zero", () => {
+    const reading = paceOn(0, 25);
+
+    // Not a day has passed, so 25 Go reads as 25 Go a day rather than infinity.
+    expect(reading?.averagePerDay).toBeCloseTo(25 * GB, -3);
+    expect(Number.isFinite(reading?.averagePerDay ?? Number.NaN)).toBe(true);
+    expect(reading?.state).toBe("safe");
   });
 });
 
