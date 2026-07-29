@@ -1108,21 +1108,18 @@ describe("buildPopoverModel — the pace row", () => {
     expect(pace?.sustainable).toContain("06/08/2026");
   });
 
-  it("leaves tier 1 with no band, no state and no budget", () => {
+  it("leaves tier 1 with no state and no meter to measure against", () => {
     const pace = paceOf({ remainingGo: 30 });
 
-    expect(pace?.band).toBe("");
     expect(pace?.state).toBe("");
-    expect(pace?.afforded).toBe("");
-    expect(pace?.consumed).toBe("");
+    expect(pace?.meter).toBeNull();
   });
 
-  it("adds the consumed share at tier 2, and still no band", () => {
+  it("still has no meter at tier 2 — there is no afforded figure yet", () => {
     const pace = paceOf({ remainingGo: 30, limitGo: 150 });
 
     expect(pace?.tier).toBe(2);
-    expect(pace?.consumed).toContain("80%");
-    expect(pace?.band).toBe("");
+    expect(pace?.meter).toBeNull();
     expect(pace?.state).toBe("");
   });
 
@@ -1133,12 +1130,12 @@ describe("buildPopoverModel — the pace row", () => {
 
     expect(pace?.tier).toBe(3);
     expect(pace?.state).toBe("warning");
-    expect(pace?.band).not.toBe("");
-    expect(pace?.afforded).toContain("5.00 Go");
+    expect(pace?.meter?.state).toBe("warning");
+    expect(pace?.meter?.afforded).toBe("5.00 Go");
     expect(pace?.sustainable).toContain("3.00 Go");
   });
 
-  it("gives each band its own state and its own words", () => {
+  it("gives each band its own state", () => {
     const safe = paceOf({ remainingGo: 100, limitGo: 150, planDays: 30 });
     const warning = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
     const over = paceOf({ remainingGo: 10, limitGo: 150, planDays: 30 });
@@ -1148,8 +1145,19 @@ describe("buildPopoverModel — the pace row", () => {
       "warning",
       "over",
     ]);
-    expect(new Set([safe?.band, warning?.band, over?.band]).size).toBe(3);
-    expect(new Set([safe?.note, warning?.note, over?.note]).size).toBe(3);
+    expect([
+      safe?.meter?.state,
+      warning?.meter?.state,
+      over?.meter?.state,
+    ]).toEqual(["safe", "warning", "over"]);
+  });
+
+  it("no longer narrates the band, the budget or the consumed share", () => {
+    const pace = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
+
+    for (const field of ["band", "consumed", "afforded", "note"]) {
+      expect(pace).not.toHaveProperty(field);
+    }
   });
 
   it("names the setting that would sharpen tiers 1 and 2, and none at tier 3", () => {
@@ -1163,7 +1171,7 @@ describe("buildPopoverModel — the pace row", () => {
     const pace = paceOf({ remainingGo: 10, limitGo: 30, planDays: 30 });
 
     expect(pace?.sustainable).toContain("1.00 Go");
-    expect(pace?.afforded).toContain("1.00 Go");
+    expect(pace?.meter?.afforded).toBe("1.00 Go");
   });
 
   it("hands the renderer only strings and numbers it need not format", () => {
@@ -1172,6 +1180,115 @@ describe("buildPopoverModel — the pace row", () => {
     for (const leaf of leaves(pace)) {
       expect(typeof leaf === "string" || typeof leaf === "number").toBe(true);
     }
+  });
+});
+
+describe("buildPopoverModel — the pace meter", () => {
+  const GO = 1_000_000_000;
+  const DAY_MS = 86_400_000;
+
+  /**
+   * The pace row for a plan of `limitGo` running `planDays`, `elapsedDays` into
+   * its period with `usedGo` spent.
+   *
+   * The expiry is counted forward from {@link NOW} rather than written as a
+   * date, so the period's start — and with it the elapsed share the ratio
+   * divides by — is exact rather than approximately a fortnight.
+   */
+  function paceOf(options: {
+    usedGo: number;
+    limitGo: number;
+    planDays: number;
+    elapsedDays: number;
+  }): PopoverModel["pace"] {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes: options.limitGo * GO,
+        planDays: options.planDays,
+        allowanceAnchor: anchorOf((options.limitGo - options.usedGo) * GO, {
+          expiresAt: new Date(
+            NOW.getTime() + (options.planDays - options.elapsedDays) * DAY_MS,
+          ),
+        }),
+      },
+      clock,
+    }).pace;
+  }
+
+  /** 100 Go of a 150 Go plan, 20 days into 30: a pace of exactly 1. */
+  const ON_BUDGET = {
+    usedGo: 100,
+    limitGo: 150,
+    planDays: 30,
+    elapsedDays: 20,
+  };
+
+  it("exposes the fill, the band and both volumes, and nothing else to work out", () => {
+    const meter = paceOf(ON_BUDGET)?.meter;
+
+    expect(meter).not.toBeNull();
+    expect(typeof meter?.fill).toBe("number");
+    expect(typeof meter?.tick).toBe("number");
+    expect(meter?.state).toBe("safe");
+    expect(meter?.average).toBe("5.00 Go");
+    expect(meter?.afforded).toBe("5.00 Go");
+    // Colour is never the only carrier of the verdict, so the meter says in
+    // words what it says in hue.
+    expect(meter?.description).not.toBe("");
+  });
+
+  it("fills exactly to the tick when the spending matches the budget", () => {
+    const meter = paceOf(ON_BUDGET)?.meter;
+
+    expect(meter?.fill).toBeCloseTo(meter?.tick ?? 0, 10);
+  });
+
+  it("fills half of the tick when half the budget is being spent", () => {
+    const meter = paceOf({ ...ON_BUDGET, usedGo: 50 })?.meter;
+
+    expect(meter?.fill).toBeCloseTo((meter?.tick ?? 0) / 2, 10);
+  });
+
+  it("clamps a runaway pace at the drawn maximum, numerals still true", () => {
+    // 112.5 Go of 150 in a quarter of the period: a pace of 3, which would
+    // otherwise draw a bar one and a half times the panel's width.
+    const meter = paceOf({
+      usedGo: 112.5,
+      limitGo: 150,
+      planDays: 30,
+      elapsedDays: 7.5,
+    })?.meter;
+
+    expect(meter?.fill).toBe(1);
+    expect(meter?.average).toBe("15.00 Go");
+    expect(meter?.afforded).toBe("5.00 Go");
+    expect(meter?.state).toBe("over");
+  });
+
+  it("bands the fill safe, warning and over on the same three thresholds", () => {
+    const safe = paceOf(ON_BUDGET)?.meter;
+    const warning = paceOf({ ...ON_BUDGET, usedGo: 110 })?.meter;
+    const over = paceOf({ ...ON_BUDGET, usedGo: 120 })?.meter;
+
+    expect([safe?.state, warning?.state, over?.state]).toEqual([
+      "safe",
+      "warning",
+      "over",
+    ]);
+    // The fill grows with the pace whatever the band, so the bar says by how
+    // much where the colour only says which.
+    expect(safe?.fill).toBeLessThan(warning?.fill ?? 0);
+    expect(warning?.fill).toBeLessThan(over?.fill ?? 0);
+  });
+
+  it("reads both volumes in Go through the app's own French formatter", () => {
+    const meter = paceOf({ ...ON_BUDGET, usedGo: 110 })?.meter;
+
+    expect(meter?.average).toBe("5.50 Go");
+    expect(meter?.afforded).toBe("5.00 Go");
   });
 });
 
@@ -1220,11 +1337,12 @@ describe("buildPopoverModel — an unconfirmed plan cap", () => {
   });
 
   it("empties every tier 2 and tier 3 field of the pace", () => {
-    expect(unconfirmed.pace?.consumed).toBe("");
-    expect(unconfirmed.pace?.afforded).toBe("");
-    expect(unconfirmed.pace?.band).toBe("");
     expect(unconfirmed.pace?.state).toBe("");
-    expect(unconfirmed.pace?.note).toBe("");
+  });
+
+  it("draws no meter either — the band would come from the same cap", () => {
+    expect(confirmed.pace?.meter).not.toBeNull();
+    expect(unconfirmed.pace?.meter).toBeNull();
   });
 
   it("asks for the cap to be confirmed instead of leaving a hole", () => {
