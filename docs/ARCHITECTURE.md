@@ -201,10 +201,36 @@ pace         = usedShare / elapsedShare
 ```
 
 `pace` below 1 means less has been spent than the calendar has, which is the state a
-weekend of no usage produces. The bands are `safe` at or under 1.00, `warning` up to 1.20,
-and `over` above it. `affordedPerDay` (`planLimitBytes / planDays`) accompanies the band as
-the flat budget, against which tier 1's `sustainablePerDay` reads as the recovery figure —
-it rises whenever nothing is used, which is exactly the compensation the band encodes.
+weekend of no usage produces. The bands are `safe` at or under 1.00, `warning` strictly
+between 1.00 and 1.20, and `over` at 1.20 and above. `affordedPerDay`
+(`planLimitBytes / planDays`) accompanies the band as the flat budget, against which tier
+1's `sustainablePerDay` reads as the recovery figure — it rises whenever nothing is used,
+which is exactly the compensation the band encodes.
+
+The same ratio is also stated the way the user thinks about it, as two daily volumes side
+by side:
+
+```
+averagePerDay = usedNow / elapsedDays          // what has actually been spent per day
+affordedPerDay = planLimitBytes / planDays     // what the plan affords per day
+pace = averagePerDay / affordedPerDay          // identical to usedShare / elapsedShare
+```
+
+150 Go over 30 days affords 5 Go a day; an average of 6 Go is `over` and 3 Go is `safe`.
+`averagePerDay` is a restatement, not a second calculation — it is derived from the same
+cumulative figures, so it can never disagree with the band beside it.
+
+### Drawing the pace
+
+The band is drawn, not narrated: a horizontal meter whose fill is `averagePerDay` against a
+full width of `affordedPerDay`, tinted green in `safe`, orange in `warning` and red in
+`over`, with a tick at the afforded figure so the overshoot is visible rather than implied.
+The two volumes stay as short numerals beside it — the colour says which band, the meter
+says by how much, and the numerals say the amounts. Colour is never the only carrier of the
+verdict: the meter's fill past its tick states the same thing without relying on hue.
+
+Below tier 3 there is no band and no meter, because there is no afforded figure to measure
+against. Tier 1 keeps its single sustainable-per-day line.
 
 Both sides of the ratio are **cumulative**, never per-day, so no daily usage is ever stored
 and the "no history database" decision stands.
@@ -296,6 +322,14 @@ Append-only. One line each, always with the reason.
 - Only the band and `affordedPerDay` still require a cap and a plan length — those two are genuinely un-derivable from the carrier's reply, whereas the sustainable daily figure is not
 - Loading a new plan needs no reset control — every sync replaces the whole anchor through `anchorFrom`, so a reset button would clear nothing a sync does not already overwrite
 - A synced anchor that contradicts the stored cap marks the cap unconfirmed instead of being reconciled — `usedBytes` is `max(0, cap − remaining)`, so a top-up above a stale cap silently clamps the dial to 0%, and a silently corrected number is the unreliability the anchor design exists to remove
+- The `over` band starts at 1.20 rather than above it — 150 Go over 30 days affords 5 Go a day and the ratio for 6 Go is exactly 1.20, so the intended verdict sat on the wrong side of an inclusive bound
+- The pace states `averagePerDay` beside `affordedPerDay` as well as the ratio — "6.1 Go a day against 5.0" is the sentence the user reasons in, and the ratio alone made them do the division
+- `averagePerDay` is derived from the same cumulative used volume and elapsed days as the ratio, never accumulated separately — two independent counters of the same thing eventually disagree, and only one of them would be right
+- The pace is a coloured meter rather than a sentence — a band is a magnitude with three named regions, which is the one thing a bar states faster than prose, and the panel already draws its dial and sparklines for the same reason
+- The band's colour is never its only signal — the fill crossing the afforded tick says the same thing, so the reading survives a colour-blind viewer and a greyscale screenshot
+- The download and upload month totals are gone from the panel — the plan is billed on their sum, the dial and the carrier's remaining already state that sum, and the split answers a question nobody asked of a menu bar app
+- The plan cap, the plan length and the router password move behind a settings toggle — three input rows and their error lines are a third of the panel's height serving a value typed once a month, and the panel is 320×520 with no room to scroll
+- The panel's default is graphical: any figure with a range, a share or a threshold is drawn, and text is reserved for what has no magnitude — names, dates and error reasons; new panel work starts from a shape, not a sentence
 
 ## Conventions
 

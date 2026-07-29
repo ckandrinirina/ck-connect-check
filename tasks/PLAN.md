@@ -1,49 +1,52 @@
 # PLAN — ck-connect-check
 
-| ID   | Title                                                                   | Status | Size | Needs            |
-| ---- | ----------------------------------------------------------------------- | ------ | ---- | ---------------- |
-| T-01 | Set the project up so tests can run                                     | done   | S    | —                |
-| T-02 | Turn the router's XML replies into typed data                           | done   | S    | T-01             |
-| T-03 | Fetch a live usage snapshot from the router                             | done   | M    | T-02             |
-| T-04 | Work out how much of the plan is used and when it resets                | done   | S    | T-01             |
-| T-05 | Remember the plan limit and router address                              | done   | S    | T-01             |
-| T-06 | Show usage in the macOS menu bar                                        | done   | M    | T-03, T-04, T-05 |
-| T-07 | Show the details when the menu bar item is clicked                      | done   | M    | T-06             |
-| T-08 | Warn when usage approaches or passes the limit                          | done   | S    | T-04, T-06       |
-| T-09 | Launch the app on login without a Dock icon                             | done   | S    | T-06             |
-| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | done   | S    | T-07             |
-| T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10             |
-| T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03             |
-| T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10             |
-| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13       |
-| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14             |
-| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02             |
-| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03             |
-| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17       |
-| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17             |
-| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05       |
-| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20       |
-| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21             |
-| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21             |
-| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23             |
-| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21             |
-| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25             |
-| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25             |
-| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21             |
-| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25             |
-| T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07             |
-| T-31 | Say which network the router is actually on                             | done   | S    | T-30             |
-| T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21             |
-| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
-| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
-| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
-| T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27             |
-| T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36             |
-| T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37             |
-| T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28             |
-| T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39             |
-| T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42 |
-| T-42 | Notice a new plan instead of reporting the old one's share              | todo   | M    | T-27, T-28       |
+| ID   | Title                                                                   | Status | Size | Needs                  |
+| ---- | ----------------------------------------------------------------------- | ------ | ---- | ---------------------- |
+| T-01 | Set the project up so tests can run                                     | done   | S    | —                      |
+| T-02 | Turn the router's XML replies into typed data                           | done   | S    | T-01                   |
+| T-03 | Fetch a live usage snapshot from the router                             | done   | M    | T-02                   |
+| T-04 | Work out how much of the plan is used and when it resets                | done   | S    | T-01                   |
+| T-05 | Remember the plan limit and router address                              | done   | S    | T-01                   |
+| T-06 | Show usage in the macOS menu bar                                        | done   | M    | T-03, T-04, T-05       |
+| T-07 | Show the details when the menu bar item is clicked                      | done   | M    | T-06                   |
+| T-08 | Warn when usage approaches or passes the limit                          | done   | S    | T-04, T-06             |
+| T-09 | Launch the app on login without a Dock icon                             | done   | S    | T-06                   |
+| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | done   | S    | T-07                   |
+| T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10                   |
+| T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03                   |
+| T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10                   |
+| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13             |
+| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14                   |
+| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02                   |
+| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03                   |
+| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17             |
+| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17                   |
+| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05             |
+| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20             |
+| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21                   |
+| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21                   |
+| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23                   |
+| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21                   |
+| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25                   |
+| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25                   |
+| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21                   |
+| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25                   |
+| T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07                   |
+| T-31 | Say which network the router is actually on                             | done   | S    | T-30                   |
+| T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21                   |
+| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                      |
+| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30             |
+| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34             |
+| T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27                   |
+| T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36                   |
+| T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37                   |
+| T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28                   |
+| T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39                   |
+| T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42, T-45 |
+| T-42 | Notice a new plan instead of reporting the old one's share              | todo   | M    | T-27, T-28             |
+| T-43 | State the pace as a daily volume against the plan's daily budget        | todo   | S    | T-37                   |
+| T-44 | Draw the pace as a coloured meter instead of describing it              | todo   | M    | T-43, T-38             |
+| T-45 | Fit the whole panel on screen without scrolling                         | todo   | M    | T-44                   |
 
 ## T-01 Set the project up so tests can run
 
@@ -1894,7 +1897,7 @@ screen next to its absence.
 ### Notes
 
 The row's date comes from the allowance reading rather than from `readPace`:
-the pace carries the *days* left, which is what it divides by, and the row
+the pace carries the _days_ left, which is what it divides by, and the row
 states the date those days run to. `readPace` already refuses a reading with no
 expiry, so the two can never disagree.
 
@@ -2001,7 +2004,7 @@ already existed to keep the poller's cadence in step with visibility, and that i
 where the staleness check belongs. A tray click is the only route to a visible
 panel and it goes through the same wrapper.
 
-`parked` is set by *any* failed dialogue, not only an automatic one, and cleared
+`parked` is set by _any_ failed dialogue, not only an automatic one, and cleared
 by any that succeeds. A failed press parks the timer too — the account locks
 after five refused sign-ins, and a press that just failed is not evidence the
 next automatic attempt would fare better.
@@ -2011,7 +2014,7 @@ comes round every couple of seconds and a dialogue takes tens of them.
 
 ## T-41 Release the pace and the automatic sync as 0.2.0
 
-T-41 · status: todo · size: S · needs: T-38, T-40, T-42 · files: package.json, package-lock.json, README.md, test/readme.test.ts, test/project-setup.test.ts
+T-41 · status: todo · size: S · needs: T-38, T-40, T-42, T-45 · files: package.json, package-lock.json, README.md, test/readme.test.ts, test/project-setup.test.ts
 
 Version 0.2.0, and a README that describes the app as it now behaves: a tiered
 pace reading under the dial, a plan length to enter beside the cap, a sync that
@@ -2027,6 +2030,8 @@ so this extends that test rather than trusting prose.
 - [ ] the README states that loading a new plan needs a Sync and a cap confirmation, and no reset
 - [ ] the README test asserts each of those claims against the source that implements it
 - [ ] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
+- [ ] the README describes the pace as a coloured meter and states the three bands with the 5 Go/day worked example
+- [ ] the README's screenshot shows the compacted panel with the settings toggle, not the pre-T-45 layout
 - [ ] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
 
 ### Tasks
@@ -2094,4 +2099,157 @@ that writes the new one; a first-ever sync has no previous and is not a new plan
 - [ ] Render the confirmation prompt and wire its two actions to the existing cap setter
 - [ ] Manual: edit `config.json` to a cap below the anchored remaining, open the panel, confirm the prompt appears and the dial does not
 - [ ] Manual: confirm the cap and watch the dial and the band return
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-43 State the pace as a daily volume against the plan's daily budget
+
+T-43 · status: todo · size: S · needs: T-37 · files: src/domain/pace.ts, test/domain/pace.test.ts
+
+The tier 3 ratio is already the right arithmetic, but it is stated in the wrong
+units. The user reasons in daily volumes — 150 Go over 30 days affords 5 Go a
+day, 6 Go a day is reckless and 3 Go is calm — and `pace: 1.22` makes them do
+that division themselves.
+
+So the reading gains `averagePerDay`, the volume actually spent per elapsed day:
+
+```
+averagePerDay  = usedBytes / elapsedDays          // elapsedDays floored at 1, as today
+affordedPerDay = planLimitBytes / planDays        // already present
+pace           = averagePerDay / affordedPerDay   // identical to usedShare / elapsedShare
+```
+
+It is a **restatement**, not a second calculation: it divides the same cumulative
+used volume by the same floored elapsed days the ratio uses, so the meter T-44
+draws can never contradict the band beside it.
+
+The band boundary is also wrong at exactly one point. `bandFor` returns `warning`
+for `pace <= 1.2`, so the worked example above — 6 Go against 5, a ratio of
+exactly 1.20 — lands in `warning` when it is the case the user calls extreme.
+`over` starts at 1.20 inclusive.
+
+The band names `safe` / `warning` / `over` are unchanged. They are what the
+view-model, the stylesheet and T-38's tests already key on, and renaming a value
+whose meaning is unchanged is churn the colour mapping in T-44 does not need.
+
+### Acceptance
+
+- [ ] `PaceReading` carries `averagePerDay: number | null`, null below tier 3 like `affordedPerDay`
+- [ ] with a 150 Go cap over 30 days and 10 days elapsed having spent 60 Go, `averagePerDay` is 6 Go and `affordedPerDay` is 5 Go
+- [ ] `averagePerDay / affordedPerDay` equals `pace` to within floating-point tolerance in every tier 3 case tested
+- [ ] a ratio of exactly 1.20 bands as `over`, not `warning`
+- [ ] a ratio just under 1.20 still bands as `warning`, and exactly 1.00 still bands as `safe`
+- [ ] inside the first day the elapsed floor still forces `safe`, and `averagePerDay` is the used volume divided by that floor rather than by zero
+- [ ] tier 1 and tier 2 readings carry `averagePerDay: null`
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for the worked example, both band boundaries and the tier nulls, with a fixed clock
+- [ ] Add `averagePerDay` to `PaceReading` and compute it from `usedBytes` and the floored elapsed days
+- [ ] Move the `over` boundary to `pace >= WARNING_PACE` and correct the constant's doc comment
+- [ ] Update the tier table in `pace.ts`'s module comment
+
+## T-44 Draw the pace as a coloured meter instead of describing it
+
+T-44 · status: todo · size: M · needs: T-43, T-38 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+T-38 put the pace on the panel as four lines of prose. A band is a magnitude with
+three named regions, which is exactly what a bar states faster than a sentence,
+and the panel already draws its dial and its sparklines for that reason.
+
+The meter is a horizontal bar whose full width is `affordedPerDay` and whose fill
+is `averagePerDay`, with a tick at the afforded figure so an overshoot reads as
+fill past the mark rather than as a bar that is merely long. Green in `safe`,
+orange in `warning`, red in `over`. `averagePerDay` and `affordedPerDay` stay
+beside it as short numerals — `6.1 / 5.0 Go/j` — because the colour says which
+band and the meter says by how much, but only the numbers say the amounts.
+
+Colour is never the sole carrier of the verdict: the fill crossing the tick states
+the same thing, so the reading survives a greyscale screenshot and a colour-blind
+viewer. The `data-pace-state` attribute stays on the section, so the stylesheet
+holds every colour and the renderer holds none.
+
+Fill is clamped for drawing at twice the afforded width — a pace of 8 would
+otherwise leave the panel — while the numerals stay exact, so a runaway month is
+visibly pinned rather than silently truncated.
+
+Below tier 3 there is no afforded figure to measure against, so there is no meter.
+Tier 1 keeps its single sustainable-per-day line, which is the one prose line that
+earns its space: it answers a question with no range attached.
+
+### Acceptance
+
+- [ ] the popover model exposes the meter's fill share, its band and both formatted volumes, and computes no geometry in the renderer beyond the SVG or bar it draws
+- [ ] a tier 3 model in each band renders the section with `data-pace-state` set to `safe`, `warning` and `over` respectively
+- [ ] the stylesheet maps those three states to the green, orange and red custom properties, asserted against the stylesheet text
+- [ ] a pace of 1.0 fills the meter exactly to its tick, a pace of 0.5 to half of it, and a pace of 3 clamps to the drawn maximum while the numerals still read the true figures
+- [ ] the numerals read `averagePerDay` and `affordedPerDay` in Go with the app's existing French formatter
+- [ ] a tier 1 model renders the sustainable-per-day line and no meter element
+- [ ] a tier 2 model renders no meter either — there is still no afforded figure
+- [ ] the prose lines T-38 added for the band, the afforded figure and the consumed figure are gone from the page
+- [ ] the section stays hidden outright when `readPace` returns null
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing view-model and renderer tests for every criterion above
+- [ ] Add the meter fields to the popover model, clamping the fill share and leaving the numerals exact
+- [ ] Replace the four `pace-*` paragraphs in `index.html` with the meter, its tick and the numeral pair
+- [ ] Render fill and tick from the model in `popover.ts`, setting `data-pace-state` and nothing else
+- [ ] Move the three band colours into `popover.css` as custom properties beside the existing accents
+- [ ] Manual: with a real anchor, cap and length, confirm the meter matches a hand calculation and the colour matches the band
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-45 Fit the whole panel on screen without scrolling
+
+T-45 · status: todo · size: M · needs: T-44 · files: src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/renderer/popover.test.ts
+
+The panel is 320×520 and its content has outgrown it: header, dial, two settings
+forms and their error lines, the pace section, the allowance strip, two rate rows,
+a five-item stats grid, the sync status and the password form. It scrolls, which
+for a popover that closes on blur means the bottom of it is effectively unreachable.
+
+Two cuts and one move fix it.
+
+**Cut the month download and upload totals.** The plan is billed on their sum, and
+the dial and the carrier's remaining already state that sum. The split is a
+question nobody asks of a menu bar app.
+
+**Move the typed settings out of the main view.** The plan cap, the plan length and
+the router password are three input rows and three error lines — roughly a third of
+the panel — serving values typed once a month. A toggle in the header swaps the
+main view for a settings view holding all three; the panel shows one or the other,
+never both. The password form keeps its existing "shown only when nothing is
+stored" behaviour as an attention marker on the toggle, so a missing password is
+still discoverable without the form occupying the panel.
+
+**Tighten what remains.** The stats grid loses two of its five items and the rest
+fold into a single line beside the allowance figures.
+
+The window stays 320×520. The test asserts the fit structurally — the sections a
+view contains and the absence of the removed fields — because a renderer test has
+no layout engine to measure against.
+
+### Acceptance
+
+- [ ] the page contains no `monthDownload` and no `monthUpload` field, and the view-model no longer exports them
+- [ ] the header carries a settings toggle whose pressed state swaps which of the two views is hidden
+- [ ] with settings open, the main view is hidden and the cap, length and password forms are all present
+- [ ] with settings closed, all three forms are hidden and the dial, pace meter, allowance and rates are present
+- [ ] the toggle carries an attention marker when no router password is stored, and does not when one is
+- [ ] the cap and length setters still work from inside the settings view, errors included, through the same IPC channels
+- [ ] closing and reopening the panel returns it to the main view rather than restoring settings
+- [ ] the stats grid holds only the remaining items, and expiry and days-left read on one line with the allowance
+- [ ] `POPOVER_HEIGHT` is unchanged at 520
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing renderer tests for the two views, the toggle, the attention marker and the absent fields
+- [ ] Delete the download and upload totals from the page and the popover model
+- [ ] Wrap the main view and a new settings view, and drive their `hidden` from the toggle
+- [ ] Move the cap, length and password forms into the settings view unchanged, keeping their handlers
+- [ ] Reset to the main view whenever the panel is shown
+- [ ] Fold the surviving stats into the allowance line and tighten the section spacing
+- [ ] Manual: open the panel on the real router and confirm nothing scrolls at 320×520, with and without a stored password
 - [ ] Update the `files:` line above to reflect everything actually touched
