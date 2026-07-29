@@ -38,7 +38,7 @@
 | T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
 | T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
 | T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27             |
-| T-37 | Work out whether the connection is being used moderately                | todo   | M    | T-36             |
+| T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36             |
 | T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
 | T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28             |
 | T-40 | Re-sync by itself on open and after a long silence                      | todo   | M    | T-39             |
@@ -1762,7 +1762,7 @@ flagged when blank.
 
 ## T-37 Work out whether the connection is being used moderately
 
-T-37 · status: todo · size: M · needs: T-36 · files: src/domain/pace.ts, src/domain/allowance.ts, test/domain/pace.test.ts
+T-37 · status: done · size: M · needs: T-36 · files: src/domain/pace.ts, test/domain/pace.test.ts
 
 The arithmetic from `## Reading the consumption pace` in `docs/ARCHITECTURE.md`,
 as a pure function in `src/domain/` with no Electron and no network — the same
@@ -1809,28 +1809,40 @@ it would describe a moment that has already passed.
 
 ### Acceptance
 
-- [ ] **tier 1** — an anchor with 30 Go remaining and 10 days to expiry, no cap and no `planDays`, reports `tier: 1` and a `sustainablePerDay` of 3 Go
-- [ ] a tier 1 result has `pace`, `state`, `usedShare`, `elapsedShare` and `affordedPerDay` all exactly `null`
-- [ ] **tier 2** — adding a 150 Go cap reports `tier: 2`, a `usedShare` matching `readAllowanceNow`'s share, and still a `null` `state`
-- [ ] **tier 3** — 30 Go over 30 days with 2 Go used on day 1 reports `tier: 3` and `over` — one day elapsed, two days' worth spent
-- [ ] the same plan with 2 Go used on day 8 reports `safe`, and `pace` is below 1
-- [ ] 30 Go over 30 days with 20 Go used on day 15 reports `over`, and 16 Go on day 15 reports `warning`
-- [ ] a missing anchor, an anchor with a null `expiresAt`, and an anchor past its expiry each yield `null` and never divide by zero
-- [ ] an anchor whose staleness is `counter-reset` yields `null`
-- [ ] under one elapsed day the state is `safe` whatever has been used, and `pace` is not `Infinity` or `NaN`
-- [ ] `affordedPerDay` is 1 Go for a 30 Go / 30 day plan, and `sustainablePerDay` rises as usage stops while `affordedPerDay` does not
-- [ ] `sustainablePerDay` is computed from `readAllowanceNow(...).remainingBytes`, asserted by a case where the router counter has advanced since the anchor
-- [ ] `src/domain/pace.ts` imports neither `electron` nor anything under `src/hilink/`
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] **tier 1** — an anchor with 30 Go remaining and 10 days to expiry, no cap and no `planDays`, reports `tier: 1` and a `sustainablePerDay` of 3 Go
+- [x] a tier 1 result has `pace`, `state`, `usedShare`, `elapsedShare` and `affordedPerDay` all exactly `null`
+- [x] **tier 2** — adding a 150 Go cap reports `tier: 2`, a `usedShare` matching `readAllowanceNow`'s share, and still a `null` `state`
+- [x] **tier 3** — 30 Go over 30 days with 2 Go used on day 1 reports `tier: 3` and `over` — one day elapsed, two days' worth spent
+- [x] the same plan with 2 Go used on day 8 reports `safe`, and `pace` is below 1
+- [x] 30 Go over 30 days with 20 Go used on day 15 reports `over`, and 16 Go on day 15 reports `warning`
+- [x] a missing anchor, an anchor with a null `expiresAt`, and an anchor past its expiry each yield `null` and never divide by zero
+- [x] an anchor whose staleness is `counter-reset` yields `null`
+- [x] under one elapsed day the state is `safe` whatever has been used, and `pace` is not `Infinity` or `NaN`
+- [x] `affordedPerDay` is 1 Go for a 30 Go / 30 day plan, and `sustainablePerDay` rises as usage stops while `affordedPerDay` does not
+- [x] `sustainablePerDay` is computed from `readAllowanceNow(...).remainingBytes`, asserted by a case where the router counter has advanced since the anchor
+- [x] `src/domain/pace.ts` imports neither `electron` nor anything under `src/hilink/`
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above, with a fixed clock, one describe block per tier
-- [ ] Implement the tier 1 core — `daysUntilExpiry` and `sustainablePerDay` — and its null cases
-- [ ] Layer tier 2's `usedShare` and tier 3's `elapsedShare`, `pace`, `affordedPerDay` and band on top
-- [ ] Name the band thresholds and the one-day floor as constants
-- [ ] Reuse `readAllowanceNow` for `remainingNow` and `daysUntilExpiry` rather than recomputing either
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing tests for every criterion above, with a fixed clock, one describe block per tier
+- [x] Implement the tier 1 core — `daysUntilExpiry` and `sustainablePerDay` — and its null cases
+- [x] Layer tier 2's `usedShare` and tier 3's `elapsedShare`, `pace`, `affordedPerDay` and band on top
+- [x] Name the band thresholds and the one-day floor as constants
+- [x] Reuse `readAllowanceNow` for `remainingNow` and `daysUntilExpiry` rather than recomputing either
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+`src/domain/allowance.ts` was in the planned `files:` list but needed no change:
+`AllowanceNowInput` was already exported, so `pace.ts` reaches the router's
+month-counter type through it and imports nothing under `src/hilink/` — which is
+what the boundary criterion asks for.
+
+Both null guards are on the reading rather than on the anchor: `!trustworthy`
+covers the expired and counter-reset cases in one, and `daysUntilExpiry <= 0`
+catches an expiry later today, which is not yet past but has no run of days to
+divide the remainder across.
 
 ## T-38 Show the pace and its warning on the panel
 
