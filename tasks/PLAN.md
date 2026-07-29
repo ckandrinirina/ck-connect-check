@@ -37,6 +37,12 @@
 | T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
 | T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
 | T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
+| T-36 | Ask how long the plan lasts so the pace has a period                    | todo   | M    | T-27             |
+| T-37 | Work out whether the connection is being used moderately                | todo   | M    | T-36             |
+| T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
+| T-39 | Know when the carrier figure has gone stale                             | todo   | S    | T-28             |
+| T-40 | Re-sync by itself on open and after a long silence                      | todo   | M    | T-39             |
+| T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40       |
 
 ## T-01 Set the project up so tests can run
 
@@ -1694,3 +1700,215 @@ The README states the tested device and version as what was tested, never as a
 compatibility claim, and says in as many words that the `#359#` path is one
 carrier's own menu. Both are the honest narrow parts of this project, and the
 test asserts they stay stated.
+
+## T-36 Ask how long the plan lasts so the pace has a period
+
+T-36 · status: todo · size: M · needs: T-27 · files: src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, src/main/main.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, test/config/config.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+The cap answers "how much"; nothing yet answers "over how long". T-27 put a cap
+field in the panel and this puts a plan-length field beside it, because the pace
+in T-37 divides by a period the carrier's USSD reply never states — it gives an
+expiry date, not a duration. With `planDays` set, the period start is
+`expiresAt − planDays` and the whole pace calculation becomes arithmetic on
+figures already in hand.
+
+`planDays` is `number | null` like `planLimitBytes`, so an unset value
+round-trips rather than defaulting to 30 and quietly inventing a period.
+
+### Acceptance
+
+- [ ] `config.ts` round-trips `planDays` as `number | null` and an absent key loads as `null`
+- [ ] a `planDays` of `0`, a negative number or a non-integer is rejected on load and read as `null`
+- [ ] the popover model exposes `planDays` and an editor flag for the set and unset cases
+- [ ] the panel has a plan-length input next to the cap, and typing `30` in it writes `30` to config through the preload bridge
+- [ ] a blank plan-length submission is rejected and leaves the stored value untouched
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for every criterion above
+- [ ] Add `planDays` to `AppConfig`, its validation on load and its default in `defaults.ts`
+- [ ] Expose it through the view-model with the editor flag
+- [ ] Add the input, its handler and its style beside the cap field
+- [ ] Route the setter through `preload.cts` alongside the existing cap setter
+- [ ] Manual: type `30` in the panel and confirm `config.json` holds it after a restart
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-37 Work out whether the connection is being used moderately
+
+T-37 · status: todo · size: M · needs: T-36 · files: src/domain/pace.ts, src/domain/allowance.ts, test/domain/pace.test.ts
+
+The arithmetic from `## Reading the consumption pace` in `docs/ARCHITECTURE.md`,
+as a pure function in `src/domain/` with no Electron and no network — the same
+boundary `allowance.ts` keeps.
+
+```
+readPace({ anchor, planLimitBytes, planDays, now })
+  → null                                    // no anchor, or no cap, or no planDays
+  | { state: 'safe' | 'warning' | 'over',
+      pace,                 // usedShare / elapsedShare
+      elapsedShare, usedShare,
+      daysUntilExpiry,
+      affordedPerDay,       // planLimitBytes / planDays
+      sustainablePerDay }   // remainingNow / daysUntilExpiry
+```
+
+The bands are `safe` at `pace ≤ 1.00`, `warning` up to `1.20`, `over` above it.
+The weekend case in the request needs no special handling: both shares are
+cumulative, so a week of nothing pulls `usedShare` back under `elapsedShare` on
+its own.
+
+Two edges decide whether this is trustworthy or noise. On the plan's first hours
+`elapsedShare` is near zero and the ratio explodes, so a period less than one day
+elapsed reports `safe` regardless. Past the expiry `daysUntilExpiry` is zero and
+`sustainablePerDay` would divide by it, so an expired anchor yields `null` — the
+same answer `allowance.ts` already gives it.
+
+### Acceptance
+
+- [ ] 30 Go over 30 days with 2 Go used on day 1 reports `over` — one day elapsed, two days' worth spent
+- [ ] the same plan with 2 Go used on day 8 reports `safe`, and `pace` is below 1
+- [ ] 30 Go over 30 days with 20 Go used on day 15 reports `over`, and 16 Go on day 15 reports `warning`
+- [ ] a missing cap, a missing `planDays` or a missing anchor each yield `null`
+- [ ] an anchor whose `expiresAt` has passed yields `null` and never divides by zero
+- [ ] under one elapsed day the state is `safe` whatever has been used, and `pace` is not `Infinity` or `NaN`
+- [ ] `affordedPerDay` is 1 Go for a 30 Go / 30 day plan, and `sustainablePerDay` rises as usage stops
+- [ ] `src/domain/pace.ts` imports neither `electron` nor anything under `src/hilink/`
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for every criterion above, with a fixed clock
+- [ ] Implement `readPace` and its band thresholds as named constants
+- [ ] Reuse `readAllowanceNow` for `remainingNow` rather than recomputing the delta
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-38 Show the pace and its warning on the panel
+
+T-38 · status: todo · size: M · needs: T-37 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+One row under the dial, in the same shape as the existing tiles: the band as a
+coloured word, the two daily figures in French octets through `format.ts`, and a
+sentence that says which way the pace is going. `over` uses the same accent the
+warning threshold already uses so the panel has one visual language for trouble.
+
+When `readPace` yields `null` the row is absent rather than empty — a pace of a
+period nobody stated is the same lie the dial refuses to draw before a sync.
+
+### Acceptance
+
+- [ ] the popover model carries a `pace` field that is `null` exactly when `readPace` returns `null`
+- [ ] the rendered panel shows the band word, `affordedPerDay` and `sustainablePerDay` for a `safe` model
+- [ ] `warning` and `over` models render with distinct `data-state` values, asserted against the stylesheet's selectors
+- [ ] a `null` pace renders no pace row at all, and the panel's height is unchanged in every other respect
+- [ ] the daily figures are formatted with the octet helper, so a 1 000 000 000-byte figure reads `1.00 Go`
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for every criterion above
+- [ ] Thread `readPace` into `buildPopoverModel`
+- [ ] Render the row and its three states
+- [ ] Style the bands against the existing accent variables, adding none that duplicate them
+- [ ] Manual: open the panel with a real anchor and confirm the band matches a hand calculation
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-39 Know when the carrier figure has gone stale
+
+T-39 · status: todo · size: S · needs: T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, test/domain/allowance.test.ts, test/config/config.test.ts
+
+T-28 decides whether an anchor is *usable*. This adds the second question —
+whether a usable anchor is *recent* — as a pure predicate beside it, so T-40 wires
+policy without holding any arithmetic:
+
+```
+isAnchorStale(anchor, now, staleAfterMinutes) → boolean
+```
+
+`syncStaleAfterMinutes` joins the config with a default of 30. No anchor at all is
+not "stale": that case is already T-28's no-usable-anchor path, and conflating the
+two would make the caller run the same dialogue for two different reasons.
+
+### Acceptance
+
+- [ ] an anchor synced 31 minutes ago with a 30-minute setting is stale, and one synced 29 minutes ago is not
+- [ ] the boundary is exact — 30 minutes to the millisecond is not yet stale
+- [ ] a `null` anchor is reported not-stale, and the existing usability check still reports it unusable
+- [ ] an anchor with a `syncedAt` in the future is not stale and throws nothing
+- [ ] `config.ts` round-trips `syncStaleAfterMinutes`, defaults it to 30, and rejects zero or negative values back to the default
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for every criterion above, with a fixed clock
+- [ ] Implement `isAnchorStale` next to the existing usability predicate
+- [ ] Add the config key, its default and its validation
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-40 Re-sync by itself on open and after a long silence
+
+T-40 · status: todo · size: M · needs: T-39 · files: src/main/sync.ts, src/main/main.ts, src/main/popover.ts, src/main/view-model.ts, test/main/sync.test.ts, test/main/main.test.ts
+
+Both halves of the request are the same rule evaluated at two moments: if the
+anchor is stale, run one dialogue. Opening the panel evaluates it, and a
+background timer evaluates it for an app nobody has opened all afternoon.
+
+The guards are what keep a 30-minute window off the router's five-failure
+lockout, and each is a test rather than a comment:
+
+- one dialogue in flight at a time, ever
+- nothing starts without a stored password, or while the router is unreachable,
+  or before the first successful snapshot
+- a failure parks automatic syncing until an explicit Sync press; the stale clock
+  restarts only on success
+- the check is on open and on its own timer, never on a poll tick
+
+### Acceptance
+
+- [ ] opening the panel with a stale anchor starts exactly one dialogue, and opening it with a fresh one starts none
+- [ ] the background timer starts a dialogue for a stale anchor with the panel closed
+- [ ] opening the panel twice inside one stale window starts exactly one dialogue in total
+- [ ] a dialogue already in flight is never joined by a second, asserted with a deferred stub
+- [ ] a failed automatic sync issues exactly one dialogue, and no further automatic dialogue is issued however long the anchor stays stale
+- [ ] an explicit Sync press after that failure runs, and a success re-arms automatic syncing
+- [ ] no dialogue starts with no stored password, with the router unreachable, or before the first snapshot
+- [ ] a poll tick alone never starts a dialogue
+- [ ] the panel reports an automatic sync's steps in the same status line an explicit press uses, marked as automatic
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [ ] Failing tests for every criterion above, with a fake timer and a stubbed dialogue
+- [ ] Extend `sync.ts` with the stale-triggered entry point and the in-flight and parked flags
+- [ ] Call it from the popover's show path and from a timer in `main.ts`
+- [ ] Surface the automatic marker through the view-model
+- [ ] Manual: back-date `syncedAt` in `config.json`, open the panel, confirm one dialogue runs and a second open does not
+- [ ] Manual: with a wrong password stored, confirm one attempt is made and none follow
+- [ ] Update the `files:` line above to reflect everything actually touched
+
+## T-41 Release the pace and the automatic sync as 0.2.0
+
+T-41 · status: todo · size: S · needs: T-38, T-40 · files: package.json, package-lock.json, README.md, test/readme.test.ts, test/project-setup.test.ts
+
+Version 0.2.0, and a README that describes the app as it now behaves: a pace
+reading under the dial, a plan length to enter beside the cap, and a sync that
+happens by itself when the carrier figure is over half an hour old. T-35's README
+test already asserts the document matches reality, so this extends that test
+rather than trusting prose.
+
+### Acceptance
+
+- [ ] `package.json` reads `0.2.0` and `package-lock.json` agrees
+- [ ] `app-info.ts`'s version, or whatever the app reports as its version, reads 0.2.0
+- [ ] the README documents the plan-length setting, the pace bands and the 30-minute automatic sync
+- [ ] the README test asserts each of those three claims against the source that implements it
+- [ ] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
+- [ ] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
+
+### Tasks
+
+- [ ] Failing README and project-setup tests for the claims above
+- [ ] Bump the version in `package.json` and refresh the lockfile
+- [ ] Write the three README sections
+- [ ] Manual: package the app and confirm it reports 0.2.0
+- [ ] Update the `files:` line above to reflect everything actually touched

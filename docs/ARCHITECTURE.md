@@ -156,10 +156,44 @@ An earlier design calibrated the denominator automatically from the highest
 _is_ that anchor's remaining, so the dial reads 0% by construction after every first sync,
 which is exactly what the panel showed on 2026-07-28. The cap is now stated, not inferred.
 
-The app syncs by itself **only when there is no usable anchor** — none stored, expired, or
-invalidated by a counter reset. A healthy anchor is carried forward with no dialogue at
-all. A failed automatic sync is reported in the panel and never retried on a timer, for the
-same reason a failed login is never retried: the account locks after five refusals.
+The app syncs by itself when there is no usable anchor — none stored, expired, or
+invalidated by a counter reset — **and when the anchor it does hold has gone stale**, which
+is any anchor older than `syncStaleAfterMinutes` (default 30). Staleness is evaluated when
+the panel is opened and on a background timer, so an app nobody has looked at for hours
+still re-anchors by itself. A failed automatic sync is reported in the panel and never
+retried on a timer, for the same reason a failed login is never retried: the account locks
+after five refusals — the stale clock only restarts on a **successful** sync, and a failed
+one parks automatic syncing until the next explicit Sync press.
+
+At most one dialogue is ever in flight, and a dialogue is never started while the router is
+unreachable or while no password is stored. A 30-minute window means up to roughly forty
+carrier dialogues a day on an app left running, each one a login and a real signalling
+exchange; the single-attempt, park-on-failure rule is what keeps that from becoming a
+lockout.
+
+## Reading the consumption pace
+
+Knowing that 40 Go of 150 are gone does not say whether that is calm or reckless — the
+answer depends on how far into the plan's life it happened. The pace compares two shares:
+
+```
+periodStart = anchor.expiresAt − planDays
+elapsedShare = (now − periodStart) / planDays
+usedShare    = usedNow / planLimitBytes
+pace         = usedShare / elapsedShare
+```
+
+`pace` below 1 means less has been spent than the calendar has, which is the state a
+weekend of no usage produces. The bands are `safe` at or under 1.00, `warning` up to 1.20,
+and `over` above it. Two figures accompany the band: the daily volume the plan affords
+(`planLimitBytes / planDays`) and the daily volume the remainder still affords
+(`remainingNow / daysUntilExpiry`) — the second is the number that recovers when nothing is
+used, which is exactly the compensation the band already encodes.
+
+Both sides are **cumulative**, never per-day, so no daily usage is ever stored and the "no
+history database" decision stands. The cost is that the plan's length must be known:
+`planDays` joins `planLimitBytes` in the config and in the panel, and without it the panel
+shows the dial with no pace rather than guessing a period.
 
 ## Folder structure
 
@@ -224,6 +258,12 @@ Append-only. One line each, always with the reason.
 - `assets/` and `scripts/` are added to the forge ignore list — the icon reaches the bundle through `packagerConfig.icon`, so shipping its sources inside the asar would be dead weight
 - The menu bar glyph is the signal bars and changes with the level, while the `.icns` is the ring mark — a tray image that never changes is the decoration already rejected for the panel, whereas the bundle icon's job is identity, not measurement
 - The tray glyph is a template image, so macOS inverts it for dark and light menu bars and for the selected state — a coloured tray icon is the one thing that always looks wrong on one of the two appearances
+- **Widens the "USSD only on an explicit press" decision above:** a dialogue also runs when the stored anchor is older than `syncStaleAfterMinutes` — an anchor carried forward for hours by a counter delta drifts from the carrier's own figure, and the whole point of the feature is that the panel states a number the carrier agreed with
+- Staleness is checked on panel open and on a background timer, not on every poll tick — the poll runs every 30 seconds and would otherwise turn one stale window into a dialogue attempt loop
+- The stale clock restarts only on a successful sync, and a failure parks automatic syncing until an explicit press — otherwise a wrong password would be re-offered every 30 minutes and lock the account within three hours
+- The pace compares the share of the allowance spent against the share of the period elapsed, both cumulative — a per-day comparison would need stored daily usage, and cumulative shares already give the weekend-offsets-a-heavy-Monday behaviour for free
+- The plan's length in days is entered by the user next to the cap, not derived — the period start is `expiresAt − planDays`, and the carrier's USSD reply states the expiry but never the duration
+- The pace is absent, not `safe`, until both a cap and a plan length are set — the same reason the dial is absent before the first sync
 
 ## Conventions
 
