@@ -13,10 +13,16 @@
  *   a day the remainder still affords.
  * - **tier 2**, plus `planLimitBytes` — the consumed share the dial draws.
  * - **tier 3**, plus `planDays` — the only input that can say how far the
- *   calendar has travelled, and so the only one that can compare the two.
+ *   calendar has travelled, and so the only one that can compare the two. The
+ *   comparison is stated twice: as the ratio `pace`, and as the two daily
+ *   volumes the user actually reasons in, `averagePerDay` against
+ *   `affordedPerDay`.
  *
  * Both sides of the tier 3 ratio are cumulative, never per-day, so a weekend of
  * no usage pulls the pace back on its own and no daily history is ever stored.
+ * The daily volumes are a restatement of that same ratio rather than a second
+ * calculation — they divide the same cumulative used volume by the same floored
+ * elapsed days — so the two can never disagree.
  *
  * Pure — no Electron, no network, nothing the router speaks, and "now" only
  * ever arrives through the injected {@link Clock}.
@@ -39,7 +45,12 @@ const MINIMUM_ELAPSED_DAYS = 1;
 /** At or under this the spending matches the calendar, or is behind it. */
 const SAFE_PACE = 1;
 
-/** Above {@link SAFE_PACE} and up to this it is ahead, but recoverably so. */
+/**
+ * Above {@link SAFE_PACE} and strictly below this it is ahead, but recoverably
+ * so. The boundary is exclusive at the top: 6 Go a day against a budget of 5 is
+ * a ratio of exactly 1.2, and that is the case the user calls extreme, so it
+ * bands as `over` rather than as a warning.
+ */
 const WARNING_PACE = 1.2;
 
 /**
@@ -65,6 +76,12 @@ export interface PaceReading {
   elapsedShare: number | null;
   /** `usedShare / elapsedShare`. Null below tier 3. */
   pace: number | null;
+  /**
+   * The volume actually spent per elapsed day, on the same floored count of
+   * days the ratio uses, so `averagePerDay / affordedPerDay` is {@link pace}.
+   * Null below tier 3.
+   */
+  averagePerDay: number | null;
   /** The flat daily budget the plan affords. Null below tier 3. */
   affordedPerDay: number | null;
   /** The band {@link pace} falls in. Null below tier 3. */
@@ -88,7 +105,7 @@ export interface PaceInput {
 function bandFor(pace: number): PaceState {
   if (pace <= SAFE_PACE) return "safe";
 
-  return pace <= WARNING_PACE ? "warning" : "over";
+  return pace < WARNING_PACE ? "warning" : "over";
 }
 
 /**
@@ -141,6 +158,7 @@ export function readPace(input: PaceInput): PaceReading | null {
       usedShare: null,
       elapsedShare: null,
       pace: null,
+      averagePerDay: null,
       affordedPerDay: null,
       state: null,
     };
@@ -156,6 +174,7 @@ export function readPace(input: PaceInput): PaceReading | null {
       usedShare,
       elapsedShare: null,
       pace: null,
+      averagePerDay: null,
       affordedPerDay: null,
       state: null,
     };
@@ -166,7 +185,8 @@ export function readPace(input: PaceInput): PaceReading | null {
   const periodStart =
     anchor.expiresAt.getTime() - planDays * MILLISECONDS_PER_DAY;
   const elapsed = (clock.now().getTime() - periodStart) / MILLISECONDS_PER_DAY;
-  const elapsedShare = Math.max(MINIMUM_ELAPSED_DAYS, elapsed) / planDays;
+  const elapsedDays = Math.max(MINIMUM_ELAPSED_DAYS, elapsed);
+  const elapsedShare = elapsedDays / planDays;
   const pace = usedShare / elapsedShare;
 
   return {
@@ -175,6 +195,10 @@ export function readPace(input: PaceInput): PaceReading | null {
     usedShare,
     elapsedShare,
     pace,
+    // The same cumulative volume over the same floored days the ratio uses, so
+    // this is the ratio restated in the units the user reasons in, never a
+    // second reading that could contradict the band.
+    averagePerDay: reading.usedBytes / elapsedDays,
     affordedPerDay: cap / planDays,
     // Below the floor the ratio is the floor's doing rather than the user's,
     // so it is reported as a finite number but never as a verdict.
