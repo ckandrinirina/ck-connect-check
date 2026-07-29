@@ -262,7 +262,17 @@ export interface PopoverPaceMeter {
 export interface PopoverPace {
   /** How much of the reading is available: 1 the anchor, 2 the cap, 3 the length. */
   tier: number;
-  /** Always present: `"3.00 Go a day until 06/08/2026"`. */
+  /**
+   * Always present: `"3.00 Go a day left to spend until 06/08/2026"`.
+   *
+   * It says *left to spend* out loud because the meter beside it states two
+   * other daily figures — what has been spent so far, and what the plan
+   * affords — and three unlabelled rates read as one number the app cannot
+   * make up its mind about. They answer three different questions, and this is
+   * the one about the days still to come. The phrase also has to survive
+   * alone: when the cap is unconfirmed the meter is off the panel entirely and
+   * this line is the whole pace row.
+   */
   sustainable: string;
   /** Tier 3: `safe`, `warning` or `over`, for the stylesheet. Empty below it. */
   state: string;
@@ -773,7 +783,7 @@ function buildPace(
 
   return {
     tier: reading.tier,
-    sustainable: `${formatBytes(reading.sustainablePerDay)} a day until ${formatLastValidDay(expiresAt)}`,
+    sustainable: `${formatBytes(reading.sustainablePerDay)} a day left to spend until ${formatLastValidDay(expiresAt)}`,
     state: reading.state ?? "",
     hint: PACE_HINT_TEXT[reading.tier] ?? "",
     meter: buildPaceMeter(reading),
