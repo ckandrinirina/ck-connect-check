@@ -263,15 +263,22 @@ export interface PopoverPace {
   /** How much of the reading is available: 1 the anchor, 2 the cap, 3 the length. */
   tier: number;
   /**
-   * Always present: `"3.00 Go a day left to spend until 06/08/2026"`.
+   * `"3.00 Go a day left to spend until 06/08/2026"`, and empty wherever
+   * {@link meter} is drawn.
    *
-   * It says *left to spend* out loud because the meter beside it states two
-   * other daily figures — what has been spent so far, and what the plan
-   * affords — and three unlabelled rates read as one number the app cannot
-   * make up its mind about. They answer three different questions, and this is
-   * the one about the days still to come. The phrase also has to survive
-   * alone: when the cap is unconfirmed the meter is off the panel entirely and
-   * this line is the whole pace row.
+   * The two face opposite directions in time. The meter is a diagnosis — what
+   * has been spent a day against what the plan affords a day, both looking
+   * back — and this is a prescription, what is left to spend a day from now.
+   * Side by side they read as one contradiction rather than two answers, and
+   * where the meter can be drawn it is the reading that says what is needed.
+   * The prescription is given up knowingly: at tier 3 the panel says the
+   * connection is being used too fast without naming the figure that would
+   * correct it.
+   *
+   * Below tier 3 there is no meter, and this line is the whole pace row — so
+   * it says *left to spend* out loud, having nothing beside it to be read
+   * against. That includes T-42's unconfirmed cap, which falls back to tier 1
+   * with the meter off the panel entirely.
    */
   sustainable: string;
   /** Tier 3: `safe`, `warning` or `over`, for the stylesheet. Empty below it. */
@@ -781,12 +788,21 @@ function buildPace(
 ): PopoverPace | null {
   if (reading === null || expiresAt === null) return null;
 
+  const meter = buildPaceMeter(reading);
+
   return {
     tier: reading.tier,
-    sustainable: `${formatBytes(reading.sustainablePerDay)} a day left to spend until ${formatLastValidDay(expiresAt)}`,
+    // One decision, read twice: the line is exactly the meter's absence. Both
+    // fields come from `meter` rather than from the tier, because the tier is
+    // not the question — T-42's unconfirmed cap falls back to tier 1 and draws
+    // no meter, and there the line is the only pace reading the panel has.
+    sustainable:
+      meter === null
+        ? `${formatBytes(reading.sustainablePerDay)} a day left to spend until ${formatLastValidDay(expiresAt)}`
+        : "",
     state: reading.state ?? "",
     hint: PACE_HINT_TEXT[reading.tier] ?? "",
-    meter: buildPaceMeter(reading),
+    meter,
   };
 }
 

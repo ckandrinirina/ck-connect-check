@@ -131,11 +131,13 @@
 
       <!--
         Whether that share is being spent faster than the month is passing. It
-        grows with what is known: the daily figure alone needs only a sync, the
-        meter underneath it needs the two figures typed into the settings
-        view. Hidden outright when there is nothing honest to say — a rate over
-        a period nobody stated is the same lie the dial refuses to draw before
-        a sync.
+        shows one reading, never two: the meter once the two figures are typed
+        into the settings view, and the recovery line — what is left to spend a
+        day — wherever there is no meter to draw. The model decides which by
+        emptying whichever field the other has replaced, so this page holds no
+        rule about it. Hidden outright when there is nothing honest to say — a
+        rate over a period nobody stated is the same lie the dial refuses to
+        draw before a sync.
 
         The band is drawn rather than narrated: a bar whose full width is twice
         the afforded figure, with a tick at the afforded figure itself, so an
@@ -153,12 +155,11 @@
           </span>
           <!--
             The two numerals say which is which themselves. There is no legend
-            anywhere else on the panel, and read cold against the recovery line
-            above them — a third daily figure, answering a third question — an
-            unlabelled `6.15 Go / 5.00 Go` looks like the app contradicting
-            itself. The words are static text like every other caption on the
-            page; only the figures come from the model. `a day` still trails
-            the pair and governs both, as it always did.
+            anywhere else on the panel, so an unlabelled `6.15 Go / 5.00 Go`
+            leaves the reader to guess which half is the spending and which the
+            allowance. The words are static text like every other caption on
+            the page; only the figures come from the model. `a day` still
+            trails the pair and governs both, as it always did.
           -->
           <span class="pace-figures">
             <span class="pace-average" data-field="paceAverage"></span>

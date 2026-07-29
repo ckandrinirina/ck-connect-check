@@ -478,6 +478,13 @@ describe("the popover page", () => {
     // pushes the panel past POPOVER_HEIGHT and raises a scrollbar, which a
     // popover has no room for.
     //
+    // That ~57px is tiers 1 and 2 now, not tier 3: 21px of padding and rule,
+    // a 17px recovery line, a 4px gap and a 15px hint. Since T-49 tier 3 shows
+    // no recovery line at all, and its meter — a 6px track, a 6px gap and the
+    // 15px pair beneath it — brings the section to ~48px. The tallest state
+    // did not move, so neither does this figure; what changed is which state
+    // it describes.
+    //
     // The three typed fields cost nothing here: they are in the settings view,
     // which is `hidden` whenever this one is not.
     const CHROME_HEIGHT = 350;
