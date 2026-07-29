@@ -19,11 +19,7 @@ import {
   type PlanLimitRefusal,
 } from "../config/config.js";
 import { defaultConfigPath } from "../config/defaults.js";
-import {
-  anchorFrom,
-  isAnchorStale,
-  needsAutomaticSync,
-} from "../domain/allowance.js";
+import { isAnchorStale, needsAutomaticSync } from "../domain/allowance.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import { RouterClient, type SnapshotResult } from "../hilink/client.js";
@@ -35,6 +31,7 @@ import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
 import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
 import {
   createAllowanceSync,
+  recordAnchor,
   type AllowanceSource,
   type CredentialStore,
   type SyncState,
@@ -187,6 +184,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     planLimitProblem = undefined;
     config.planLimitBytes = entry.bytes;
+    // Submitting the cap *is* confirming it, whether the figure changed or not
+    // — which is what lets the new-plan prompt cost a single press when the
+    // plan size did not actually move.
+    config.planCapConfirmed = true;
 
     try {
       saveConfig(configPath, config);
@@ -232,6 +233,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
    * Pins the carrier's figure to the router's counter at this instant and
    * writes it down. The anchor has to survive a quit — the router keeps
    * counting while the app is closed — so it goes to the config, not to memory.
+   *
+   * {@link recordAnchor} also decides, against the anchor being replaced,
+   * whether the typed-in cap still describes the plan — the one instant that
+   * comparison can be made.
    */
   function anchorAllowance(allowance: Allowance): void {
     const month = lastReading?.snapshot.month;
@@ -243,7 +248,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       return;
     }
 
-    config.allowanceAnchor = anchorFrom(allowance, month);
+    recordAnchor(config, allowance, month);
 
     try {
       saveConfig(configPath, config);

@@ -1274,8 +1274,9 @@ describe("the plan limit field", () => {
   let bridge: FakeBridge;
 
   function form(): HTMLFormElement {
-    const element =
-      document.querySelector<HTMLFormElement>("form[data-plan-limit]");
+    const element = document.querySelector<HTMLFormElement>(
+      "form[data-plan-limit]",
+    );
 
     if (element === null) {
       throw new Error("the panel has no plan limit field");
@@ -1388,8 +1389,9 @@ describe("the plan length field", () => {
   let bridge: FakeBridge;
 
   function form(): HTMLFormElement {
-    const element =
-      document.querySelector<HTMLFormElement>("form[data-plan-days]");
+    const element = document.querySelector<HTMLFormElement>(
+      "form[data-plan-days]",
+    );
 
     if (element === null) {
       throw new Error("the panel has no plan length field");
@@ -1513,6 +1515,120 @@ describe("the plan length field", () => {
       "";
 
     expect(name.trim()).not.toBe("");
+  });
+});
+
+describe("the new-plan confirmation", () => {
+  let bridge: FakeBridge;
+
+  /** A live model for a 150 Go plan with 30 Go left, cap confirmed or not. */
+  function modelConfirming(planCapConfirmed: boolean): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(150 * GB),
+        planDays: 30,
+        planCapConfirmed,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 30 * GB,
+          expiresAt: new Date(2026, 7, 6),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  function prompt(): HTMLElement {
+    const element = document.querySelector<HTMLElement>(
+      "[data-plan-cap-prompt]",
+    );
+
+    if (element === null) {
+      throw new Error("the panel has no plan-cap prompt");
+    }
+
+    return element;
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    const element = document.querySelector<HTMLButtonElement>(
+      "[data-plan-cap-confirm]",
+    );
+
+    if (element === null) {
+      throw new Error("the plan-cap prompt has no confirm button");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    bridge = stubBridge();
+  });
+
+  it("stays off the panel while the cap is confirmed", () => {
+    apply(modelConfirming(true));
+
+    expect(prompt().hidden).toBe(true);
+  });
+
+  it("appears when a sync brings back a plan the cap cannot describe", () => {
+    apply(modelConfirming(false));
+
+    expect(prompt().hidden).toBe(false);
+    expect(textOf("planCapMessage")).not.toBe("");
+  });
+
+  it("costs no height while it is hidden", () => {
+    // Asserted against the stylesheet, since jsdom lays nothing out.
+    expect(POPOVER_CSS).toMatch(
+      /\.plan-cap-prompt\[hidden\]\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("is styled at all, rather than inheriting whatever sits above it", () => {
+    expect(POPOVER_CSS).toMatch(/\.plan-cap-prompt\s*\{[^}]*\}/);
+  });
+
+  it("draws no dial beside it", () => {
+    apply(modelConfirming(false));
+
+    expect(document.documentElement.dataset["limit"]).toBe("unset");
+    // The stylesheet is what takes the ring's figure off the panel.
+    expect(POPOVER_CSS).toMatch(
+      /:root\[data-limit="unset"\][^{]*\.dial-value[^{]*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("puts the dial back once the cap is confirmed", () => {
+    apply(modelConfirming(true));
+
+    expect(document.documentElement.dataset["limit"]).toBe("set");
+  });
+
+  it("confirms by re-submitting the stored cap, so one click is enough", () => {
+    apply(modelConfirming(false));
+    confirmButton().click();
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+
+  it("is reachable without a mouse and says what it does", () => {
+    apply(modelConfirming(false));
+
+    expect(confirmButton().tabIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      (
+        confirmButton().getAttribute("aria-label") ??
+        confirmButton().textContent ??
+        ""
+      ).trim(),
+    ).not.toBe("");
   });
 });
 
@@ -1784,8 +1900,7 @@ describe("the pace row", () => {
     }
 
     expect(
-      figures.compareDocumentPosition(row()) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      figures.compareDocumentPosition(row()) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeGreaterThan(0);
   });
 });

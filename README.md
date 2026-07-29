@@ -109,18 +109,19 @@ Settings live in a single JSON file:
 
 It is written by the app; you can edit it by hand while the app is not running.
 
-| Key                         | Meaning                                                                             |
-| --------------------------- | ----------------------------------------------------------------------------------- |
-| `host`                      | Router address, no scheme. Defaults to `192.168.8.1`                                |
-| `pollIntervalSeconds`       | Seconds between polls while the panel is closed. Default `30`, minimum `5`          |
-| `activePollIntervalSeconds` | Seconds between polls while the panel is open. Default `2`, minimum `1`             |
-| `warnThresholdPercent`      | Share of the plan at which the menu bar starts warning. Default `90`                |
-| `planLimitBytes`            | Your plan size in bytes, or `null` when unset. Set it from the panel                |
-| `planDays`                  | How long your plan runs, in whole days, or `null` when unset. Set it from the panel |
-| `syncStaleAfterMinutes`     | Minutes before the carrier figure counts as old. Default `30`                       |
-| `routerUsername`            | Router admin username. Absent until a credential has been saved                     |
-| `routerPasswordBlob`        | The password **as encrypted by the Keychain**, base64-encoded — see below           |
-| `allowanceAnchor`           | The last carrier reading and the router counter it was pinned to                    |
+| Key                         | Meaning                                                                                                                                                          |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                      | Router address, no scheme. Defaults to `192.168.8.1`                                                                                                             |
+| `pollIntervalSeconds`       | Seconds between polls while the panel is closed. Default `30`, minimum `5`                                                                                       |
+| `activePollIntervalSeconds` | Seconds between polls while the panel is open. Default `2`, minimum `1`                                                                                          |
+| `warnThresholdPercent`      | Share of the plan at which the menu bar starts warning. Default `90`                                                                                             |
+| `planLimitBytes`            | Your plan size in bytes, or `null` when unset. Set it from the panel                                                                                             |
+| `planDays`                  | How long your plan runs, in whole days, or `null` when unset. Set it from the panel                                                                              |
+| `planCapConfirmed`          | Whether `planLimitBytes` still describes the current plan. Cleared by a sync that finds a new one, set again by confirming the size on the panel. Default `true` |
+| `syncStaleAfterMinutes`     | Minutes before the carrier figure counts as old. Default `30`                                                                                                    |
+| `routerUsername`            | Router admin username. Absent until a credential has been saved                                                                                                  |
+| `routerPasswordBlob`        | The password **as encrypted by the Keychain**, base64-encoded — see below                                                                                        |
+| `allowanceAnchor`           | The last carrier reading and the router counter it was pinned to                                                                                                 |
 
 **Your router password is never in `config.json`.** It is encrypted by the macOS
 Keychain through Electron's `safeStorage`, and only the ciphertext is stored in

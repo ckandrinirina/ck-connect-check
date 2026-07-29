@@ -66,6 +66,7 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     planLimitError: model.planLimit.error,
     planDaysUnit: model.planDays.unit,
     planDaysError: model.planDays.error,
+    planCapMessage: model.planCapPrompt?.message ?? "",
     paceBand: model.pace?.band ?? "",
     paceSustainable: model.pace?.sustainable ?? "",
     paceAfforded: model.pace?.afforded ?? "",
@@ -317,6 +318,14 @@ function planDaysInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>("[data-plan-days-input]");
 }
 
+function planCapPrompt(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-plan-cap-prompt]");
+}
+
+function planCapConfirm(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("[data-plan-cap-confirm]");
+}
+
 /**
  * Hangs the two listeners off the page, once each.
  *
@@ -391,6 +400,18 @@ function bindControls(): void {
       window.popoverBridge?.setPlanDays(fieldValue("[data-plan-days-input]"));
     });
   }
+
+  const confirm = planCapConfirm();
+
+  if (confirm !== null && confirm.dataset["bound"] !== "true") {
+    confirm.dataset["bound"] = "true";
+    confirm.addEventListener("click", () => {
+      // Confirming is re-submitting: the field above already holds the stored
+      // cap, and the main process treats any successful entry as a
+      // confirmation. That is why there is no fifth message on the bridge.
+      window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
+    });
+  }
 }
 
 /**
@@ -427,6 +448,27 @@ function applyPlanDays(model: PopoverModel): void {
   document.documentElement.dataset["planDays"] = model.planDays.needsValue
     ? "unset"
     : "set";
+}
+
+/**
+ * Shows the new-plan confirmation, or takes it off the panel entirely.
+ *
+ * `hidden` rather than an empty box, for the reason the password prompt uses
+ * it: a bordered panel holding no words reads as something that failed to load.
+ */
+function applyPlanCapPrompt(model: PopoverModel): void {
+  const prompt = planCapPrompt();
+
+  if (prompt !== null) {
+    prompt.hidden = model.planCapPrompt === null;
+  }
+
+  const confirm = planCapConfirm();
+
+  if (confirm !== null && model.planCapPrompt !== null) {
+    confirm.textContent = model.planCapPrompt.confirmLabel;
+    confirm.setAttribute("aria-label", model.planCapPrompt.description);
+  }
 }
 
 /**
@@ -522,6 +564,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applySignal(model);
   applyPlanLimit(model);
   applyPlanDays(model);
+  applyPlanCapPrompt(model);
   applyPace(model);
   applySync(model);
 };
