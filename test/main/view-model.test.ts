@@ -1149,6 +1149,7 @@ describe("buildPopoverModel — the pace row", () => {
     expiresAt?: Date | null;
     limitGo?: number | null;
     planDays?: number | null;
+    planCapConfirmed?: boolean;
   }): PopoverModel["pace"] {
     return buildPopoverModel({
       result: online(),
@@ -1160,6 +1161,9 @@ describe("buildPopoverModel — the pace row", () => {
             ? null
             : options.limitGo * GO,
         planDays: options.planDays ?? null,
+        ...(options.planCapConfirmed === undefined
+          ? {}
+          : { planCapConfirmed: options.planCapConfirmed }),
         allowanceAnchor: anchorOf((options.remainingGo ?? 30) * GO, {
           expiresAt:
             options.expiresAt === undefined ? IN_TEN_DAYS : options.expiresAt,
@@ -1168,6 +1172,86 @@ describe("buildPopoverModel — the pace row", () => {
       clock,
     }).pace;
   }
+
+  /**
+   * Every state the pace row can be read in, named — the three tiers and
+   * T-42's unconfirmed cap, which falls back to tier 1 with the same figures
+   * typed in that would otherwise reach tier 3.
+   */
+  function everyPaceState(): Record<string, PopoverModel["pace"]> {
+    const TIER_3 = { remainingGo: 30, limitGo: 150, planDays: 30 };
+
+    return {
+      "tier 1": paceOf({ remainingGo: 30 }),
+      "tier 2": paceOf({ remainingGo: 30, limitGo: 150 }),
+      "tier 3": paceOf(TIER_3),
+      "tier 3 with the cap unconfirmed": paceOf({
+        ...TIER_3,
+        planCapConfirmed: false,
+      }),
+    };
+  }
+
+  /**
+   * Which of the two pace figures a state actually shows.
+   *
+   * `both` and `neither` are returned rather than thrown so that a state
+   * holding either of them names itself in the diff — a panel with no pace
+   * figure at all is the failure that separate per-state assertions would
+   * leave open.
+   */
+  function figureShown(pace: PopoverModel["pace"]): string {
+    const meter = (pace?.meter ?? null) !== null;
+    const line = (pace?.sustainable ?? "") !== "";
+
+    if (meter && line) return "both";
+    if (!meter && !line) return "neither";
+
+    return meter ? "meter" : "recovery line";
+  }
+
+  it("shows the meter or the recovery line, never both and never neither", () => {
+    // One invariant across every state rather than a rule per tier. The meter
+    // states the pace backwards — what has been spent a day against what the
+    // plan affords a day — and the recovery line states it forwards, what is
+    // left to spend a day. Read side by side the two contradict each other, so
+    // where the meter speaks it speaks alone; where there is no meter the line
+    // is the only pace reading there is, and it must never be dropped with it.
+    expect(
+      Object.fromEntries(
+        Object.entries(everyPaceState()).map(([state, pace]) => [
+          state,
+          figureShown(pace),
+        ]),
+      ),
+    ).toEqual({
+      "tier 1": "recovery line",
+      "tier 2": "recovery line",
+      "tier 3": "meter",
+      "tier 3 with the cap unconfirmed": "recovery line",
+    });
+  });
+
+  it("keeps every surviving figure byte-identical while the recovery line goes", () => {
+    // T-43, T-44, T-46 and T-47 settled these values, three of the four as bug
+    // fixes. Taking a line off tier 3 must not perturb a number anywhere else,
+    // so each figure is pinned in the state that still shows it.
+    const states = everyPaceState();
+
+    expect({
+      "tier 1": states["tier 1"]?.sustainable,
+      "tier 2": states["tier 2"]?.sustainable,
+      "tier 3 spent": states["tier 3"]?.meter?.average,
+      "tier 3 budget": states["tier 3"]?.meter?.afforded,
+      "unconfirmed cap": states["tier 3 with the cap unconfirmed"]?.sustainable,
+    }).toEqual({
+      "tier 1": "3.00 Go a day left to spend until 05/08/2026",
+      "tier 2": "3.00 Go a day left to spend until 05/08/2026",
+      "tier 3 spent": "5.79 Go",
+      "tier 3 budget": "5.00 Go",
+      "unconfirmed cap": "3.00 Go a day left to spend until 05/08/2026",
+    });
+  });
 
   it("is null when nothing has ever been synced", () => {
     const model = buildPopoverModel({
@@ -1207,21 +1291,6 @@ describe("buildPopoverModel — the pace row", () => {
     );
   });
 
-  it("keeps the three daily figures byte-identical while the labels move", () => {
-    // The guard for T-48: labelling the row must not move a number. These
-    // three were settled by T-43, T-44, T-46 and T-47 — the recovery figure
-    // sits *below* the budget precisely because the average sits above it, and
-    // that compensation is the thing the labels exist to make legible.
-    const pace = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
-
-    expect(/(\d+\.\d\d Go) a day/.exec(pace?.sustainable ?? "")?.[1]).toBe(
-      "3.00 Go",
-    );
-    expect(pace?.meter?.average).toBe("5.79 Go");
-    expect(pace?.meter?.afforded).toBe("5.00 Go");
-    expect(pace?.sustainable).toContain("05/08/2026");
-  });
-
   it("leaves tier 1 with no state and no meter to measure against", () => {
     const pace = paceOf({ remainingGo: 30 });
 
@@ -1237,7 +1306,7 @@ describe("buildPopoverModel — the pace row", () => {
     expect(pace?.state).toBe("");
   });
 
-  it("reports the band, the budget and the sustainable figure at tier 3", () => {
+  it("reports the band and the budget at tier 3, and no recovery line", () => {
     // The period began on 07/07, so a little over two thirds of it has gone
     // against four fifths of the plan: ahead, but recoverably.
     const pace = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
@@ -1246,7 +1315,7 @@ describe("buildPopoverModel — the pace row", () => {
     expect(pace?.state).toBe("warning");
     expect(pace?.meter?.state).toBe("warning");
     expect(pace?.meter?.afforded).toBe("5.00 Go");
-    expect(pace?.sustainable).toContain("3.00 Go");
+    expect(pace?.sustainable).toBe("");
   });
 
   it("gives each band its own state", () => {
@@ -1281,11 +1350,13 @@ describe("buildPopoverModel — the pace row", () => {
   });
 
   it("formats every daily figure with the octet helper", () => {
-    // 10 Go over ten days is exactly a Go a day, which reads as `1.00 Go`.
-    const pace = paceOf({ remainingGo: 10, limitGo: 30, planDays: 30 });
-
-    expect(pace?.sustainable).toContain("1.00 Go");
-    expect(pace?.meter?.afforded).toBe("1.00 Go");
+    // 10 Go over ten days is exactly a Go a day, which reads as `1.00 Go`, and
+    // so does a 30 Go plan spread over 30 days. Each is read in the tier that
+    // still shows it: the recovery figure at tier 1, the budget at tier 3.
+    expect(paceOf({ remainingGo: 10 })?.sustainable).toContain("1.00 Go");
+    expect(
+      paceOf({ remainingGo: 10, limitGo: 30, planDays: 30 })?.meter?.afforded,
+    ).toBe("1.00 Go");
   });
 
   it("hands the renderer only strings and numbers it need not format", () => {
@@ -1471,8 +1542,12 @@ describe("buildPopoverModel — an unconfirmed plan cap", () => {
     expect(confirmed.pace?.tier).toBe(3);
     expect(unconfirmed.pace?.tier).toBe(1);
     // Tier 1 is the anchor alone — remaining over days left — so it is still
-    // true whatever the cap says.
-    expect(unconfirmed.pace?.sustainable).toBe(confirmed.pace?.sustainable);
+    // true whatever the cap says, and here it is the whole pace row: the
+    // confirmed model shows a meter instead and so states no recovery line.
+    expect(unconfirmed.pace?.sustainable).toBe(
+      "3.00 Go a day left to spend until 05/08/2026",
+    );
+    expect(confirmed.pace?.sustainable).toBe("");
   });
 
   it("empties every tier 2 and tier 3 field of the pace", () => {

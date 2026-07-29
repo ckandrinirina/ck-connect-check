@@ -478,6 +478,13 @@ describe("the popover page", () => {
     // pushes the panel past POPOVER_HEIGHT and raises a scrollbar, which a
     // popover has no room for.
     //
+    // That ~57px is tiers 1 and 2 now, not tier 3: 21px of padding and rule,
+    // a 17px recovery line, a 4px gap and a 15px hint. Since T-49 tier 3 shows
+    // no recovery line at all, and its meter — a 6px track, a 6px gap and the
+    // 15px pair beneath it — brings the section to ~48px. The tallest state
+    // did not move, so neither does this figure; what changed is which state
+    // it describes.
+    //
     // The three typed fields cost nothing here: they are in the settings view,
     // which is `hidden` whenever this one is not.
     const CHROME_HEIGHT = 350;
@@ -1963,12 +1970,19 @@ describe("the pace row", () => {
     expect(textOf("paceHint")).not.toMatch(/spent|budget/i);
   });
 
-  it("keeps the drawn figures byte-identical while the labels move", () => {
+  it("keeps the drawn figures byte-identical while the recovery line goes", () => {
     apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
 
     expect(textOf("paceAverage")).toBe("6.00 Go");
     expect(textOf("paceAfforded")).toBe("5.00 Go");
-    expect(textOf("paceSustainable")).toContain("3.00 Go");
+
+    // The recovery figure is pinned where it still appears — tier 1, where it
+    // is now the only pace reading on the panel.
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(textOf("paceSustainable")).toBe(
+      "3.00 Go a day left to spend until 05/08/2026",
+    );
   });
 
   it("keeps the band's verdict on the meter's accessible name", () => {
@@ -1992,13 +2006,34 @@ describe("the pace row", () => {
     expect(row().dataset["paceState"] ?? "").toBe("");
   });
 
-  it("draws the meter and its numerals at tier 3", () => {
+  it("draws the meter and its numerals at tier 3, and nothing else", () => {
     apply(modelMetering(ON_BUDGET));
 
     expect(meter().hidden).toBe(false);
     expect(textOf("paceAverage")).toBe("5.00 Go");
     expect(textOf("paceAfforded")).toBe("5.00 Go");
-    expect(textOf("paceSustainable")).toContain("Go");
+    // The meter speaks alone here: a forward-facing daily figure beside its
+    // two backward-facing ones reads as the app contradicting itself.
+    expect(textOf("paceSustainable")).toBe("");
+  });
+
+  it("collapses the emptied recovery line rather than leaving a gap", () => {
+    // The line is emptied at tier 3, not removed from the page, so the
+    // stylesheet has to give its box back or the section keeps the height the
+    // removal was meant to hand over.
+    expect(POPOVER_CSS).toMatch(
+      /\.pace-sustainable:empty[^{]*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("gives the bar its own row, so the numerals stop taking its width", () => {
+    // T-48 paid for `spent` and `budget` out of the bar's width because the
+    // row had no height to spare. The recovery line's departure is that
+    // height, so the track takes the whole row back and the pair sits under it.
+    const rule = /\.pace-meter\s*\{([^}]*)\}/.exec(POPOVER_CSS)?.[1] ?? "";
+
+    expect(rule).not.toBe("");
+    expect(rule).not.toMatch(/grid-template-columns/);
   });
 
   it("marks the section with each band in turn", () => {

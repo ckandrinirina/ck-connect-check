@@ -697,8 +697,8 @@ body {
 }
 
 /* The pace row. It sits under the dial because it explains the share the dial
-   draws, and it grows with what the app knows: the daily figure alone after a
-   sync, the meter and the budget once the two fields above are filled in. */
+   draws, and it carries one reading at a time: the recovery figure after a
+   sync, and the meter in its place once the two fields above are filled in. */
 .pace {
   padding: 10px 14px;
   border-top: 1px solid var(--line);
@@ -730,18 +730,15 @@ body {
    much, and only the numbers say the amounts. Hidden through the `hidden`
    attribute below tier 3, so it costs no height at all.
 
-   The numerals take their width first and the bar keeps the rest — the second
-   column is `auto` and the first shrinks to nothing. That is the right way
-   round: the pair now carries `spent` and `budget` beside the figures, which
-   is what stops the row being read as a contradiction, and a legend the panel
-   has clipped names nothing. The bar pays for those two words in width rather
-   than the row paying for them in height, which is the budget that has no
-   slack. */
+   Stacked, bar over pair. T-48 bought the width for `spent` and `budget` out
+   of the bar, which had shrunk it to a stub, because height was the budget
+   with no slack. The recovery line's departure is that slack: the track now
+   takes a whole row to itself and the pair reads underneath it, so the words
+   are paid for in height and the bar is a bar again. The section is still
+   shorter at tier 3 than it was with the line on it. */
 .pace-meter {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .pace-meter[hidden] {
