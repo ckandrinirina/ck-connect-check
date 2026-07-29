@@ -1653,3 +1653,139 @@ describe("the Sync control — reaching it without a mouse", () => {
     expect(note?.getAttribute("aria-hidden")).not.toBe("true");
   });
 });
+
+describe("the pace row", () => {
+  /** A model whose pace row is built from real stored and typed-in figures. */
+  function modelPacing(options: {
+    remainingGo?: number;
+    expiresAt?: Date | null;
+    limitGo?: number | null;
+    planDays?: number | null;
+  }): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes:
+          options.limitGo === undefined || options.limitGo === null
+            ? null
+            : options.limitGo * GB,
+        planDays: options.planDays ?? null,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: (options.remainingGo ?? 30) * GB,
+          expiresAt:
+            options.expiresAt === undefined
+              ? new Date(2026, 7, 6)
+              : options.expiresAt,
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  function row(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-pace]");
+
+    if (element === null) {
+      throw new Error("the panel has no pace row");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("shows the sustainable figure and its date at tier 1", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(row().hidden).toBe(false);
+    expect(textOf("paceSustainable")).toContain("3.00 Go");
+    expect(textOf("paceSustainable")).toContain("06/08/2026");
+  });
+
+  it("shows no band word, no state and no budget at tier 1", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(textOf("paceBand")).toBe("");
+    expect(row().dataset["state"] ?? "").toBe("");
+    expect(textOf("paceAfforded")).toBe("");
+  });
+
+  it("adds the consumed share at tier 2, and still no band word", () => {
+    apply(modelPacing({ remainingGo: 30, limitGo: 150 }));
+
+    expect(textOf("paceConsumed")).toContain("80%");
+    expect(textOf("paceBand")).toBe("");
+  });
+
+  it("shows the band, the budget and the sustainable figure together at tier 3", () => {
+    apply(modelPacing({ remainingGo: 100, limitGo: 150, planDays: 30 }));
+
+    expect(row().dataset["state"]).toBe("safe");
+    expect(textOf("paceBand")).not.toBe("");
+    expect(textOf("paceAfforded")).toContain("5.00 Go");
+    expect(textOf("paceSustainable")).toContain("Go");
+  });
+
+  it("gives warning and over distinct states the stylesheet paints", () => {
+    apply(modelPacing({ remainingGo: 30, limitGo: 150, planDays: 30 }));
+    const warning = row().dataset["state"];
+
+    apply(modelPacing({ remainingGo: 10, limitGo: 150, planDays: 30 }));
+    const over = row().dataset["state"];
+
+    expect(warning).toBe("warning");
+    expect(over).toBe("over");
+
+    const colours = [
+      /\[data-state="warning"\][^{]*\{[^}]*color:\s*([^;]+);/,
+      /\[data-state="over"\][^{]*\{[^}]*color:\s*([^;]+);/,
+    ].map((pattern) => pattern.exec(POPOVER_CSS)?.[1]?.trim());
+
+    expect(colours.every((colour) => colour !== undefined)).toBe(true);
+    expect(new Set(colours).size).toBe(2);
+    // The same visual language the threshold already speaks, not a new one.
+    expect(colours).toEqual(["var(--warn)", "var(--over)"]);
+  });
+
+  it("hides the row entirely when there is no pace to report", () => {
+    apply(modelPacing({ expiresAt: null }));
+
+    expect(row().hidden).toBe(true);
+    expect(textOf("paceSustainable")).toBe("");
+    expect(textOf("paceBand")).toBe("");
+  });
+
+  it("hints at the setting that would sharpen tiers 1 and 2, and none at tier 3", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+    expect(textOf("paceHint")).not.toBe("");
+
+    apply(modelPacing({ remainingGo: 30, limitGo: 150 }));
+    expect(textOf("paceHint")).not.toBe("");
+
+    apply(modelPacing({ remainingGo: 30, limitGo: 150, planDays: 30 }));
+    expect(textOf("paceHint")).toBe("");
+  });
+
+  it("sits under the dial, where the share it explains is drawn", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    const figures = document.querySelector(".usage");
+
+    if (figures === null) {
+      throw new Error("the panel has no usage section");
+    }
+
+    expect(
+      figures.compareDocumentPosition(row()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+  });
+});

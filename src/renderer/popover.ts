@@ -66,6 +66,12 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     planLimitError: model.planLimit.error,
     planDaysUnit: model.planDays.unit,
     planDaysError: model.planDays.error,
+    paceBand: model.pace?.band ?? "",
+    paceSustainable: model.pace?.sustainable ?? "",
+    paceAfforded: model.pace?.afforded ?? "",
+    paceConsumed: model.pace?.consumed ?? "",
+    paceNote: model.pace?.note ?? "",
+    paceHint: model.pace?.hint ?? "",
     percent: model.progress.label,
     prompt: model.progress.prompt,
     allowanceRemaining: model.allowance.remaining,
@@ -423,6 +429,31 @@ function applyPlanDays(model: PopoverModel): void {
     : "set";
 }
 
+/**
+ * Shows the pace row, or takes it off the panel entirely.
+ *
+ * `hidden` rather than an empty row: the fields are already blank when there is
+ * no reading, but a section that still holds its space open reads as a figure
+ * the app failed to produce, which is precisely what it is not.
+ *
+ * The band's state goes on the section rather than on the word, so the
+ * stylesheet decides what `warning` and `over` look like — nothing here knows a
+ * colour.
+ */
+function applyPace(model: PopoverModel): void {
+  const row = document.querySelector<HTMLElement>("[data-pace]");
+
+  if (row === null) return;
+
+  row.hidden = model.pace === null;
+
+  if (model.pace === null || model.pace.state === "") {
+    delete row.dataset["state"];
+  } else {
+    row.dataset["state"] = model.pace.state;
+  }
+}
+
 /** Puts the sync state on the button, the prompt and the root element. */
 function applySync(model: PopoverModel): void {
   const { sync, allowance } = model;
@@ -491,6 +522,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applySignal(model);
   applyPlanLimit(model);
   applyPlanDays(model);
+  applyPace(model);
   applySync(model);
 };
 

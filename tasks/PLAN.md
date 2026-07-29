@@ -39,7 +39,7 @@
 | T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
 | T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27             |
 | T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36             |
-| T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
+| T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37             |
 | T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28             |
 | T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39             |
 | T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42 |
@@ -1846,7 +1846,7 @@ divide the remainder across.
 
 ## T-38 Show the pace and its warning on the panel
 
-T-38 · status: todo · size: M · needs: T-37 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-38 · status: done · size: M · needs: T-37 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 One row under the dial, in the same shape as the existing tiles, growing with the
 tier T-37 reports:
@@ -1871,25 +1871,42 @@ screen next to its absence.
 
 ### Acceptance
 
-- [ ] the popover model carries a `pace` field that is `null` exactly when `readPace` returns `null`, and otherwise carries the tier through unchanged
-- [ ] a tier 1 model renders `sustainablePerDay` and the expiry, and no band word, no `data-state` and no `affordedPerDay`
-- [ ] a tier 2 model renders the consumed share as well, and still no band word
-- [ ] a tier 3 `safe` model renders the band word, `affordedPerDay` and `sustainablePerDay` together
-- [ ] `warning` and `over` models render with distinct `data-state` values, asserted against the stylesheet's selectors
-- [ ] a `null` pace renders no pace row at all, and the panel's height is unchanged in every other respect
-- [ ] tiers 1 and 2 render a hint naming the missing setting, and tier 3 renders none
-- [ ] the daily figures are formatted with the octet helper, so a 1 000 000 000-byte figure reads `1.00 Go`
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the popover model carries a `pace` field that is `null` exactly when `readPace` returns `null`, and otherwise carries the tier through unchanged
+- [x] a tier 1 model renders `sustainablePerDay` and the expiry, and no band word, no `data-state` and no `affordedPerDay`
+- [x] a tier 2 model renders the consumed share as well, and still no band word
+- [x] a tier 3 `safe` model renders the band word, `affordedPerDay` and `sustainablePerDay` together
+- [x] `warning` and `over` models render with distinct `data-state` values, asserted against the stylesheet's selectors
+- [x] a `null` pace renders no pace row at all, and the panel's height is unchanged in every other respect
+- [x] tiers 1 and 2 render a hint naming the missing setting, and tier 3 renders none
+- [x] the daily figures are formatted with the octet helper, so a 1 000 000 000-byte figure reads `1.00 Go`
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above, one per tier
-- [ ] Thread `readPace` into `buildPopoverModel`
-- [ ] Render the row, branching on `tier`, with the three band states inside tier 3
-- [ ] Style the bands against the existing accent variables, adding none that duplicate them
-- [ ] Manual: with a real anchor and no cap typed, confirm the tier 1 row reads correctly
-- [ ] Manual: type the cap and the length, confirm the band appears and matches a hand calculation
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing tests for every criterion above, one per tier
+- [x] Thread `readPace` into `buildPopoverModel`
+- [x] Render the row, branching on `tier`, with the three band states inside tier 3
+- [x] Style the bands against the existing accent variables, adding none that duplicate them
+- [x] Manual: with a real anchor and no cap typed, confirm the tier 1 row reads correctly
+- [x] Manual: type the cap and the length, confirm the band appears and matches a hand calculation
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The row's date comes from the allowance reading rather than from `readPace`:
+the pace carries the *days* left, which is what it divides by, and the row
+states the date those days run to. `readPace` already refuses a reading with no
+expiry, so the two can never disagree.
+
+`pace.tier` is a number on a model that is otherwise display strings, so the
+pre-existing "hands the renderer only display strings" test was extended to
+treat it as a control value alongside `progress.sweep` — it decides which rows
+to show, and is never printed.
+
+The band words carry the meaning as well as the colour: `over` is red and says
+"Too fast", so the reading survives a colourblind eye and an accessible label.
+Both accents are the ones the dial already uses for trouble; no new colour was
+added.
 
 ## T-39 Know when the carrier figure has gone stale
 

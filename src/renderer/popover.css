@@ -265,11 +265,10 @@ body {
 }
 
 /* Nothing is measurable until this is filled in, so an empty field is the one
-   thing on the panel asking to be touched. */
-/* Scoped to the cap's own input rather than to the shared class: the plan
-   length beside it wears the same class, and it is a refinement rather than a
-   precondition — the panel reads correctly with it blank, so it is not marked
-   as the thing to fill in. */
+   thing on the panel asking to be touched. Scoped to the cap's own input rather
+   than to the shared class: the plan length beside it wears the same class, and
+   it is a refinement rather than a precondition — the panel reads correctly
+   with it blank, so it is not marked as the thing to fill in. */
 :root[data-plan-limit="unset"] [data-plan-limit-input] {
   border-color: var(--accent);
 }
@@ -574,4 +573,57 @@ body {
   font: inherit;
   font-weight: 500;
   cursor: default;
+}
+
+/* The pace row. It sits under the dial because it explains the share the dial
+   draws, and it grows with what the app knows: the daily figure alone after a
+   sync, the band and the budget once the two fields above are filled in. */
+.pace {
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 2px;
+}
+
+.pace-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* Collapsed rather than blank: below tier 3 there is no band, and an empty
+   word must not hold a gap open beside the figure. */
+.pace-band:empty,
+.pace-detail:empty,
+.pace-note:empty,
+.pace-hint:empty {
+  display: none;
+}
+
+.pace-band {
+  font-weight: 600;
+}
+
+.pace-detail,
+.pace-note,
+.pace-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pace-detail {
+  display: flex;
+  gap: 10px;
+}
+
+/* The same two accents the dial already uses for trouble, so the panel speaks
+   one visual language rather than inventing a second. The state is decided in
+   the main process — nothing here compares a ratio to a threshold. */
+.pace[data-state="warning"] .pace-band {
+  color: var(--warn);
+}
+
+.pace[data-state="over"] .pace-band {
+  color: var(--over);
 }

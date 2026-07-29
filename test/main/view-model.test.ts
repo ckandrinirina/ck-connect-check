@@ -202,19 +202,21 @@ describe("buildPopoverModel — a live reading", () => {
   });
 
   it("hands the renderer only display strings — never a number to format", () => {
-    // The exceptions are all geometry rather than text: the sparkline history,
-    // the dial's sweep, and the signal level, which is a count of bars to fill
-    // rather than something to read. Everything the user *reads* is a string.
-    const geometryFields = ["history", "signalBars", "maxSignalBars"];
+    // The exceptions are all things the renderer acts on rather than prints:
+    // the sparkline history, the dial's sweep, the signal level, which is a
+    // count of bars to fill, and the pace's tier, which is which rows to show.
+    // Everything the user *reads* is a string.
+    const controlFields = ["history", "signalBars", "maxSignalBars"];
     const displayed = Object.entries(model).filter(
-      ([field]) => !geometryFields.includes(field),
+      ([field]) => !controlFields.includes(field),
     );
 
     for (const leaf of leaves(Object.fromEntries(displayed))) {
-      const geometry = leaf === model.progress.sweep;
+      const control =
+        leaf === model.progress.sweep || leaf === model.pace?.tier;
 
       expect(
-        geometry || typeof leaf === "string" || typeof leaf === "boolean",
+        control || typeof leaf === "string" || typeof leaf === "boolean",
       ).toBe(true);
     }
   });
@@ -1040,5 +1042,131 @@ describe("UsageReading", () => {
 
     expect(reading.at).toBe(NOW);
     expect(reading.snapshot.carrier.carrier).toBe("Yas");
+  });
+});
+
+describe("buildPopoverModel — the pace row", () => {
+  const GO = 1_000_000_000;
+
+  /** Ten whole days after {@link NOW}. */
+  const IN_TEN_DAYS = new Date(2026, 7, 6);
+
+  /** The model's pace row for one set of stored and typed-in figures. */
+  function paceOf(options: {
+    remainingGo?: number;
+    expiresAt?: Date | null;
+    limitGo?: number | null;
+    planDays?: number | null;
+  }): PopoverModel["pace"] {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes:
+          options.limitGo === undefined || options.limitGo === null
+            ? null
+            : options.limitGo * GO,
+        planDays: options.planDays ?? null,
+        allowanceAnchor: anchorOf((options.remainingGo ?? 30) * GO, {
+          expiresAt:
+            options.expiresAt === undefined ? IN_TEN_DAYS : options.expiresAt,
+        }),
+      },
+      clock,
+    }).pace;
+  }
+
+  it("is null when nothing has ever been synced", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: defaultConfig(),
+      clock,
+    });
+
+    expect(model.pace).toBeNull();
+  });
+
+  it("is null when the carrier stated no expiry to measure against", () => {
+    expect(paceOf({ expiresAt: null })).toBeNull();
+  });
+
+  it("is null once the expiry has passed", () => {
+    expect(paceOf({ expiresAt: new Date(2026, 5, 1) })).toBeNull();
+  });
+
+  it("carries tier 1 with the sustainable figure and the date it runs to", () => {
+    const pace = paceOf({ remainingGo: 30 });
+
+    expect(pace?.tier).toBe(1);
+    expect(pace?.sustainable).toContain("3.00 Go");
+    expect(pace?.sustainable).toContain("06/08/2026");
+  });
+
+  it("leaves tier 1 with no band, no state and no budget", () => {
+    const pace = paceOf({ remainingGo: 30 });
+
+    expect(pace?.band).toBe("");
+    expect(pace?.state).toBe("");
+    expect(pace?.afforded).toBe("");
+    expect(pace?.consumed).toBe("");
+  });
+
+  it("adds the consumed share at tier 2, and still no band", () => {
+    const pace = paceOf({ remainingGo: 30, limitGo: 150 });
+
+    expect(pace?.tier).toBe(2);
+    expect(pace?.consumed).toContain("80%");
+    expect(pace?.band).toBe("");
+    expect(pace?.state).toBe("");
+  });
+
+  it("reports the band, the budget and the sustainable figure at tier 3", () => {
+    // The period began on 07/07, so a little over two thirds of it has gone
+    // against four fifths of the plan: ahead, but recoverably.
+    const pace = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
+
+    expect(pace?.tier).toBe(3);
+    expect(pace?.state).toBe("warning");
+    expect(pace?.band).not.toBe("");
+    expect(pace?.afforded).toContain("5.00 Go");
+    expect(pace?.sustainable).toContain("3.00 Go");
+  });
+
+  it("gives each band its own state and its own words", () => {
+    const safe = paceOf({ remainingGo: 100, limitGo: 150, planDays: 30 });
+    const warning = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
+    const over = paceOf({ remainingGo: 10, limitGo: 150, planDays: 30 });
+
+    expect([safe?.state, warning?.state, over?.state]).toEqual([
+      "safe",
+      "warning",
+      "over",
+    ]);
+    expect(new Set([safe?.band, warning?.band, over?.band]).size).toBe(3);
+    expect(new Set([safe?.note, warning?.note, over?.note]).size).toBe(3);
+  });
+
+  it("names the setting that would sharpen tiers 1 and 2, and none at tier 3", () => {
+    expect(paceOf({}).hint).toMatch(/plan/i);
+    expect(paceOf({ limitGo: 150 }).hint).toMatch(/day|length|long/i);
+    expect(paceOf({ limitGo: 150, planDays: 30 }).hint).toBe("");
+  });
+
+  it("formats every daily figure with the octet helper", () => {
+    // 10 Go over ten days is exactly a Go a day, which reads as `1.00 Go`.
+    const pace = paceOf({ remainingGo: 10, limitGo: 30, planDays: 30 });
+
+    expect(pace?.sustainable).toContain("1.00 Go");
+    expect(pace?.afforded).toContain("1.00 Go");
+  });
+
+  it("hands the renderer only strings and numbers it need not format", () => {
+    const pace = paceOf({ remainingGo: 30, limitGo: 150, planDays: 30 });
+
+    for (const leaf of leaves(pace)) {
+      expect(typeof leaf === "string" || typeof leaf === "number").toBe(true);
+    }
   });
 });

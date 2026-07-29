@@ -20,6 +20,8 @@ import {
 } from "../domain/format.js";
 import { peak, type RateSample } from "../domain/history.js";
 import { networkTypeLabel } from "../domain/network-type.js";
+import { readPace } from "../domain/pace.js";
+import type { PaceReading, PaceState } from "../domain/pace.js";
 import {
   systemClock,
   usageState,
@@ -216,6 +218,35 @@ export interface PopoverPlanDays {
   description: string;
 }
 
+/**
+ * The pace row, in whatever detail the stored figures allow.
+ *
+ * Every field is a finished string, empty when its tier has not been reached —
+ * so the renderer shows what is there and hides what is not, and never decides
+ * which tier it is looking at by inspecting the arithmetic.
+ */
+export interface PopoverPace {
+  /** How much of the reading is available: 1 the anchor, 2 the cap, 3 the length. */
+  tier: number;
+  /** Always present: `"3.00 Go a day until 06/08/2026"`. */
+  sustainable: string;
+  /** Tier 2 and up: `"80% of the plan used"`. Empty below it. */
+  consumed: string;
+  /** Tier 3: `"5.00 Go a day budgeted"`. Empty below it. */
+  afforded: string;
+  /** Tier 3: the band as a word — the coloured one. Empty below it. */
+  band: string;
+  /** Tier 3: `safe`, `warning` or `over`, for the stylesheet. Empty below it. */
+  state: string;
+  /** Tier 3: which way it is going, as a sentence. Empty below it. */
+  note: string;
+  /**
+   * Tiers 1 and 2: which setting would sharpen this, so the reason the band is
+   * missing sits next to its absence. Empty at tier 3, where nothing is.
+   */
+  hint: string;
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   monthDownload: string;
@@ -256,6 +287,12 @@ export interface PopoverModel {
   planLimit: PopoverPlanLimit;
   /** The plan-length field, beside it, on the same terms. */
   planDays: PopoverPlanDays;
+  /**
+   * The pace under the dial, or null when there is nothing honest to say — a
+   * rate over a period nobody stated is the same lie the dial refuses to draw
+   * before a sync.
+   */
+  pace: PopoverPace | null;
   /** The Sync button's state, and whatever the last press has to say. */
   sync: PopoverSync;
 }
@@ -547,6 +584,68 @@ function buildPlanDays(
   };
 }
 
+/**
+ * The band as the user reads it. A word rather than a colour alone: the colour
+ * is the fast answer, and the word is the one that survives a colourblind eye
+ * and an accessible label.
+ */
+const PACE_BAND_TEXT: Record<PaceState, string> = {
+  safe: "On track",
+  warning: "A little fast",
+  over: "Too fast",
+};
+
+/** What each band means, in the one sentence that says which way it is going. */
+const PACE_NOTE_TEXT: Record<PaceState, string> = {
+  safe: "Less spent than the month has run — a quiet week keeps it there.",
+  warning: "Slightly ahead of the calendar. A lighter week pulls it back.",
+  over: "Well ahead of the calendar — at this rate the plan runs out early.",
+};
+
+/**
+ * What would sharpen a reading that has not reached tier 3, named so the reason
+ * the band is missing sits beside its absence — both settings are fields on
+ * this same panel.
+ */
+const PACE_HINT_TEXT: Record<number, string> = {
+  1: "Set your plan size to see how much of it is gone.",
+  2: "Set how long your plan lasts to see whether that is fast.",
+};
+
+/**
+ * The pace row for one reading, or null when there is no reading.
+ *
+ * `expiresAt` comes from the allowance rather than from the pace: the pace
+ * carries the days left, which is what it divides by, and the row states the
+ * date those days run to. A reading with no date behind it cannot exist —
+ * `readPace` already refuses one — so a null here is null throughout.
+ */
+function buildPace(
+  reading: PaceReading | null,
+  expiresAt: Date | null,
+): PopoverPace | null {
+  if (reading === null || expiresAt === null) return null;
+
+  const { state } = reading;
+
+  return {
+    tier: reading.tier,
+    sustainable: `${formatBytes(reading.sustainablePerDay)} a day until ${formatDate(expiresAt)}`,
+    consumed:
+      reading.usedShare === null
+        ? ""
+        : `${formatPercent(reading.usedShare * 100)} of the plan used`,
+    afforded:
+      reading.affordedPerDay === null
+        ? ""
+        : `${formatBytes(reading.affordedPerDay)} a day budgeted`,
+    band: state === null ? "" : PACE_BAND_TEXT[state],
+    state: state ?? "",
+    note: state === null ? "" : PACE_NOTE_TEXT[state],
+    hint: PACE_HINT_TEXT[reading.tier] ?? "",
+  };
+}
+
 function buildHistory(samples: readonly RateSample[]): PopoverHistory {
   return {
     download: samples.map((sample) => sample.downloadBytesPerSecond),
@@ -563,6 +662,7 @@ function emptyModel(
   sync: PopoverSync,
   planLimit: PopoverPlanLimit,
   planDays: PopoverPlanDays,
+  pace: PopoverPace | null,
 ): PopoverModel {
   return {
     monthDownload: NO_VALUE,
@@ -584,6 +684,7 @@ function emptyModel(
     allowance: noAllowance(),
     planLimit,
     planDays,
+    pace,
     sync,
   };
 }
@@ -666,6 +767,9 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       buildSync(syncState, false),
       planLimit,
       planDays,
+      // No snapshot means no router counter to carry the anchor forward with,
+      // and the pace is measured on what is left *now*.
+      null,
     );
   }
 
@@ -710,6 +814,16 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     allowance: buildAllowance(allowance, now),
     planLimit,
     planDays,
+    pace: buildPace(
+      readPace({
+        anchor: config.allowanceAnchor,
+        month,
+        planLimitBytes: config.planLimitBytes,
+        planDays: config.planDays,
+        clock,
+      }),
+      allowance?.expiresAt ?? null,
+    ),
     // An anchor that can no longer carry the arithmetic is the one thing the
     // button has to call out: the figure on screen is the last honest one.
     sync: buildSync(syncState, allowance !== null && !allowance.trustworthy),

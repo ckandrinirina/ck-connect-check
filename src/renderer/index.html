@@ -142,6 +142,26 @@
     </section>
 
     <!--
+      Whether that share is being spent faster than the month is passing. It
+      grows with what is known: the daily figure alone needs only a sync, the
+      band underneath it needs the two typed fields above. Hidden outright when
+      there is nothing honest to say — a rate over a period nobody stated is
+      the same lie the dial refuses to draw before a sync.
+    -->
+    <section class="pace" data-pace hidden>
+      <p class="pace-line">
+        <span class="pace-band" data-field="paceBand"></span>
+        <span class="pace-sustainable" data-field="paceSustainable"></span>
+      </p>
+      <p class="pace-detail">
+        <span data-field="paceAfforded"></span>
+        <span data-field="paceConsumed"></span>
+      </p>
+      <p class="pace-note" data-field="paceNote"></p>
+      <p class="pace-hint" data-field="paceHint"></p>
+    </section>
+
+    <!--
       The carrier's own figure, carried forward from the last sync. It is a
       different question from the dial above it — that is a share of the plan,
       this is the exact volume the carrier said was left — so it gets its own
