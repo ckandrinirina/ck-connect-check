@@ -134,9 +134,12 @@ describe("buildPopoverModel — a live reading", () => {
     clock,
   });
 
-  it("exposes the month download and upload totals", () => {
-    expect(model.monthDownload).toBe("4.43 Go");
-    expect(model.monthUpload).toBe("1.40 Go");
+  it("no longer splits the month into a download and an upload total", () => {
+    // The plan is billed on their sum, and both the dial and the carrier's own
+    // remaining already state that sum. The split cost two rows of a panel
+    // that had outgrown its window.
+    expect(model).not.toHaveProperty("monthDownload");
+    expect(model).not.toHaveProperty("monthUpload");
   });
 
   it("reports the plan consumed, not the router's own month counter", () => {
@@ -404,9 +407,7 @@ describe("buildPopoverModel — an anchor but no plan limit configured", () => {
     expect(model.monthTotal).toBe("—");
   });
 
-  it("still reports the router's own counters and the carrier's figure", () => {
-    expect(model.monthDownload).toBe("4.43 Go");
-    expect(model.monthUpload).toBe("1.40 Go");
+  it("still reports the carrier's own figure", () => {
     expect(model.allowance.remaining).toBe("12.00 Go");
     expect(model.carrier).toBe("Yas");
   });
@@ -482,8 +483,7 @@ describe("buildPopoverModel — the router is unreachable", () => {
   });
 
   it("carries the last successful reading rather than blanking the figures", () => {
-    expect(model.monthDownload).toBe("4.43 Go");
-    expect(model.monthUpload).toBe("1.40 Go");
+    expect(model.monthTotal).toBe("8.00 Go");
     expect(model.progress.label).toBe("40%");
     expect(model.carrier).toBe("Yas");
   });
@@ -514,7 +514,6 @@ describe("buildPopoverModel — nothing has been read yet", () => {
   });
 
   it("shows dashes instead of inventing zeroes", () => {
-    expect(model.monthDownload).toBe("—");
     expect(model.monthTotal).toBe("—");
     expect(model.carrier).toBe("—");
     expect(model.connectedDevices).toBe("—");
