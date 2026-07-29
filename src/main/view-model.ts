@@ -497,6 +497,20 @@ function formatDate(date: Date): string {
   return `${day}/${month}/${date.getFullYear()}`;
 }
 
+/**
+ * The day an expiry runs *through*, which is the day the panel prints.
+ *
+ * `expiresAt` is the midnight that ends the last valid day — an exclusive upper
+ * bound, which is what every span measured against it wants: the period start,
+ * the days remaining, the expiry check. Printed as-is it names the day after
+ * the one the carrier stated, and an app that contradicts the carrier's own SMS
+ * is the unreliability the anchor exists to remove. So the display steps back
+ * to the last valid moment; the stored instant stays the single one it was.
+ */
+function formatLastValidDay(expiresAt: Date): string {
+  return formatDate(new Date(expiresAt.getTime() - 1));
+}
+
 /** Why a marked figure is marked, in the words the panel shows. */
 function staleNote(reading: AllowanceReading): string {
   if (reading.staleReason === "counter-reset") {
@@ -539,7 +553,9 @@ function buildAllowance(
     planLabel: reading.planLabel === "" ? NO_VALUE : reading.planLabel,
     remaining: formatBytes(reading.remainingBytes),
     expires:
-      reading.expiresAt === null ? NO_VALUE : formatDate(reading.expiresAt),
+      reading.expiresAt === null
+        ? NO_VALUE
+        : formatLastValidDay(reading.expiresAt),
     daysUntilExpiry:
       reading.daysUntilExpiry === null
         ? NO_VALUE
@@ -757,7 +773,7 @@ function buildPace(
 
   return {
     tier: reading.tier,
-    sustainable: `${formatBytes(reading.sustainablePerDay)} a day until ${formatDate(expiresAt)}`,
+    sustainable: `${formatBytes(reading.sustainablePerDay)} a day until ${formatLastValidDay(expiresAt)}`,
     state: reading.state ?? "",
     hint: PACE_HINT_TEXT[reading.tier] ?? "",
     meter: buildPaceMeter(reading),
