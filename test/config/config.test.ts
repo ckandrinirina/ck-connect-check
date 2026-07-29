@@ -62,6 +62,7 @@ describe("defaults", () => {
       warnThresholdPercent: 90,
       planLimitBytes: null,
       planDays: null,
+      planCapConfirmed: true,
       syncStaleAfterMinutes: 30,
     });
   });

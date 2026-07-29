@@ -35,6 +35,15 @@ export interface AppConfig {
    */
   planDays: number | null;
   /**
+   * Whether {@link AppConfig.planLimitBytes} still describes the plan the
+   * carrier is reporting. Cleared by a sync whose anchor belongs to a different
+   * plan, and set again by confirming or retyping the cap.
+   *
+   * True by default, so a config written before this existed is not flagged the
+   * first time it is loaded.
+   */
+  planCapConfirmed: boolean;
+  /**
    * How many minutes a carrier reading may age before the app re-anchors it by
    * itself. Never below one minute — a window of zero would mean every anchor
    * is stale the instant it is written, and dialogues cost a login against a
@@ -111,6 +120,7 @@ export function defaultConfig(): AppConfig {
     warnThresholdPercent: DEFAULT_WARN_THRESHOLD_PERCENT,
     planLimitBytes: null,
     planDays: null,
+    planCapConfirmed: true,
     syncStaleAfterMinutes: DEFAULT_SYNC_STALE_AFTER_MINUTES,
   };
 }

@@ -138,6 +138,19 @@
           data-field="planDaysError"
           role="status"
         ></p>
+
+        <!--
+          Shown only when a sync brought back a plan the stored cap cannot
+          describe. Confirming re-submits whatever is already in the field
+          above, so an unchanged plan size costs one press rather than a
+          retype — the panel has no separate "confirm" message to send.
+        -->
+        <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
+          <p class="plan-cap-message" data-field="planCapMessage"></p>
+          <button class="plan-cap-confirm" type="button" data-plan-cap-confirm>
+            Confirm
+          </button>
+        </div>
       </div>
     </section>
 

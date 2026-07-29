@@ -8,6 +8,7 @@
  * rendering is capped at {@link MAX_TRAY_TITLE_LENGTH} characters.
  */
 
+import { confirmedPlanLimit } from "../config/config.js";
 import { readPlanUsage } from "../domain/allowance.js";
 import { formatBytes, formatPercent } from "../domain/format.js";
 import { systemClock, usageState, type Clock } from "../domain/quota.js";
@@ -98,7 +99,9 @@ export function buildTrayTitle(
   const reading = readPlanUsage(
     config.allowanceAnchor,
     result.snapshot.month,
-    config.planLimitBytes,
+    // The same rule the dial follows: a cap a sync has contradicted counts as
+    // no cap, so the menu bar never quotes a share the panel has withdrawn.
+    confirmedPlanLimit(config),
     clock,
   );
   const percent = reading?.percentUsed ?? null;

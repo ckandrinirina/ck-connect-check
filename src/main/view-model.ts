@@ -30,6 +30,7 @@ import {
 } from "../domain/quota.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
 import {
+  confirmedPlanLimit,
   planLimitInGigaoctets,
   type PlanDaysRefusal,
   type PlanLimitRefusal,
@@ -247,6 +248,23 @@ export interface PopoverPace {
   hint: string;
 }
 
+/**
+ * The ask that replaces the dial when a sync has brought back a plan the stored
+ * cap cannot describe.
+ *
+ * Present only while the cap is in doubt: with it on screen the panel keeps the
+ * tier 1 pace, which needs no cap, and shows neither a share nor a band rather
+ * than deriving either from a figure the carrier has contradicted.
+ */
+export interface PopoverPlanCapPrompt {
+  /** What happened and what to do about it, in one sentence. */
+  message: string;
+  /** What the confirm control says: `"Confirm"`. */
+  confirmLabel: string;
+  /** That control's accessible name — a sentence, not a word. */
+  description: string;
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   monthDownload: string;
@@ -287,6 +305,11 @@ export interface PopoverModel {
   planLimit: PopoverPlanLimit;
   /** The plan-length field, beside it, on the same terms. */
   planDays: PopoverPlanDays;
+  /**
+   * The new-plan confirmation, or null while the stored cap is believed. Null
+   * is the ordinary state: this appears only after a sync contradicted the cap.
+   */
+  planCapPrompt: PopoverPlanCapPrompt | null;
   /**
    * The pace under the dial, or null when there is nothing honest to say — a
    * rate over a period nobody stated is the same lie the dial refuses to draw
@@ -342,17 +365,28 @@ function signalDescription(bars: number, maxBars: number): string {
     : `Signal ${String(bars)} of ${String(maxBars)}`;
 }
 
+/** What the panel says where the ring used to be, once the cap is in doubt. */
+const PLAN_CAP_PROMPT = "This looks like a new plan — confirm its size.";
+
 /**
  * Why there is no dial, in the words the panel shows. Each case names the one
  * thing the user can do about it — an "unavailable" ring with no instruction is
  * just a hole in the panel.
+ *
+ * An unconfirmed cap is checked before a missing one, because a stored cap in
+ * doubt is not a cap nobody typed: telling the user to set one they have
+ * already set names the wrong fix.
  */
 function dialPrompt(
   allowance: AllowanceReading | null,
   limitBytes: number | null,
+  capUnconfirmed: boolean,
 ): string {
   if (allowance === null) {
     return "Sync to read how much of your plan is left.";
+  }
+  if (capUnconfirmed) {
+    return PLAN_CAP_PROMPT;
   }
   if (limitBytes === null) {
     return "Set a plan limit to see how much of it is left.";
@@ -361,19 +395,43 @@ function dialPrompt(
   return "That figure is out of date — sync to refresh the dial.";
 }
 
-/** The same three cases, for a screen reader. */
+/** The same four cases, for a screen reader. */
 function dialDescription(
   allowance: AllowanceReading | null,
   limitBytes: number | null,
+  capUnconfirmed: boolean,
 ): string {
   if (allowance === null) {
     return "No allowance synced from the carrier yet";
+  }
+  if (capUnconfirmed) {
+    return "The plan size needs confirming before the share can be shown";
   }
   if (limitBytes === null) {
     return "No plan limit set, so the share used is unknown";
   }
 
   return "The last synced figure can no longer be trusted";
+}
+
+/**
+ * The confirmation, or null while the cap is believed.
+ *
+ * The wording names the cause rather than the symptom: a user who topped up
+ * knows they did, and "confirm its size" is the one action that clears it. The
+ * field beside it already holds the stored cap, so an unchanged plan size is
+ * confirmed with a single press rather than retyped.
+ */
+function buildPlanCapPrompt(
+  capUnconfirmed: boolean,
+): PopoverPlanCapPrompt | null {
+  if (!capUnconfirmed) return null;
+
+  return {
+    message: `${PLAN_CAP_PROMPT} The dial and the pace stay hidden until it is.`,
+    confirmLabel: "Confirm",
+    description: "Confirm the plan size shown in the field beside this",
+  };
 }
 
 function buildFreshness(
@@ -663,6 +721,7 @@ function emptyModel(
   planLimit: PopoverPlanLimit,
   planDays: PopoverPlanDays,
   pace: PopoverPace | null,
+  planCapPrompt: PopoverPlanCapPrompt | null,
 ): PopoverModel {
   return {
     monthDownload: NO_VALUE,
@@ -684,6 +743,7 @@ function emptyModel(
     allowance: noAllowance(),
     planLimit,
     planDays,
+    planCapPrompt,
     pace,
     sync,
   };
@@ -703,6 +763,7 @@ function buildDial(
   allowance: AllowanceReading | null,
   limitBytes: number | null,
   warnThresholdPercent: number,
+  capUnconfirmed = false,
 ): PopoverProgress {
   const percent = allowance?.percentUsed ?? null;
   const state = usageState(percent, warnThresholdPercent);
@@ -712,8 +773,8 @@ function buildDial(
       available: false,
       label: NO_VALUE,
       sweep: 0,
-      prompt: dialPrompt(allowance, limitBytes),
-      description: dialDescription(allowance, limitBytes),
+      prompt: dialPrompt(allowance, limitBytes, capUnconfirmed),
+      description: dialDescription(allowance, limitBytes, capUnconfirmed),
       state,
     };
   }
@@ -757,6 +818,15 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     input.planLimitProblem,
   );
   const planDays = buildPlanDays(config.planDays, input.planDaysProblem);
+  // One flag drives all three of the panel's responses — the confirmation, the
+  // dial's wording, and which cap the arithmetic may use. Only an explicit
+  // `false` withdraws the cap, the same test {@link confirmedPlanLimit} makes.
+  const capUnconfirmed = config.planCapConfirmed === false;
+  const planCapPrompt = buildPlanCapPrompt(capUnconfirmed);
+  // The cap the panel may actually measure against. A sync that brought back a
+  // different plan leaves the stored one unbelievable, and an unbelievable cap
+  // reads as no cap: the dial and the share go, the tier 1 pace stays.
+  const cap = confirmedPlanLimit(config);
 
   if (snapshot === undefined) {
     return emptyModel(
@@ -770,17 +840,13 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       // No snapshot means no router counter to carry the anchor forward with,
       // and the pace is measured on what is left *now*.
       null,
+      planCapPrompt,
     );
   }
 
   const { month, traffic, status, carrier } = snapshot;
   // The same derivation the menu bar reads, so the two cannot disagree.
-  const allowance = readPlanUsage(
-    config.allowanceAnchor,
-    month,
-    config.planLimitBytes,
-    clock,
-  );
+  const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
 
   return {
     // Download and upload stay the router's own counters: they are the evidence
@@ -795,8 +861,9 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
         : formatBytes(allowance.usedBytes),
     progress: buildDial(
       allowance,
-      config.planLimitBytes,
+      cap,
       config.warnThresholdPercent,
+      capUnconfirmed,
     ),
     downloadRate: formatRate(traffic.downloadRateBps),
     uploadRate: formatRate(traffic.uploadRateBps),
@@ -814,11 +881,12 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     allowance: buildAllowance(allowance, now),
     planLimit,
     planDays,
+    planCapPrompt,
     pace: buildPace(
       readPace({
         anchor: config.allowanceAnchor,
         month,
-        planLimitBytes: config.planLimitBytes,
+        planLimitBytes: cap,
         planDays: config.planDays,
         clock,
       }),

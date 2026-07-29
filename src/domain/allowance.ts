@@ -205,6 +205,54 @@ export function isAnchorStale(
   return age > staleAfterMinutes * MILLISECONDS_PER_MINUTE;
 }
 
+/**
+ * Whether two dates are both stated and the first falls after the second. A
+ * date the carrier never gave cannot have moved, so a null on either side is
+ * simply "not later" rather than a comparison to guess at.
+ */
+function movedLater(next: Date | null, previous: Date | null): boolean {
+  if (next === null || previous === null) return false;
+
+  return next.getTime() > previous.getTime();
+}
+
+/**
+ * Whether a freshly synced anchor belongs to a different plan from the one it
+ * replaces — the question that decides whether the typed-in cap can still be
+ * believed.
+ *
+ * A sync refreshes everything the carrier states, so nothing it writes needs
+ * resetting. What it cannot refresh is the cap the user typed, and a cap left
+ * over from the previous plan is a *silent* fault: `readAllowanceNow` computes
+ * `usedBytes` as `max(0, cap − remaining)`, so a 50 Go cap against a 150 Go
+ * top-up clamps consumption to zero and the dial reads 0% indefinitely with
+ * nothing on screen suggesting why.
+ *
+ * Three signs, any one of which is enough:
+ *
+ * - the carrier renamed the offer;
+ * - the expiry moved later, which only a new period can do;
+ * - the remaining volume passed the configured cap, which catches a top-up the
+ *   carrier labelled identically and dated the same way.
+ *
+ * The last is gated on a cap being configured at all: with none there is
+ * nothing for a larger remainder to contradict. A first-ever sync replaces no
+ * anchor and so contradicts nothing either.
+ */
+export function isNewPlan(
+  anchor: AllowanceAnchor,
+  previous: AllowanceAnchor | null | undefined,
+  planLimitBytes: number | null,
+): boolean {
+  if (previous === null || previous === undefined) return false;
+
+  return (
+    anchor.planLabel !== previous.planLabel ||
+    movedLater(anchor.expiresAt, previous.expiresAt) ||
+    (planLimitBytes !== null && anchor.remainingBytes > planLimitBytes)
+  );
+}
+
 /** Record one USSD reading against the router's counter at this instant. */
 export function anchorFrom(
   allowance: Allowance,

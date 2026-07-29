@@ -212,8 +212,12 @@ describe("buildPopoverModel — a live reading", () => {
     );
 
     for (const leaf of leaves(Object.fromEntries(displayed))) {
+      // Null is a whole section being absent — the pace row, the new-plan
+      // confirmation — rather than a figure the renderer would have to format.
       const control =
-        leaf === model.progress.sweep || leaf === model.pace?.tier;
+        leaf === null ||
+        leaf === model.progress.sweep ||
+        leaf === model.pace?.tier;
 
       expect(
         control || typeof leaf === "string" || typeof leaf === "boolean",

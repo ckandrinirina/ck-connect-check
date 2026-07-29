@@ -23,10 +23,14 @@
  * whole sequence be tested without either.
  */
 
+import { anchorFrom, isNewPlan } from "../domain/allowance.js";
+import { systemClock, type Clock } from "../domain/quota.js";
+import type { AppConfig } from "../config/defaults.js";
 import type { AllowanceResult, UssdFailure } from "../hilink/client.js";
 import type {
   Allowance,
   LoginResult,
+  MonthStatistics,
   RouterCredential,
 } from "../hilink/types.js";
 import type { CredentialSaveResult } from "./credentials.js";
@@ -105,6 +109,36 @@ export interface AllowanceSync {
   startAutomatic(): Promise<boolean>;
   /** The password prompt's submit: store the credential, then press Sync. */
   submitPassword(credential: RouterCredential): Promise<void>;
+}
+
+/**
+ * Writes down the anchor a successful dialogue produced, and decides on the way
+ * past whether the typed-in cap still describes the plan.
+ *
+ * The two belong together because the comparison only exists here: `previous`
+ * is the anchor being replaced, so the one instant it can be read is the one in
+ * which it is overwritten. A new plan clears {@link AppConfig.planCapConfirmed}
+ * and nothing else — the panel then keeps the tier 1 reading, which needs no
+ * cap, and drops the dial and the band rather than drawing either from a figure
+ * the carrier has contradicted.
+ *
+ * Only ever clears the flag. Setting it back is a decision the user makes, in
+ * `main.ts`, by confirming or retyping the cap.
+ */
+export function recordAnchor(
+  config: AppConfig,
+  allowance: Allowance,
+  month: MonthStatistics,
+  clock: Clock = systemClock,
+): void {
+  const previous = config.allowanceAnchor;
+  const anchor = anchorFrom(allowance, month, clock);
+
+  config.allowanceAnchor = anchor;
+
+  if (isNewPlan(anchor, previous, config.planLimitBytes)) {
+    config.planCapConfirmed = false;
+  }
 }
 
 /** Why a credential could not be stored, in this module's vocabulary. */

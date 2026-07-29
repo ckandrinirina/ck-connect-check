@@ -246,6 +246,38 @@ function readPlanDays(raw: Record<string, unknown>): number | null {
 }
 
 /**
+ * Whether the stored cap still describes the plan the carrier is reporting.
+ *
+ * Falls back to `true` rather than throwing, and for a reason opposite to
+ * {@link readPlanDays}': the safe direction here is *not* asking. Anything but
+ * a boolean is a file nobody wrote deliberately, and a panel demanding
+ * confirmation of a cap the user never changed is the worse of the two
+ * failures. It also means every config written before this field existed loads
+ * unflagged.
+ */
+function readPlanCapConfirmed(raw: Record<string, unknown>): boolean {
+  return typeof raw.planCapConfirmed === "boolean"
+    ? raw.planCapConfirmed
+    : true;
+}
+
+/**
+ * The cap the app may actually measure against: the stored one, or none at all
+ * while a sync has left it unconfirmed.
+ *
+ * The single rule the dial and the menu bar title both read, so neither can
+ * quote a share the other has withdrawn. An unconfirmed cap reads as no cap,
+ * which every consumer already knows how to render — the tier 1 pace stays,
+ * the dial and the share do not.
+ */
+export function confirmedPlanLimit(config: AppConfig): number | null {
+  // Only an explicit `false` withdraws the cap, mirroring
+  // {@link readPlanCapConfirmed}'s own fallback: a config assembled without the
+  // field is one written before it existed, not one a sync has contradicted.
+  return config.planCapConfirmed === false ? null : config.planLimitBytes;
+}
+
+/**
  * Why a typed plan length could not be used. A token, not a sentence — the
  * words the user reads are decided in `main/view-model.ts`, beside every other
  * string the panel shows.
@@ -453,6 +485,7 @@ export function parseConfig(raw: unknown): AppConfig {
     warnThresholdPercent: readWarnThreshold(record),
     planLimitBytes: readPlanLimit(record),
     planDays: readPlanDays(record),
+    planCapConfirmed: readPlanCapConfirmed(record),
     syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
