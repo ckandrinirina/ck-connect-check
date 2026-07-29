@@ -29,6 +29,7 @@ import {
 import { isRouterRefusal } from "../hilink/ussd.js";
 import {
   planLimitInGigaoctets,
+  type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
@@ -47,6 +48,9 @@ const MILLISECONDS_PER_SECOND = 1_000;
 
 /** The unit the plan-size field is read in, spelled once. */
 const PLAN_LIMIT_UNIT = "Go";
+
+/** The plan-length field's unit, spelled once here rather than in the page. */
+const PLAN_DAYS_UNIT = "days";
 
 /** A reading that succeeded, remembered so an unreachable router still has something to show. */
 export interface UsageReading {
@@ -187,6 +191,24 @@ export interface PopoverPlanLimit {
   description: string;
 }
 
+/**
+ * The plan-length field, in the same shape as {@link PopoverPlanLimit}. The two
+ * sit beside each other on the panel because they are the same kind of thing:
+ * the only two figures the carrier never states, so the user has to.
+ */
+export interface PopoverPlanDays {
+  /** The stored length as bare digits for the input, e.g. `"30"`. Empty when unset. */
+  value: string;
+  /** The unit the field is read in — spelled here, never in the renderer. */
+  unit: string;
+  /** True while no length is stored, so the field can be shown as fillable. */
+  needsValue: boolean;
+  /** Why the last entry was refused, as a sentence. Empty when it was not. */
+  error: string;
+  /** The field's accessible name. */
+  description: string;
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   monthDownload: string;
@@ -225,6 +247,8 @@ export interface PopoverModel {
   allowance: PopoverAllowance;
   /** The plan-size field, and whatever the last entry has to answer for. */
   planLimit: PopoverPlanLimit;
+  /** The plan-length field, beside it, on the same terms. */
+  planDays: PopoverPlanDays;
   /** The Sync button's state, and whatever the last press has to say. */
   sync: PopoverSync;
 }
@@ -244,6 +268,8 @@ export interface PopoverInput {
   sync?: SyncState;
   /** Why the last typed plan size was refused, if one was. */
   planLimitProblem?: PlanLimitRefusal | undefined;
+  /** Why the last typed plan length was refused, if one was. */
+  planDaysProblem?: PlanDaysRefusal | undefined;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -485,6 +511,32 @@ function buildPlanLimit(
   };
 }
 
+/**
+ * One sentence per refusal, on the same terms as the cap's. A fraction gets its
+ * own line rather than being folded into "not a number": the user typed a
+ * perfectly good number, and the thing to say is which kind is wanted.
+ */
+const PLAN_DAYS_ERROR_TEXT: Record<PlanDaysRefusal, string> = {
+  blank: "Enter how many days your plan runs for.",
+  "not-a-number": "That is not a number — enter the length in days, like 30.",
+  "not-positive": "A plan has to last at least a day.",
+  "not-whole": "Enter whole days, like 30.",
+};
+
+/** The plan-length field for one stored period, and the last entry's complaint. */
+function buildPlanDays(
+  days: number | null,
+  problem: PlanDaysRefusal | undefined,
+): PopoverPlanDays {
+  return {
+    value: days === null ? "" : String(days),
+    unit: PLAN_DAYS_UNIT,
+    needsValue: days === null,
+    error: problem === undefined ? "" : PLAN_DAYS_ERROR_TEXT[problem],
+    description: "How many days your plan runs for",
+  };
+}
+
 function buildHistory(samples: readonly RateSample[]): PopoverHistory {
   return {
     download: samples.map((sample) => sample.downloadBytesPerSecond),
@@ -500,6 +552,7 @@ function emptyModel(
   history: PopoverHistory,
   sync: PopoverSync,
   planLimit: PopoverPlanLimit,
+  planDays: PopoverPlanDays,
 ): PopoverModel {
   return {
     monthDownload: NO_VALUE,
@@ -520,6 +573,7 @@ function emptyModel(
     history,
     allowance: noAllowance(),
     planLimit,
+    planDays,
     sync,
   };
 }
@@ -591,6 +645,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     config.planLimitBytes,
     input.planLimitProblem,
   );
+  const planDays = buildPlanDays(config.planDays, input.planDaysProblem);
 
   if (snapshot === undefined) {
     return emptyModel(
@@ -600,6 +655,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       // Nothing has been read, so nothing can be stale: no attention to call.
       buildSync(syncState, false),
       planLimit,
+      planDays,
     );
   }
 
@@ -643,6 +699,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     history,
     allowance: buildAllowance(allowance, now),
     planLimit,
+    planDays,
     // An anchor that can no longer carry the arithmetic is the one thing the
     // button has to call out: the figure on screen is the last honest one.
     sync: buildSync(syncState, allowance !== null && !allowance.trustworthy),

@@ -928,6 +928,108 @@ describe("startMenuBarApp — setting the plan limit", () => {
   });
 });
 
+describe("startMenuBarApp — setting the plan length", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** What the config file on disk holds now. */
+  function storedDays(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as { planDays?: unknown }
+    ).planDays;
+  }
+
+  /** Launches against `configPath` and lets the first poll settle. */
+  async function launched(configPath: string): Promise<{
+    app: MenuBarApp;
+    popover: RecordingPopover;
+  }> {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { app, popover };
+  }
+
+  it("stores a typed plan length as whole days", async () => {
+    const configPath = configHolding(null);
+    const { app } = await launched(configPath);
+
+    app.setPlanDays("30");
+
+    expect(storedDays(configPath)).toBe(30);
+
+    app.stop();
+  });
+
+  it("writes nothing and says why when the entry cannot be read", async () => {
+    const configPath = configHolding(null);
+    const { app, popover } = await launched(configPath);
+
+    for (const entry of ["", "abc", "0", "-5", "30.5"]) {
+      app.setPlanDays(entry);
+
+      // A blank submission must leave the stored value exactly as it was.
+      expect(storedDays(configPath), entry).toBeNull();
+      expect(latest(popover).planDays.error, entry).not.toBe("");
+    }
+
+    app.stop();
+  });
+
+  it("leaves a stored length untouched when a later entry is refused", async () => {
+    const configPath = configHolding(null);
+    const { app } = await launched(configPath);
+
+    app.setPlanDays("30");
+    app.setPlanDays("");
+
+    expect(storedDays(configPath)).toBe(30);
+
+    app.stop();
+  });
+
+  it("clears the complaint once a good value follows a bad one", async () => {
+    const { app, popover } = await launched(configHolding(null));
+
+    app.setPlanDays("nonsense");
+    app.setPlanDays("30");
+
+    expect(latest(popover).planDays.error).toBe("");
+
+    app.stop();
+  });
+
+  it("keeps the length across a restart", async () => {
+    const configPath = configHolding(null);
+    const first = await launched(configPath);
+
+    first.app.setPlanDays("30");
+    first.app.stop();
+
+    const second = await launched(configPath);
+
+    expect(latest(second.popover).planDays.value).toBe("30");
+
+    second.app.stop();
+  });
+});
+
 describe("startMenuBarApp — syncing by itself", () => {
   beforeEach(() => {
     vi.useFakeTimers();

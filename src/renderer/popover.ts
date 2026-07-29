@@ -38,6 +38,8 @@ export interface PopoverBridge {
    * not read it, convert it or judge it — that is all decided the other side.
    */
   setPlanLimit(value: string): void;
+  /** Hand the plan length over on exactly the same terms. */
+  setPlanDays(value: string): void;
 }
 
 declare global {
@@ -62,6 +64,8 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     connectedDevices: model.connectedDevices,
     planLimitUnit: model.planLimit.unit,
     planLimitError: model.planLimit.error,
+    planDaysUnit: model.planDays.unit,
+    planDaysError: model.planDays.error,
     percent: model.progress.label,
     prompt: model.progress.prompt,
     allowanceRemaining: model.allowance.remaining,
@@ -285,12 +289,26 @@ function fieldValue(selector: string): string {
   return document.querySelector<HTMLInputElement>(selector)?.value ?? "";
 }
 
+/*
+ * Both form lookups name the element type as well as the attribute. The model's
+ * two state flags land on `<html>` as `data-plan-limit` and `data-plan-days`,
+ * so a bare attribute selector matches the root element first and the form
+ * never gets its listener — the submit only arrived at all because it bubbles.
+ */
 function planLimitForm(): HTMLFormElement | null {
-  return document.querySelector<HTMLFormElement>("[data-plan-limit]");
+  return document.querySelector<HTMLFormElement>("form[data-plan-limit]");
 }
 
 function planLimitInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>("[data-plan-limit-input]");
+}
+
+function planDaysForm(): HTMLFormElement | null {
+  return document.querySelector<HTMLFormElement>("form[data-plan-days]");
+}
+
+function planDaysInput(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>("[data-plan-days-input]");
 }
 
 /**
@@ -355,6 +373,18 @@ function bindControls(): void {
       window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
     });
   }
+
+  const planDays = planDaysForm();
+
+  if (planDays !== null && planDays.dataset["bound"] !== "true") {
+    planDays.dataset["bound"] = "true";
+    planDays.addEventListener("submit", (event) => {
+      // The page must never navigate: it is the app, not a document.
+      event.preventDefault();
+
+      window.popoverBridge?.setPlanDays(fieldValue("[data-plan-days-input]"));
+    });
+  }
 }
 
 /**
@@ -374,6 +404,21 @@ function applyPlanLimit(model: PopoverModel): void {
   input.value = model.planLimit.value;
   input.setAttribute("aria-label", model.planLimit.description);
   document.documentElement.dataset["planLimit"] = model.planLimit.needsValue
+    ? "unset"
+    : "set";
+}
+
+/** The same, for the plan-length field beside it. */
+function applyPlanDays(model: PopoverModel): void {
+  const input = planDaysInput();
+
+  if (input === null || document.activeElement === input) {
+    return;
+  }
+
+  input.value = model.planDays.value;
+  input.setAttribute("aria-label", model.planDays.description);
+  document.documentElement.dataset["planDays"] = model.planDays.needsValue
     ? "unset"
     : "set";
 }
@@ -445,6 +490,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
 
   applySignal(model);
   applyPlanLimit(model);
+  applyPlanDays(model);
   applySync(model);
 };
 

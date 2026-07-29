@@ -227,6 +227,68 @@ function readPlanLimit(raw: Record<string, unknown>): number | null {
 }
 
 /**
+ * How long the plan runs for, in whole days.
+ *
+ * Falls back to `null` rather than throwing, for the reason
+ * {@link readSyncStaleAfter} does: an unusable period is the same as no period,
+ * the pace band is already defined to be absent without one, and a typo here
+ * must not cost the stored allowance anchor. Zero, a negative, and a fraction of
+ * a day are all periods nothing can be divided by.
+ */
+function readPlanDays(raw: Record<string, unknown>): number | null {
+  const days = raw.planDays;
+
+  if (typeof days !== "number" || !Number.isInteger(days) || days <= 0) {
+    return null;
+  }
+
+  return days;
+}
+
+/**
+ * Why a typed plan length could not be used. A token, not a sentence — the
+ * words the user reads are decided in `main/view-model.ts`, beside every other
+ * string the panel shows.
+ */
+export type PlanDaysRefusal =
+  "blank" | "not-a-number" | "not-positive" | "not-whole";
+
+export type PlanDaysEntry =
+  { ok: true; days: number } | { ok: false; reason: PlanDaysRefusal };
+
+/**
+ * A plan length as the user typed it into the panel — `"30"`. Read here, at the
+ * boundary, so the renderer sends the characters and works nothing out.
+ *
+ * A fraction is refused rather than rounded: the carrier sells whole days, and
+ * a rounded period would silently disagree with the expiry date the pace is
+ * measured back from.
+ */
+export function readPlanDaysEntry(text: string): PlanDaysEntry {
+  const trimmed = text.trim();
+
+  if (trimmed === "") {
+    return { ok: false, reason: "blank" };
+  }
+
+  const value = Number(trimmed);
+
+  if (!Number.isFinite(value)) {
+    return { ok: false, reason: "not-a-number" };
+  }
+
+  if (value <= 0) {
+    return { ok: false, reason: "not-positive" };
+  }
+
+  if (!Number.isInteger(value)) {
+    return { ok: false, reason: "not-whole" };
+  }
+
+  return { ok: true, days: value };
+}
+
+/**
  * How stale a carrier reading may get before the app re-anchors it.
  *
  * The only setting that falls back rather than throwing. Every other bounded
@@ -390,6 +452,7 @@ export function parseConfig(raw: unknown): AppConfig {
     ),
     warnThresholdPercent: readWarnThreshold(record),
     planLimitBytes: readPlanLimit(record),
+    planDays: readPlanDays(record),
     syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),

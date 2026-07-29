@@ -17,6 +17,7 @@ import {
   loadConfig,
   parseConfig,
   planLimitInGigaoctets,
+  readPlanDaysEntry,
   readPlanLimitEntry,
   saveConfig,
 } from "../../src/config/config.js";
@@ -59,6 +60,7 @@ describe("defaults", () => {
       activePollIntervalSeconds: 2,
       warnThresholdPercent: 90,
       planLimitBytes: null,
+      planDays: null,
       syncStaleAfterMinutes: 30,
     });
   });
@@ -97,6 +99,7 @@ describe("save and load round-trip", () => {
       activePollIntervalSeconds: 3,
       warnThresholdPercent: 75,
       planLimitBytes: gigabytesToBytes(20),
+      planDays: 30,
       syncStaleAfterMinutes: 45,
     };
 
@@ -312,6 +315,83 @@ describe("plan limit validation", () => {
     } catch (error) {
       expect((error as ConfigValidationError).field).toBe("planLimitBytes");
     }
+  });
+});
+
+describe("planDays — how long the plan lasts", () => {
+  it("defaults to null rather than inventing a 30-day period", () => {
+    expect(defaultConfig().planDays).toBeNull();
+    expect(parseConfig({}).planDays).toBeNull();
+  });
+
+  it("round-trips a stored plan length", () => {
+    saveConfig(path(), { ...defaultConfig(), planDays: 30 });
+
+    expect(loadConfig(path()).config.planDays).toBe(30);
+  });
+
+  it("round-trips an unset plan length", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(loadConfig(path()).config.planDays).toBeNull();
+  });
+
+  it.each([0, -7, 30.5, Number.NaN])(
+    "reads %s as null rather than as a period",
+    (days) => {
+      // A period nobody can divide by is the same as no period at all, and the
+      // pace reading is defined to be absent rather than wrong.
+      expect(parseConfig({ planDays: days }).planDays).toBeNull();
+    },
+  );
+
+  it("keeps the rest of the file when the stored length is unusable", () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({ host: "10.0.0.1", planDays: 0 }),
+      "utf8",
+    );
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.config.planDays).toBeNull();
+    expect(loaded.config.host).toBe("10.0.0.1");
+    expect(loaded.problem).toBeUndefined();
+  });
+});
+
+describe("readPlanDaysEntry — a plan length as the user typed it", () => {
+  it("reads whole days", () => {
+    expect(readPlanDaysEntry("30")).toEqual({ ok: true, days: 30 });
+    expect(readPlanDaysEntry(" 7 ")).toEqual({ ok: true, days: 7 });
+  });
+
+  it("refuses a blank entry, naming the reason", () => {
+    expect(readPlanDaysEntry("")).toEqual({ ok: false, reason: "blank" });
+    expect(readPlanDaysEntry("   ")).toEqual({ ok: false, reason: "blank" });
+  });
+
+  it("refuses something that is not a number", () => {
+    expect(readPlanDaysEntry("a month")).toEqual({
+      ok: false,
+      reason: "not-a-number",
+    });
+  });
+
+  it.each(["0", "-7"])("refuses %s, which is not a period", (typed) => {
+    expect(readPlanDaysEntry(typed)).toEqual({
+      ok: false,
+      reason: "not-positive",
+    });
+  });
+
+  it("refuses a fraction of a day", () => {
+    // The carrier sells whole days, and half a day of period would put a
+    // fractional edge on every band boundary for no gain.
+    expect(readPlanDaysEntry("30.5")).toEqual({
+      ok: false,
+      reason: "not-whole",
+    });
   });
 });
 

@@ -10,7 +10,10 @@ import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
 import type { SyncFailure, SyncState } from "../../src/main/sync.js";
-import type { PlanLimitRefusal } from "../../src/config/config.js";
+import type {
+  PlanDaysRefusal,
+  PlanLimitRefusal,
+} from "../../src/config/config.js";
 import {
   buildPopoverModel,
   type PopoverModel,
@@ -297,6 +300,75 @@ describe("buildPopoverModel — the plan limit field", () => {
     for (const leaf of leaves(planLimitOf(150_000_000_000))) {
       expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
     }
+  });
+});
+
+describe("buildPopoverModel — the plan length field", () => {
+  function planDaysOf(
+    days: number | null,
+    problem?: PlanDaysRefusal,
+  ): PopoverModel["planDays"] {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...configWith(150_000_000_000, anchorOf(12_000_000_000)),
+        planDays: days,
+      },
+      planDaysProblem: problem,
+      clock,
+    }).planDays;
+  }
+
+  it("carries a stored length as the figure the field shows", () => {
+    expect(planDaysOf(30).value).toBe("30");
+  });
+
+  it("carries an empty field when no length is stored", () => {
+    expect(planDaysOf(null).value).toBe("");
+  });
+
+  it("says which of the two states the field is in", () => {
+    expect(planDaysOf(null).needsValue).toBe(true);
+    expect(planDaysOf(30).needsValue).toBe(false);
+  });
+
+  it("names its unit rather than leaving the renderer to spell it", () => {
+    expect(planDaysOf(30).unit).not.toBe("");
+  });
+
+  it("carries no complaint when the last entry was fine", () => {
+    expect(planDaysOf(30).error).toBe("");
+  });
+
+  it("words each refusal, so the renderer decides no sentences", () => {
+    const worded = (
+      ["blank", "not-a-number", "not-positive", "not-whole"] as const
+    ).map((reason) => planDaysOf(null, reason).error);
+
+    for (const sentence of worded) {
+      expect(sentence).not.toBe("");
+    }
+
+    expect(new Set(worded).size).toBe(4);
+  });
+
+  it("hands the renderer only strings and flags here too", () => {
+    for (const leaf of leaves(planDaysOf(30))) {
+      expect(typeof leaf === "string" || typeof leaf === "boolean").toBe(true);
+    }
+  });
+
+  it("is on the panel before the first reading, like the cap beside it", () => {
+    // Both are typed in, so neither waits on the router to answer.
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: { ...defaultConfig(), planDays: 30 },
+      clock,
+    });
+
+    expect(model.planDays.value).toBe("30");
   });
 });
 

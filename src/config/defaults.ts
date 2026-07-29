@@ -28,6 +28,13 @@ export interface AppConfig {
   /** Monthly quota in bytes, or `null` when the user has not set one. */
   planLimitBytes: number | null;
   /**
+   * How many whole days the plan runs for, or `null` when the user has not
+   * said. Unset rather than defaulted to 30: the carrier states an expiry date
+   * and never a duration, so a period nobody stated would be invented, and the
+   * pace band is defined to be absent rather than drawn over a guess.
+   */
+  planDays: number | null;
+  /**
    * How many minutes a carrier reading may age before the app re-anchors it by
    * itself. Never below one minute — a window of zero would mean every anchor
    * is stale the instant it is written, and dialogues cost a login against a
@@ -103,6 +110,7 @@ export function defaultConfig(): AppConfig {
     activePollIntervalSeconds: DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
     warnThresholdPercent: DEFAULT_WARN_THRESHOLD_PERCENT,
     planLimitBytes: null,
+    planDays: null,
     syncStaleAfterMinutes: DEFAULT_SYNC_STALE_AFTER_MINUTES,
   };
 }

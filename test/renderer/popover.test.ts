@@ -980,6 +980,7 @@ interface FakeBridge {
   sync: ReturnType<typeof vi.fn>;
   savePassword: ReturnType<typeof vi.fn>;
   setPlanLimit: ReturnType<typeof vi.fn>;
+  setPlanDays: ReturnType<typeof vi.fn>;
 }
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
@@ -988,6 +989,7 @@ function stubBridge(): FakeBridge {
     sync: vi.fn(),
     savePassword: vi.fn(),
     setPlanLimit: vi.fn(),
+    setPlanDays: vi.fn(),
   };
 
   window.popoverBridge = bridge;
@@ -1273,7 +1275,7 @@ describe("the plan limit field", () => {
 
   function form(): HTMLFormElement {
     const element =
-      document.querySelector<HTMLFormElement>("[data-plan-limit]");
+      document.querySelector<HTMLFormElement>("form[data-plan-limit]");
 
     if (element === null) {
       throw new Error("the panel has no plan limit field");
@@ -1368,6 +1370,138 @@ describe("the plan limit field", () => {
 
   it("says nothing when there is nothing to complain about", () => {
     expect(textOf("planLimitError")).toBe("");
+  });
+
+  it("is reachable without a mouse and says what it is for", () => {
+    expect(input().tabIndex).toBeGreaterThanOrEqual(0);
+
+    const name =
+      input().getAttribute("aria-label") ??
+      document.querySelector(`label[for="${input().id}"]`)?.textContent ??
+      "";
+
+    expect(name.trim()).not.toBe("");
+  });
+});
+
+describe("the plan length field", () => {
+  let bridge: FakeBridge;
+
+  function form(): HTMLFormElement {
+    const element =
+      document.querySelector<HTMLFormElement>("form[data-plan-days]");
+
+    if (element === null) {
+      throw new Error("the panel has no plan length field");
+    }
+
+    return element;
+  }
+
+  function input(): HTMLInputElement {
+    const element = document.querySelector<HTMLInputElement>(
+      "[data-plan-days-input]",
+    );
+
+    if (element === null) {
+      throw new Error("the plan length field has no input");
+    }
+
+    return element;
+  }
+
+  function modelLasting(days: number | null): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: { ...configWithLimit(150 * GB), planDays: days },
+      clock,
+    });
+  }
+
+  function submit(typed: string): void {
+    input().value = typed;
+    form().dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+  }
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelLasting(null));
+  });
+
+  it("sits beside the cap, the other figure the carrier never states", () => {
+    const capField = document.querySelector("form[data-plan-limit]");
+
+    if (capField === null) {
+      throw new Error("the panel has no plan limit field");
+    }
+
+    expect(form().parentElement).toBe(capField.parentElement);
+  });
+
+  it("sends what was typed, without working out what it means", () => {
+    submit("30");
+
+    expect(bridge.setPlanDays).toHaveBeenCalledWith("30");
+  });
+
+  it("sends a refusable entry too, rather than judging it itself", () => {
+    for (const typed of ["", "abc", "0", "-5", "30.5"]) {
+      bridge.setPlanDays.mockClear();
+      submit(typed);
+
+      expect(bridge.setPlanDays, typed).toHaveBeenCalledWith(typed);
+    }
+  });
+
+  it("never navigates on submit — the page is the app", () => {
+    const event = new window.Event("submit", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    form().dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("shows the stored length so it can be corrected rather than retyped", () => {
+    apply(modelLasting(30));
+
+    expect(input().value).toBe("30");
+  });
+
+  it("leaves the field empty while no length is stored", () => {
+    expect(input().value).toBe("");
+  });
+
+  it("does not overwrite what is being typed when a poll lands", () => {
+    input().focus();
+    input().value = "3";
+
+    apply(modelLasting(30));
+
+    expect(input().value).toBe("3");
+  });
+
+  it("shows the reason an entry was refused", () => {
+    apply(
+      buildPopoverModel({
+        result: { online: true, snapshot: snapshot(10 * GB) },
+        lastReading: null,
+        config: configWithLimit(150 * GB),
+        planDaysProblem: "not-whole",
+        clock,
+      }),
+    );
+
+    expect(textOf("planDaysError")).not.toBe("");
+  });
+
+  it("says nothing when there is nothing to complain about", () => {
+    expect(textOf("planDaysError")).toBe("");
   });
 
   it("is reachable without a mouse and says what it is for", () => {

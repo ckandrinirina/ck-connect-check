@@ -37,7 +37,7 @@
 | T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
 | T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
 | T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
-| T-36 | Ask how long the plan lasts so the pace has a period                    | todo   | M    | T-27             |
+| T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27             |
 | T-37 | Work out whether the connection is being used moderately                | todo   | M    | T-36             |
 | T-38 | Show the pace and its warning on the panel                              | todo   | M    | T-37             |
 | T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28             |
@@ -1704,7 +1704,7 @@ test asserts they stay stated.
 
 ## T-36 Ask how long the plan lasts so the pace has a period
 
-T-36 · status: todo · size: M · needs: T-27 · files: src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, src/main/main.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, test/config/config.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-36 · status: done · size: M · needs: T-27 · files: src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, src/main/main.ts, src/main/popover.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, README.md, test/config/config.test.ts, test/main/view-model.test.ts, test/main/main.test.ts, test/renderer/popover.test.ts
 
 The cap answers "how much"; nothing yet answers "over how long". T-27 put a cap
 field in the panel and this puts a plan-length field beside it, because the
@@ -1722,22 +1722,43 @@ round-trips rather than defaulting to 30 and quietly inventing a period.
 
 ### Acceptance
 
-- [ ] `config.ts` round-trips `planDays` as `number | null` and an absent key loads as `null`
-- [ ] a `planDays` of `0`, a negative number or a non-integer is rejected on load and read as `null`
-- [ ] the popover model exposes `planDays` and an editor flag for the set and unset cases
-- [ ] the panel has a plan-length input next to the cap, and typing `30` in it writes `30` to config through the preload bridge
-- [ ] a blank plan-length submission is rejected and leaves the stored value untouched
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `config.ts` round-trips `planDays` as `number | null` and an absent key loads as `null`
+- [x] a `planDays` of `0`, a negative number or a non-integer is rejected on load and read as `null`
+- [x] the popover model exposes `planDays` and an editor flag for the set and unset cases
+- [x] the panel has a plan-length input next to the cap, and typing `30` in it writes `30` to config through the preload bridge
+- [x] a blank plan-length submission is rejected and leaves the stored value untouched
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above
-- [ ] Add `planDays` to `AppConfig`, its validation on load and its default in `defaults.ts`
-- [ ] Expose it through the view-model with the editor flag
-- [ ] Add the input, its handler and its style beside the cap field
-- [ ] Route the setter through `preload.cts` alongside the existing cap setter
-- [ ] Manual: type `30` in the panel and confirm `config.json` holds it after a restart
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing tests for every criterion above
+- [x] Add `planDays` to `AppConfig`, its validation on load and its default in `defaults.ts`
+- [x] Expose it through the view-model with the editor flag
+- [x] Add the input, its handler and its style beside the cap field
+- [x] Route the setter through `preload.cts` alongside the existing cap setter
+- [x] Manual: type `30` in the panel and confirm `config.json` holds it after a restart
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The form lookups in `src/renderer/popover.ts` are element-qualified —
+`form[data-plan-limit]`, `form[data-plan-days]` — because `applyPlanLimit` and
+`applyPlanDays` write those same attribute names onto the `<html>` root as state
+flags. A bare attribute selector matches the root element first, so the listener
+was being hung off `<html>` rather than off the form. T-27's cap only worked
+because a submit event bubbles up to the root; adding a second form broke it,
+since both then contended for the same `data-bound` marker on one element. The
+cap's lookup was corrected in the same pass.
+
+`:root[data-plan-limit="unset"]`'s accent rule is now scoped to
+`[data-plan-limit-input]` for the same reason: both fields share the
+`.plan-limit-input` class, so the unscoped rule outlined the length field too.
+The length is a refinement rather than a precondition, so it is deliberately not
+flagged when blank.
+
+`src/main/popover.ts`, `test/main/main.test.ts` and `README.md` joined the
+`files:` list — the IPC channel, the wiring test, and the settings row
+`readme.test.ts` derives from `AppConfig`.
 
 ## T-37 Work out whether the connection is being used moderately
 

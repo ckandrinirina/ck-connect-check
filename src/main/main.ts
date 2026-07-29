@@ -12,8 +12,10 @@ import { Menu, Tray, app } from "electron";
 
 import {
   loadConfig,
+  readPlanDaysEntry,
   readPlanLimitEntry,
   saveConfig,
+  type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
 import { defaultConfigPath } from "../config/defaults.js";
@@ -65,6 +67,8 @@ export interface MenuBarApp {
    * can drive it without an Electron window.
    */
   setPlanLimit(value: string): void;
+  /** Stores a plan length the same way, and for the same reason. */
+  setPlanDays(value: string): void;
   /** Stops polling and releases the tray item. */
   stop(): void;
 }
@@ -110,6 +114,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       onSetPlanLimit: (value) => {
         setPlanLimit(value);
       },
+      onSetPlanDays: (value) => {
+        setPlanDays(value);
+      },
     });
 
   // The poller only publishes a title, so the popover's figures are gathered
@@ -130,6 +137,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // with the complaint still on it.
   let planLimitProblem: PlanLimitRefusal | undefined;
 
+  /** The same, for the plan length typed beside it. */
+  let planDaysProblem: PlanDaysRefusal | undefined;
+
   function refreshPopover(): void {
     popover.setModel(
       buildPopoverModel({
@@ -139,6 +149,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         history: history.samples(),
         sync: syncState,
         planLimitProblem,
+        planDaysProblem,
       }),
     );
   }
@@ -169,6 +180,35 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       // The cap still governs the dial for this run; losing it on quit is
       // better than refusing the setting outright.
       console.warn(`could not record the plan limit: ${String(error)}`);
+    }
+
+    refreshPopover();
+  }
+
+  /**
+   * Stores the plan length the user typed, or says why it could not be.
+   *
+   * A refused entry writes nothing at all — a blank submission leaves whatever
+   * was already stored exactly as it was, rather than clearing the period out
+   * from under the pace reading.
+   */
+  function setPlanDays(value: string): void {
+    const entry = readPlanDaysEntry(value);
+
+    if (!entry.ok) {
+      planDaysProblem = entry.reason;
+      refreshPopover();
+
+      return;
+    }
+
+    planDaysProblem = undefined;
+    config.planDays = entry.days;
+
+    try {
+      saveConfig(configPath, config);
+    } catch (error) {
+      console.warn(`could not record the plan length: ${String(error)}`);
     }
 
     refreshPopover();
@@ -323,6 +363,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   return {
     sync: () => sync.start(),
     setPlanLimit,
+    setPlanDays,
     stop() {
       poller.stop();
       popover.destroy();

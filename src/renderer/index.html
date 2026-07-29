@@ -112,6 +112,32 @@
           data-field="planLimitError"
           role="status"
         ></p>
+
+        <!--
+          The other figure the carrier never states. It sits beside the cap
+          because the two are the same kind of thing, and because the pace band
+          needs both — an expiry date is not a duration.
+        -->
+        <form class="plan-limit" data-plan-days>
+          <label class="plan-limit-label" for="plan-days">Lasts</label>
+          <input
+            id="plan-days"
+            class="plan-limit-input"
+            data-plan-days-input
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="30"
+          />
+          <span class="plan-limit-unit" data-field="planDaysUnit">days</span>
+          <button class="plan-limit-submit" type="submit">Set</button>
+        </form>
+        <p
+          class="plan-limit-error"
+          data-field="planDaysError"
+          role="status"
+        ></p>
       </div>
     </section>
 

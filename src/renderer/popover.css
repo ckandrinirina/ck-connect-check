@@ -266,7 +266,11 @@ body {
 
 /* Nothing is measurable until this is filled in, so an empty field is the one
    thing on the panel asking to be touched. */
-:root[data-plan-limit="unset"] .plan-limit-input {
+/* Scoped to the cap's own input rather than to the shared class: the plan
+   length beside it wears the same class, and it is a refinement rather than a
+   precondition — the panel reads correctly with it blank, so it is not marked
+   as the thing to fill in. */
+:root[data-plan-limit="unset"] [data-plan-limit-input] {
   border-color: var(--accent);
 }
 
