@@ -625,20 +625,18 @@ describe("the carrier's last valid day, read end to end from its own reply", () 
     `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<content>NET MONTH 200 000, il vous reste 133.51 Go utilisable a toute heure jusqu'au 25/08/2026.</content>\n<date></date>\n</response>`,
   );
 
-  function anchoredOnTheCarrierReply(): AllowanceAnchor {
-    const stated = parseAllowance(CARRIER_REPLY);
-    if (stated === null) {
-      throw new Error("the recorded carrier reply must state an allowance");
-    }
-
-    return anchorFrom(stated, month(ANCHORED_COUNTER), {
-      now: () => new Date(2026, 6, 27, 18, 0, 0),
-    });
+  const stated = parseAllowance(CARRIER_REPLY);
+  if (stated === null) {
+    throw new Error("the recorded carrier reply must state an allowance");
   }
+
+  const anchored = anchorFrom(stated, month(ANCHORED_COUNTER), {
+    now: () => new Date(2026, 6, 27, 18, 0, 0),
+  });
 
   function readAt(now: Date) {
     return readAllowanceNow({
-      anchor: anchoredOnTheCarrierReply(),
+      anchor: anchored,
       month: month(ANCHORED_COUNTER),
       clock: { now: () => now },
     });

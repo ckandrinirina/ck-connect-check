@@ -369,26 +369,24 @@ describe("readPace — the case reported from the router itself", () => {
   const PLAN_DAYS = 30;
   const OBSERVED_AT = new Date(2026, 6, 29, 16, 33, 0);
 
-  function statedByTheCarrier() {
-    const parsed = parseAllowance(
-      parseUssdContent(
-        `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<content>${CARRIER_REPLY}</content>\n<date></date>\n</response>`,
-      ),
-    );
-    if (parsed === null) {
-      throw new Error("the recorded carrier reply must state an allowance");
-    }
-
-    return parsed;
+  const stated = parseAllowance(
+    parseUssdContent(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<content>${CARRIER_REPLY}</content>\n<date></date>\n</response>`,
+    ),
+  );
+  if (stated === null) {
+    throw new Error("the recorded carrier reply must state an allowance");
   }
+
+  const anchoredOnTheReply = anchor({
+    remainingBytes: stated.remainingBytes,
+    expiresAt: stated.expiresAt,
+    syncedAt: new Date(2026, 6, 29, 16, 0, 0),
+  });
 
   function readingAt(now: Date) {
     return readPace({
-      anchor: anchor({
-        remainingBytes: statedByTheCarrier().remainingBytes,
-        expiresAt: statedByTheCarrier().expiresAt,
-        syncedAt: new Date(2026, 6, 29, 16, 0, 0),
-      }),
+      anchor: anchoredOnTheReply,
       month: month(ANCHORED_COUNTER),
       planLimitBytes: PLAN_LIMIT,
       planDays: PLAN_DAYS,

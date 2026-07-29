@@ -148,12 +148,10 @@ describe("parseAllowance", () => {
   });
 
   it("returns rather than throws on a reply whose date is unreadable", () => {
-    expect(() =>
-      parseAllowance(reply("X, il vous reste 2 Go jusqu'au //.")),
-    ).not.toThrow();
-    expect(
-      parseAllowance(reply("X, il vous reste 2 Go jusqu'au //."))?.expiresAt,
-    ).toBeNull();
+    const unreadable = reply("X, il vous reste 2 Go jusqu'au //.");
+
+    expect(() => parseAllowance(unreadable)).not.toThrow();
+    expect(parseAllowance(unreadable)?.expiresAt).toBeNull();
   });
 
   it("reads the offer name as the plan label", () => {

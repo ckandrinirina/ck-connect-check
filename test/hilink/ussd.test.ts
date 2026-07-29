@@ -264,9 +264,10 @@ describe("RouterClient.readAllowance over the recorded fixtures", () => {
     }
     expect(result.allowance.remainingBytes).toBe(145_835_900_000);
     expect(result.allowance.planLabel).toBe("NET MONTH 200 000");
-    expect(result.allowance.expiresAt?.getDate()).toBe(25);
-    expect((result.allowance.expiresAt?.getMonth() ?? -1) + 1).toBe(8);
-    expect(result.allowance.expiresAt?.getFullYear()).toBe(2026);
+    // The fixture says "jusqu'au 25/08/2026", and the plan is valid through
+    // that whole day: the instant it stops being valid is the midnight closing
+    // it, which is the midnight opening the 26th.
+    expect(result.allowance.expiresAt).toEqual(new Date(2026, 7, 26));
   });
 
   it("sends #359# and then the three recorded menu digits, in order", async () => {
