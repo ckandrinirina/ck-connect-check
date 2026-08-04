@@ -57,6 +57,19 @@ const electron = vi.hoisted(() => ({
   trayImages: [] as unknown[],
 }));
 
+/**
+ * This machine's real interfaces are never read here.
+ *
+ * `main.ts` falls back to `networkInterfaces()` for the self-block guard when no
+ * `localMacs` is injected, and a test whose verdict moved with whatever adapters
+ * the host happened to have up would be no test at all. Everything else in
+ * `node:os` — `tmpdir`, which the config fixtures use — stays exactly as it is.
+ */
+vi.mock("node:os", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:os")>()),
+  networkInterfaces: (): Record<string, undefined> => ({}),
+}));
+
 vi.mock("electron", () => {
   class Tray {
     setTitle = electron.setTitle;
@@ -1904,6 +1917,7 @@ describe("startMenuBarApp — the device list behind that window", () => {
       popover: recordingPopover(),
       devices,
       hosts: countingHosts(),
+      localMacs: () => [],
     });
 
     clickDevicesMenuItem();
@@ -1922,6 +1936,9 @@ describe("startMenuBarApp — the device list behind that window", () => {
           // T-68 is what gives the poll a filter to pass in.
           blocked: false,
           present: true,
+          // No interface of this machine is in the list, so every row keeps
+          // its control — T-69's guard has nothing to match here.
+          local: false,
         },
       ],
     });

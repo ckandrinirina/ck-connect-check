@@ -124,6 +124,13 @@ export interface DeviceRow {
   blocked: boolean;
   /** Whether the router reports it as associated right now. */
   present: boolean;
+  /**
+   * Whether this row is the Mac the app is running on, decided by MAC against
+   * the local interfaces. The page withholds the block control on a row that
+   * says so: blocking this machine severs the connection the undo would have to
+   * travel over, and no confirmation dialog makes that reasonable to offer.
+   */
+  local: boolean;
 }
 
 /**
@@ -154,6 +161,7 @@ function rowFor(listed: ListedDevice): DeviceRow {
     connectedFor: listed.present ? deviceAssociatedFor(device) : "",
     blocked: listed.blocked,
     present: listed.present,
+    local: listed.local,
   };
 }
 
@@ -169,10 +177,15 @@ function rowFor(listed: ListedDevice): DeviceRow {
  * only honest assumption before one has been read: reading it needs the stored
  * password and a second call, so the window must be able to list devices before
  * anything is known about the filter without claiming any of them are blocked.
+ *
+ * `localMacs` defaults to none for the same kind of reason, and marks no row as
+ * this machine. Reading the interfaces belongs to the process that has them —
+ * this only routes what it is handed.
  */
 export function buildDevicesModel(
   result: HostListResult,
   filter: MacFilter = MAC_FILTER_OFF,
+  localMacs: readonly string[] = [],
 ): DevicesModel {
   if (!result.online) {
     return { state: "offline" };
@@ -180,7 +193,7 @@ export function buildDevicesModel(
 
   return {
     state: "listed",
-    devices: listDevices(result.devices, filter).map(rowFor),
+    devices: listDevices(result.devices, filter, localMacs).map(rowFor),
   };
 }
 

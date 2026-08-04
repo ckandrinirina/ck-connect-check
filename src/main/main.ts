@@ -634,9 +634,15 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   /** The last host list the poll published, so a press can redraw from it. */
   let lastHosts: HostListResult = { online: false, reason: "session" };
 
-  /** Pushes the window whatever the last list and the last filter add up to. */
+  /**
+   * Pushes the window whatever the last list and the last filter add up to,
+   * with this machine's own interfaces named so its row can withhold the block
+   * control. The interfaces are read on each refresh rather than once at start:
+   * an adapter that comes up after launch is one this app must still recognise
+   * as its own before offering to block it.
+   */
   function refreshDevices(): void {
-    devices.setDevices(buildDevicesModel(lastHosts, lastFilter));
+    devices.setDevices(buildDevicesModel(lastHosts, lastFilter, localMacs()));
   }
 
   /**
