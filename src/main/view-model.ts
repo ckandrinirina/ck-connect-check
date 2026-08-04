@@ -1271,15 +1271,64 @@ function portalNotice(portal: PortalStanding): string {
     : "";
 }
 
+/** What the dial says while the page has told it nothing at all. */
+const WAITING_PROMPT = "Waiting for the Orange portal to answer.";
+
+/**
+ * The line under an empty ring on Orange.
+ *
+ * Three absences, and they call for different things: a page that has not
+ * answered will answer by itself, a missing cap will not, and a page that has
+ * answered without a figure is not being waited for at all.
+ *
+ * Silence is a wording too, and it is the right one on that last: the notice
+ * beneath already says what came back and why it was not enough, and the only
+ * thing a second line could add there is the chance of disagreeing with it.
+ */
+function promptWithoutFigure(
+  reading: MonthlyPaceReading | null,
+  answered: boolean,
+): string {
+  if (reading !== null) return SET_LIMIT_PROMPT;
+
+  return answered ? "" : WAITING_PROMPT;
+}
+
+/**
+ * Whether the page has said anything at all, read exactly the way
+ * {@link portalNotice} reads the same standing.
+ *
+ * The two have to agree by construction rather than by care: the notice is the
+ * panel's account of what the page did, and a prompt that decided the question
+ * for itself could end up claiming a wait beneath a line saying the page had
+ * already answered. So the failure is read only where the notice reads it —
+ * behind `live` — and the answered states are the two the wordings name as
+ * answers: a status code came back, or a body did and could not be read.
+ */
+function portalAnswered(portal: PortalStanding): boolean {
+  const { reading, live, failure } = portal;
+
+  if (reading !== null && reading !== undefined) return true;
+  if (live || failure === undefined) return false;
+
+  return failure.state === "unreadable" || failure.reason === "http";
+}
+
 /**
  * The dial on Orange. The share comes from the portal's consumed volume against
  * the typed cap, and there is no anchor anywhere in it: the portal states
  * consumption outright on every fetch, so nothing is carried forward and
  * nothing can go untrustworthy.
+ *
+ * `answered` decides only what the dial says in place of a figure. Waiting is
+ * true before an answer and false after one, and after one the notice beneath
+ * already carries the reason — so the prompt stands down rather than compete
+ * with it from the larger, earlier line.
  */
 function buildMonthlyDial(
   reading: MonthlyPaceReading | null,
   warnThresholdPercent: number,
+  answered: boolean,
 ): PopoverProgress {
   const usedShare = reading?.usedShare ?? null;
   const percent = usedShare === null ? null : usedShare * 100;
@@ -1290,12 +1339,7 @@ function buildMonthlyDial(
       available: false,
       label: NO_VALUE,
       sweep: 0,
-      // Two absences, and they call for different things: a page that has not
-      // answered will answer by itself, whereas a missing cap will not.
-      prompt:
-        reading === null
-          ? "Waiting for the Orange portal to answer."
-          : SET_LIMIT_PROMPT,
+      prompt: promptWithoutFigure(reading, answered),
       description:
         reading === null
           ? "No reading from the Orange portal yet"
@@ -1405,7 +1449,11 @@ function portalHalf(
   if (forfait === null || consumedBytes === null) {
     return {
       monthTotal: NO_VALUE,
-      progress: buildMonthlyDial(null, warnThresholdPercent),
+      progress: buildMonthlyDial(
+        null,
+        warnThresholdPercent,
+        portalAnswered(portal),
+      ),
       allowance: noAllowance(),
       pace: null,
       syncAttention: false,
@@ -1425,7 +1473,9 @@ function portalHalf(
     // Stated by the carrier rather than derived, and available with no cap —
     // which is the one thing Orange can always answer.
     monthTotal: formatBytes(reading.usedBytes),
-    progress: buildMonthlyDial(reading, warnThresholdPercent),
+    // A figure is itself an answer, and the dial draws it rather than say
+    // anything at all.
+    progress: buildMonthlyDial(reading, warnThresholdPercent, true),
     allowance: buildPortalAllowance(forfait, reading, portal, now),
     pace: buildMonthlyPace(reading),
     // There is no dialogue to press for and no anchor to re-take: the Sync
