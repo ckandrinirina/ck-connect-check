@@ -24,13 +24,26 @@
  * calculation — they divide the same cumulative used volume by the same floored
  * elapsed days — so the two can never disagree.
  *
+ * That is the **YAS** reading, and it is what {@link readPace} computes. Orange
+ * states the reverse — a consumed volume, no remaining and no expiry — and runs
+ * on the calendar month, so it gets its own entry point in
+ * {@link readMonthlyPace} rather than an anchor bent into a shape it does not
+ * have. The two modes share the bands and share nothing else; the carrier
+ * decides which one is read.
+ *
  * Pure — no Electron, no network, nothing the router speaks, and "now" only
  * ever arrives through the injected {@link Clock}.
  */
 
 import { readAllowanceNow } from "./allowance.js";
 import type { AllowanceAnchor, AllowanceNowInput } from "./allowance.js";
-import { systemClock, type Clock } from "./quota.js";
+import {
+  calendarMonthPeriod,
+  planCap,
+  readPortalUsage,
+  systemClock,
+  type Clock,
+} from "./quota.js";
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 
@@ -203,5 +216,101 @@ export function readPace(input: PaceInput): PaceReading | null {
     // Below the floor the ratio is the floor's doing rather than the user's,
     // so it is reported as a finite number but never as a verdict.
     state: elapsed < MINIMUM_ELAPSED_DAYS ? "safe" : bandFor(pace),
+  };
+}
+
+/**
+ * The Orange reading. Everything the panel draws for a Wifiber plan, from one
+ * portal figure and the calendar.
+ */
+export interface MonthlyPaceReading {
+  /** The portal's consumed figure. Stated, so always present. */
+  usedBytes: number;
+  /** `cap − used`, clamped at zero. Null with no cap. */
+  remainingBytes: number | null;
+  /** Days in the current month. From the calendar, so always present. */
+  planDays: number;
+  /** Days elapsed, counted inclusively: 1 on the first of the month. */
+  elapsedDays: number;
+  /** `elapsedDays / planDays`. Exactly 1 on the month's last day. */
+  elapsedShare: number;
+  /** Share of the cap consumed — the dial. Null with no cap. */
+  usedShare: number | null;
+  /** `usedShare / elapsedShare`. Null with no cap. */
+  pace: number | null;
+  /** The volume actually spent per elapsed day. Null with no cap. */
+  averagePerDay: number | null;
+  /** The flat daily budget the plan affords. Null with no cap. */
+  affordedPerDay: number | null;
+  /** The band {@link MonthlyPaceReading.pace} falls in. Null with no cap. */
+  state: PaceState | null;
+}
+
+export interface MonthlyPaceInput {
+  /** The consumed volume the portal stated for the measured forfait. */
+  consumedBytes: number;
+  /** The plan the user bought, in bytes. Absent until they state one. */
+  planLimitBytes?: number | null;
+  /** Injected so both February lengths and both boundaries are testable. */
+  clock?: Clock;
+}
+
+/**
+ * What the pace looks like on Orange, where the plan runs from the first of the
+ * month to its last day.
+ *
+ * There is no tier ladder here and nothing to return null for. Tier 1 existed
+ * because a carrier-stated remaining and expiry arrived together; the portal
+ * supplies neither, and the calendar supplies the period for free. So the cap
+ * is the single gate: with it the dial, the band, the meter and both daily
+ * volumes all follow from one reading; without it there is a consumed volume
+ * and nothing else, because a share, a remainder and a per-day budget each need
+ * a total to be measured against.
+ *
+ * The router's month counter appears nowhere — not as an accumulator, not as a
+ * cross-check. It read 51.1 Go against the portal's 7.37 Go on the same day, so
+ * the two count different traffic and joining them would produce a confident
+ * wrong number. Its only remaining job on Orange is the live throughput
+ * sparkline, which never touched the allowance anyway.
+ */
+export function readMonthlyPace(input: MonthlyPaceInput): MonthlyPaceReading {
+  const clock = input.clock ?? systemClock;
+  const period = calendarMonthPeriod(clock);
+  const cap = planCap(input.planLimitBytes);
+  const usage = readPortalUsage(input.consumedBytes, cap);
+
+  const measured = {
+    usedBytes: usage.usedBytes,
+    remainingBytes: usage.remainingBytes,
+    planDays: period.planDays,
+    elapsedDays: period.elapsedDays,
+    elapsedShare: period.elapsedShare,
+  };
+
+  if (cap === null) {
+    return {
+      ...measured,
+      usedShare: null,
+      pace: null,
+      averagePerDay: null,
+      affordedPerDay: null,
+      state: null,
+    };
+  }
+
+  const usedShare = usage.usedBytes / cap;
+  const pace = usedShare / period.elapsedShare;
+
+  return {
+    ...measured,
+    usedShare,
+    pace,
+    // The same cumulative volume over the same inclusive days the ratio uses,
+    // so this is the ratio restated in the units the user reasons in. The
+    // elapsed count is at least 1 by construction, so nothing divides by zero
+    // and no floor is needed here.
+    averagePerDay: usage.usedBytes / period.elapsedDays,
+    affordedPerDay: cap / period.planDays,
+    state: bandFor(pace),
   };
 }

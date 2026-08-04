@@ -84,3 +84,108 @@ export function usageState(
 
   return percent >= warnThresholdPercent ? "warn" : "ok";
 }
+
+/**
+ * The cap as a number worth measuring against, or null.
+ *
+ * Zero is the router's own way of saying "unset" (`DataLimit: 0MB`), so it is
+ * no cap rather than a limit of nothing — and a cap of nothing would put every
+ * reading permanently over.
+ */
+export function planCap(
+  planLimitBytes: number | null | undefined,
+): number | null {
+  if (planLimitBytes === null || planLimitBytes === undefined) return null;
+
+  return Number.isFinite(planLimitBytes) && planLimitBytes > 0
+    ? planLimitBytes
+    : null;
+}
+
+/**
+ * The period a Wifiber plan runs over: the calendar month, read rather than
+ * typed. Orange states no expiry date and no plan length, so both come from the
+ * calendar, which supplies them for free and cannot be left stale.
+ */
+export interface CalendarMonthPeriod {
+  /** Local midnight opening the first of the current month. */
+  periodStart: Date;
+  /** Days in the current month — 28, 29, 30 or 31. */
+  planDays: number;
+  /** Days elapsed, counted inclusively: 1 on the first, never 0. */
+  elapsedDays: number;
+  /** `elapsedDays / planDays`. Exactly 1 on the month's last day. */
+  elapsedShare: number;
+}
+
+/**
+ * Where the calendar month currently stands.
+ *
+ * Counting is **inclusive**, the same convention T-46 settled for the carrier's
+ * last valid day: the day being lived is a day elapsed, not a fraction of one.
+ * So the first of the month is one day in — never zero, which would divide the
+ * pace ratio by nothing — and the last day is the whole month, which is what
+ * makes `elapsedShare` reach exactly 1 rather than stopping just short of it.
+ *
+ * Everything is taken from the local calendar date, so the hour of day never
+ * moves a reading and a daylight-saving shift cannot shorten a day.
+ */
+export function calendarMonthPeriod(
+  clock: Clock = systemClock,
+): CalendarMonthPeriod {
+  const now = clock.now();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  // Day zero of the next month is the last day of this one, which is how the
+  // calendar answers 28 · 29 · 30 · 31 without a leap-year rule written here.
+  const planDays = new Date(year, month + 1, 0).getDate();
+  const elapsedDays = now.getDate();
+
+  return {
+    periodStart: new Date(year, month, 1),
+    planDays,
+    elapsedDays,
+    elapsedShare: elapsedDays / planDays,
+  };
+}
+
+/**
+ * What the Orange portal's reading says about the plan.
+ *
+ * The arithmetic inverts here. On YAS the carrier states a *remaining* volume
+ * and consumption is derived from the cap; the portal states the *consumed*
+ * volume and the remainder is what gets derived. So `usedBytes` is the portal's
+ * figure exactly — not a total, not a difference, and never the router's month
+ * counter, which counts different traffic entirely: 51.1 Go against the
+ * portal's 7.37 Go on the same day.
+ */
+export interface PortalUsage {
+  /** The portal's consumed figure, passed through untouched. */
+  usedBytes: number;
+  /** `cap − used`, clamped at zero. Null with no cap: nothing to subtract from. */
+  remainingBytes: number | null;
+  /** Exact share of the cap consumed. Null with no cap — no dial to draw. */
+  percentUsed: number | null;
+}
+
+/**
+ * Reads one portal figure against the cap the user typed in.
+ *
+ * With no cap there is a consumed volume and nothing else, which is the honest
+ * state rather than a degraded one: without a total there is no share to show
+ * and no remainder to compute.
+ */
+export function readPortalUsage(
+  consumedBytes: number,
+  planLimitBytes: number | null,
+): PortalUsage {
+  const cap = planCap(planLimitBytes);
+
+  return {
+    usedBytes: consumedBytes,
+    // Clamped: a cap typed in below what has already been spent would otherwise
+    // report a negative remainder rather than an exhausted plan.
+    remainingBytes: cap === null ? null : Math.max(0, cap - consumedBytes),
+    percentUsed: percentUsed(consumedBytes, cap),
+  };
+}
