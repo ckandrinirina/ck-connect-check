@@ -115,6 +115,35 @@ The `#359#` path to the exact allowance, as captured from the device:
 The final line is the ground truth the app is after: an exact remaining volume and an
 exact expiry date, neither of which any `/api/monitoring/` endpoint knows.
 
+### LAN device API — provisional
+
+**Not yet verified against the device.** Everything in this subsection is the expected shape
+on HiLink firmware, drawn from the router's own `/html/statistic.html`, and T-62 replaces it
+with what the B310s-22 on `21.333.01.00.00` actually answers. Nothing may be built on it
+until then.
+
+| Endpoint                             | Method | Expected to carry                                                                                                   |
+| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------- |
+| `/api/wlan/host-list`                | GET    | one `<Host>` per Wi-Fi client — `HostName`, `IpAddress`, `MacAddress`, `AssociatedTime`, `AssociatedSsid`, `Active` |
+| `/api/lan/HostInfo`                  | GET    | the same clients plus wired ones, with the connection medium                                                        |
+| `/api/wlan/multi-macfilter-settings` | GET    | the WLAN MAC filter — a mode (off / whitelist / blacklist) and its entries                                          |
+| `/api/wlan/multi-macfilter-settings` | POST   | writes the whole filter back; authenticated, like every other `POST`                                                |
+
+Three things follow from this being the mechanism, whatever the exact field names turn out
+to be:
+
+- Blocking is a **filter write, not a per-device call**. The router holds one list; blocking
+  one device means sending the list with that device added, so a stale read followed by a
+  write would silently unblock everyone else. Every write reads the filter first.
+- The list is **bounded** — HiLink firmware caps MAC filter entries (32 on comparable
+  devices), so a full list is an ordinary state the UI has to state, not an error.
+- The write is a `POST`, so it inherits the entire authenticated path above: a login, a
+  single-use rotating token, the `125003` refresh-and-retry-once rule, and the
+  five-failure account lockout that forbids automatic retries.
+
+The list is read on the ordinary poll — it is an unauthenticated `GET` on the same footing
+as `/api/monitoring/status`, so it costs no more than the fields already fetched.
+
 ## Orange portal
 
 Verified live on 2026-08-04, from a machine behind the same router. The SIM moved to
@@ -330,7 +359,7 @@ src/
   config/       read and write the plan limit, router address and allowance anchor
   main/         Electron main process — tray, poll loop, popover window, login item,
                 keychain-backed router password
-  renderer/     popover UI (HTML + CSS + TS)
+  renderer/     popover UI (HTML + CSS + TS), and the connected-devices window
 test/           mirrors src/, one .test.ts per source file
 assets/         icon sources — hand-written SVG, and the PNG/.icns rasterised from them
 scripts/        build-time scripts that are not part of the app — icon rasterisation
@@ -411,6 +440,13 @@ Append-only. One line each, always with the reason.
 - On Orange the plan period is the calendar month, derived, and only the cap is typed — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly
 - The router's month counter has no role at all on Orange — it read 51.1 Go against the portal's 7.37 Go on the same day, so the two count different traffic and joining them would produce a confident wrong number
 - An unreachable portal is rendered like an unreachable router, as a state and not an error — the portal only answers on the Orange network, so a laptop on any other Wi-Fi is an ordinary condition
+- The connected devices live in their own window, not in the popover — a device list is a table that grows with the household, and the panel is 320×520 with 497 px already spent and no room to scroll
+- The device list is the one place text beats a drawing, despite the graphical-default rule — names, IP addresses and MAC addresses are identifiers with no magnitude, and the rule reserves text for exactly that
+- Devices are read on the ordinary poll, not on a timer of their own — `host-list` is an unauthenticated `GET` alongside the monitoring endpoints, so a second schedule would be a second thing to keep in step for no saving
+- Blocking is the router's WLAN MAC filter, not a per-device API — the device holds one list and the write replaces it whole, so every block reads the current filter first and never composes a write from a remembered one
+- A block or unblock is only ever an explicit press and is never retried automatically — the write is an authenticated `POST`, and the same five-failure lockout that forbids a USSD retry loop forbids this one
+- The machine running the app can never be blocked from its own device list — cutting the app off from the router it is talking to is unrecoverable from inside the app, and no confirmation dialog makes that a reasonable thing to allow
+- A full MAC filter is a stated condition, not an error — the firmware caps the list, and a household reaching that cap has done nothing wrong
 
 ## Conventions
 
