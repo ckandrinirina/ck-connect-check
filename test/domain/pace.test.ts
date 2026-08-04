@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readPace } from "../../src/domain/pace.js";
+import { readMonthlyPace, readPace } from "../../src/domain/pace.js";
 import { readAllowanceNow } from "../../src/domain/allowance.js";
 import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import {
@@ -431,6 +431,117 @@ describe("readPace — the case reported from the router itself", () => {
 
     expect(reading).not.toBeNull();
     expect(reading?.daysUntilExpiry).toBe(1);
+  });
+});
+
+describe("readMonthlyPace — Orange, where the period is the calendar month", () => {
+  /** 100 Go, so a share of the cap reads straight off the consumed volume. */
+  const CAP = 100 * GB;
+
+  function readOn(
+    day: Date,
+    consumedBytes: number,
+    planLimitBytes: number | null = CAP,
+  ) {
+    return readMonthlyPace({ consumedBytes, planLimitBytes, clock: at(day) });
+  }
+
+  it("takes the portal's consumed figure, never the router's month counter", () => {
+    // On 04/08 the portal stated 7.37 Go where the router's counter read
+    // 51.1 Go. The two count different traffic; only the portal's is the plan's.
+    const reading = readOn(new Date(2026, 7, 4, 12, 0, 0), 7.37 * GB);
+
+    expect(reading.usedBytes).toBe(7.37 * GB);
+    expect(reading.usedBytes).not.toBe(51.1 * GB);
+  });
+
+  it("derives the remainder as the cap less the consumption, clamped at zero", () => {
+    expect(readOn(new Date(2026, 7, 4), 30 * GB).remainingBytes).toBe(70 * GB);
+    expect(readOn(new Date(2026, 7, 4), 130 * GB).remainingBytes).toBe(0);
+  });
+
+  it("takes the month's length from the calendar, in all four lengths", () => {
+    expect(readOn(new Date(2026, 7, 4), 10 * GB).planDays).toBe(31);
+    expect(readOn(new Date(2026, 8, 4), 10 * GB).planDays).toBe(30);
+    expect(readOn(new Date(2026, 1, 4), 10 * GB).planDays).toBe(28);
+    expect(readOn(new Date(2028, 1, 4), 10 * GB).planDays).toBe(29);
+  });
+
+  it("has one day elapsed on the first, and a ratio that stays finite", () => {
+    const reading = readOn(new Date(2026, 7, 1, 6, 0, 0), 10 * GB);
+
+    expect(reading.elapsedDays).toBe(1);
+    expect(Number.isFinite(reading.pace ?? Number.NaN)).toBe(true);
+    // A tenth of the cap on the first of a thirty-one day month.
+    expect(reading.pace).toBeCloseTo(0.1 / (1 / 31), 10);
+  });
+
+  it("has the whole month elapsed on the last day of a 31-day month", () => {
+    const reading = readOn(new Date(2026, 7, 31, 20, 0, 0), 50 * GB);
+
+    expect(reading.elapsedDays).toBe(31);
+    expect(reading.elapsedShare).toBe(1);
+  });
+
+  it("produces the dial, the band and both daily volumes from one reading", () => {
+    const reading = readOn(new Date(2026, 7, 31, 12, 0, 0), 50 * GB);
+
+    expect(reading.usedShare).toBeCloseTo(0.5, 10);
+    expect(reading.pace).toBeCloseTo(0.5, 10);
+    expect(reading.state).toBe("safe");
+    expect(reading.averagePerDay).toBeCloseTo((50 * GB) / 31, 0);
+    expect(reading.affordedPerDay).toBeCloseTo((100 * GB) / 31, 0);
+  });
+
+  it("restates the ratio as the two daily volumes rather than recomputing it", () => {
+    const cases: readonly (readonly [Date, number])[] = [
+      [new Date(2026, 7, 1), 5 * GB],
+      [new Date(2026, 7, 12), 40 * GB],
+      [new Date(2026, 7, 31), 120 * GB],
+      [new Date(2026, 1, 14), 50 * GB],
+      [new Date(2028, 1, 29), 99 * GB],
+    ];
+
+    for (const [day, consumed] of cases) {
+      const reading = readOn(day, consumed);
+      const restated =
+        (reading.averagePerDay ?? Number.NaN) /
+        (reading.affordedPerDay ?? Number.NaN);
+
+      expect(restated).toBeCloseTo(reading.pace ?? Number.NaN, 10);
+    }
+  });
+
+  it("produces none of the four without a cap, and the volume still", () => {
+    const reading = readOn(new Date(2026, 7, 12), 40 * GB, null);
+
+    expect(reading.usedShare).toBeNull();
+    expect(reading.pace).toBeNull();
+    expect(reading.state).toBeNull();
+    expect(reading.averagePerDay).toBeNull();
+    expect(reading.affordedPerDay).toBeNull();
+    expect(reading.remainingBytes).toBeNull();
+
+    // The consumed volume is stated, not derived, so it survives the cap's
+    // absence — and the calendar still supplies the period for free.
+    expect(reading.usedBytes).toBe(40 * GB);
+    expect(reading.planDays).toBe(31);
+    expect(reading.elapsedDays).toBe(12);
+  });
+
+  it("keeps T-44's band boundaries exactly where they were", () => {
+    // The last day of a 31-day month: the elapsed share is exactly 1, so the
+    // ratio is the consumed share and the boundaries can be pinned outright.
+    const lastDay = new Date(2026, 7, 31, 12, 0, 0);
+
+    expect(readOn(lastDay, 100 * GB).pace).toBe(1);
+    expect(readOn(lastDay, 100 * GB).state).toBe("safe");
+    expect(readOn(lastDay, 99 * GB).state).toBe("safe");
+    expect(readOn(lastDay, 110 * GB).pace).toBe(1.1);
+    expect(readOn(lastDay, 110 * GB).state).toBe("warning");
+    expect(readOn(lastDay, 120 * GB).pace).toBe(1.2);
+    expect(readOn(lastDay, 120 * GB).state).toBe("over");
+    expect(readOn(lastDay, 130 * GB).state).toBe("over");
   });
 });
 
