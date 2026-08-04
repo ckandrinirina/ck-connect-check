@@ -67,12 +67,17 @@
 | T-63 | Turn the router's host list into typed devices                          | done   | M    | T-62                         |
 | T-64 | Name, label and order the devices for reading                           | done   | S    | T-63                         |
 | T-65 | Open a window for the connected devices                                 | done   | M    | —                            |
-| T-66 | Fill the devices window from the live router                            | todo   | M    | T-64, T-65                   |
-| T-67 | Know which devices the router is already blocking                       | todo   | M    | T-62, T-63                   |
-| T-68 | Block and unblock a device from the list                                | todo   | M    | T-67                         |
-| T-69 | Never let this Mac block itself off the router                          | todo   | S    | T-68                         |
-| T-70 | Say why the list is empty or a block did not take                       | todo   | S    | T-66, T-68                   |
+| T-66 | Fill the devices window from the live router                            | done   | M    | T-64, T-65                   |
+| T-67 | Know which devices the router is already blocking                       | done   | M    | T-62, T-63                   |
+| T-68 | Block and unblock a device from the list                                | done   | M    | T-67                         |
+| T-69 | Never let this Mac block itself off the router                          | done   | S    | T-68                         |
+| T-70 | Say why the list is empty or a block did not take                       | done   | S    | T-66, T-68                   |
 | T-71 | Show the devices window in the README                                   | todo   | S    | T-66, T-68                   |
+| T-72 | Put the device list on a tab inside the panel                           | done   | M    | T-66, T-70                   |
+| T-73 | Draw the device rows at the panel's own width                           | todo   | M    | T-72                         |
+| T-74 | Move blocking onto the panel's own bridge                               | todo   | M    | T-72, T-73                   |
+| T-75 | Read the host list only while its tab is showing                        | todo   | S    | T-72, T-73                   |
+| T-76 | Retire the separate devices window                                      | todo   | S    | T-73, T-74, T-75             |
 
 ## T-01 Set the project up so tests can run
 
@@ -3778,7 +3783,7 @@ second window is exactly the kind of thing that works in development and 404s in
 
 ## T-66 Fill the devices window from the live router
 
-T-66 · status: todo · size: M · needs: T-64, T-65 · files: src/main/poll.ts, src/main/devices-window.ts, src/renderer/devices.ts, test/main/poll.test.ts, test/renderer/devices.test.ts
+T-66 · status: done · size: M · needs: T-64, T-65 · files: src/main/poller.ts, src/main/devices-window.ts, src/main/main.ts, src/hilink/client.ts, src/renderer/devices.ts, src/renderer/devices.html, docs/ARCHITECTURE.md, test/main/poller.test.ts, test/main/devices-window.test.ts, test/main/main.test.ts, test/renderer/devices.test.ts
 
 The host list is an unauthenticated `GET` alongside the monitoring endpoints, so it joins the
 existing poll rather than starting a schedule of its own — a second timer would be a second
@@ -3802,27 +3807,48 @@ position without reordering the rest.
 
 ### Acceptance
 
-- [ ] with the window open, each poll fetches the host list and pushes a device array to the renderer
-- [ ] with the window closed, no host-list request is made, asserted by counting calls over several ticks
-- [ ] the rendered table has one row per device, carrying the name, IP, MAC, medium, connected-for and active state from the model
-- [ ] a device leaving the model removes exactly its row, and a device joining lands in sorted position with the other rows unmoved
-- [ ] an unreachable router renders the existing offline state, not an empty list and not a dialog
-- [ ] an empty list renders as a stated empty list, distinguishable in the DOM from the offline state
-- [ ] a host-list failure does not disturb the panel's usage reading, asserted by the panel model being unchanged across the failure
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] with the window open, each poll fetches the host list and pushes a device array to the renderer
+- [x] with the window closed, no host-list request is made, asserted by counting calls over several ticks
+- [x] the rendered table has one row per device, carrying the name, IP, MAC, ~~medium~~, connected-for and ~~active state~~ from the model — _amended, see Notes_
+- [x] a device leaving the model removes exactly its row, and a device joining lands in sorted position with the other rows unmoved
+- [x] an unreachable router renders the existing offline state, not an empty list and not a dialog
+- [x] an empty list renders as a stated empty list, distinguishable in the DOM from the offline state
+- [x] a host-list failure does not disturb the panel's usage reading, asserted by the panel model being unchanged across the failure
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests for the open/closed fetch behaviour, the row rendering and the two empty states
-2. Add the host-list fetch to the poll, gated on the window being open
-3. Push the domain device list to the renderer over the existing channel
-4. Render the table rows, keyed by MAC so updates are diffs rather than rebuilds
-5. Render the offline and empty states distinctly
-6. Run test, lint and build
+1. [x] Write the failing tests for the open/closed fetch behaviour, the row rendering and the two empty states
+2. [x] Add the host-list fetch to the poll, gated on the window being open
+3. [x] Push the domain device list to the renderer over the existing channel
+4. [x] Render the table rows, keyed by MAC so updates are diffs rather than rebuilds
+5. [x] Render the offline and empty states distinctly
+6. [x] Run test, lint and build
+
+### Notes
+
+- **The `medium` column and the active dot were struck, not skipped.** T-62's live probe
+  established that `host-list` carries no band, frequency or connection-medium element and no
+  `<Active>` element, and that `/api/lan/HostInfo` does not exist on this firmware. T-63 and T-64
+  amended the same requirement out on the user's explicit decision; this criterion was written
+  before the probe and is amended to match. QA independently confirmed the absence against the
+  fixtures (`test/hilink/device-fixtures.test.ts`) rather than on the implementer's assertion.
+  The window renders five columns: name, IP, MAC, network (SSID) and connected-for.
+- **The "unauthenticated `GET`" premise above is false.** T-62 falsified it — `host-list` answers
+  `100003` without a session. The poll gate is therefore _window open **and** a stored password_;
+  `RouterClient.hosts()` signs in once on a refusal and parks the list for the run if that login is
+  refused, honouring the five-failure lockout rule. No stored password reads as "list unavailable"
+  and renders as the offline state; T-70 is the task that words the reasons.
+- **Ordering lives in `buildDevicesModel`** (via the domain's `sortDevices`), not in the poller —
+  the poller publishes the router's list verbatim.
+- **No CSS was added** — the window is still unstyled markup, as T-65 left it. A `devices.css`
+  would need a new build copy step and is not in any acceptance criterion.
+- Manual gate passed against the live router. The implementing agent had no router reachable from
+  its worktree, so its own runs were fixtures and stubs only.
 
 ## T-67 Know which devices the router is already blocking
 
-T-67 · status: todo · size: M · needs: T-62, T-63 · files: src/hilink/macfilter.ts, src/domain/devices.ts, src/renderer/devices.ts, test/hilink/macfilter.test.ts, test/domain/devices.test.ts
+T-67 · status: done · size: M · needs: T-62, T-63 · files: src/hilink/macfilter.ts, src/domain/devices.ts, src/main/devices-window.ts, src/renderer/devices.ts, src/renderer/devices.html, docs/ARCHITECTURE.md, test/hilink/macfilter.test.ts, test/domain/devices.test.ts, test/main/devices-window.test.ts, test/renderer/devices.test.ts, test/main/main.test.ts
 
 Before anything can be blocked, the window has to show what already is — a toggle that does not
 reflect the router's actual state is worse than no toggle.
@@ -3844,27 +3870,54 @@ would require it to connect first, which it cannot do.
 
 ### Acceptance
 
-- [ ] the filter fixture parses into a mode and a set of MAC addresses, with every field converted at the `src/hilink/` boundary
-- [ ] with the filter off, no device reads as blocked regardless of the list's contents
-- [ ] in blacklist mode, a device whose MAC is listed reads as blocked and one whose MAC is not reads as allowed
-- [ ] in whitelist mode, the verdict is inverted, asserted explicitly rather than by reusing the blacklist expectation
-- [ ] MAC comparison ignores case and separator style, asserted with the same address written two ways
-- [ ] a MAC in the filter but absent from the host list appears in the device list as blocked and absent
-- [ ] the blocked state is visible in the rendered row without relying on colour alone
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the filter fixture parses into a mode and a set of MAC addresses, with every field converted at the `src/hilink/` boundary
+- [x] with the filter off, no device reads as blocked regardless of the list's contents
+- [x] in blacklist mode, a device whose MAC is listed reads as blocked and one whose MAC is not reads as allowed
+- [x] in whitelist mode, the verdict is inverted, asserted explicitly rather than by reusing the blacklist expectation
+- [x] MAC comparison ignores case and separator style, asserted with the same address written two ways
+- [x] a MAC in the filter but absent from the host list appears in the device list as blocked and absent
+- [x] the blocked state is visible in the rendered row without relying on colour alone
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests for the three modes, the case/separator normalisation and the absent-but-blocked device
-2. Parse the filter at the `src/hilink/` boundary
-3. Add the blocked predicate in `src/domain/` over mode and list together
-4. Merge filter-only MACs into the device list as absent devices
-5. Render the blocked state in the row
-6. Run test, lint and build
+1. [x] Write the failing tests for the three modes, the case/separator normalisation and the absent-but-blocked device
+2. [x] Parse the filter at the `src/hilink/` boundary
+3. [x] Add the blocked predicate in `src/domain/` over mode and list together
+4. [x] Merge filter-only MACs into the device list as absent devices
+5. [x] Render the blocked state in the row
+6. [x] Run test, lint and build
+
+### Notes
+
+- **Scoped to parse + domain + render, on the user's explicit decision.** Neither T-67 nor T-68
+  declared the files that actually fetch the filter, so the live read was deferred to T-68 whole.
+  `src/main/poller.ts`, `src/main/main.ts` and `src/hilink/client.ts` are untouched here, verified
+  by QA with `git diff` rather than taken on the implementer's word. Everything is driven by
+  fixtures and injected models.
+- **The 1→whitelist / 2→blacklist mapping is INFERRED, not observed.** T-62's capture is all
+  zeros (`off`), so nothing in the repo proves which integer means which; the inference comes from
+  the order of the router's own web UI. `parseMacFilter` throws `HilinkParseError` on an
+  out-of-range status rather than guessing, and `docs/ARCHITECTURE.md:161-167` records it as an
+  assumption. **This is a live risk for T-68, which writes:** a backwards mapping turns "blacklist
+  this one device" into "whitelist only this device", locking every other device — including this
+  Mac — off the network. The user chose to verify the mapping against the real router, to forbid
+  T-68 from ever writing whitelist mode, and to pull T-69's self-block guard forward into T-68.
+- **Two files outside the declared list were touched** because T-66 had moved `DeviceRow` out of
+  the renderer: `src/main/devices-window.ts` (gained `blocked`/`present` on `DeviceRow`, and
+  `buildDevicesModel(result, filter = MAC_FILTER_OFF)`) and `src/renderer/devices.html` (the
+  Access column header).
+- **For T-68:** `parseMacFilter` already keeps all four `<Ssid>` blocks in `MacFilter.ssids`, which
+  is what a whole-filter write needs. Wiring the live fetch is: fetch the filter behind the login,
+  pass it as `buildDevicesModel`'s second argument at `src/main/main.ts:538`.
+- **Pre-existing, not introduced here:** `tsc -p tsconfig.json --noEmit` reports 19 errors in test
+  files. It is not one of the project's gates — `npm run build` compiles `src/` only.
+- Manual gate passed as a wave-1 regression check. The blocked/absent rendering has still never run
+  against real hardware, because the router's filter is off and nothing fetches it yet.
 
 ## T-68 Block and unblock a device from the list
 
-T-68 · status: todo · size: M · needs: T-67 · files: src/hilink/macfilter.ts, src/main/devices-window.ts, src/renderer/devices.ts, test/hilink/macfilter.test.ts, test/main/devices-window.test.ts
+T-68 · status: done · size: M · needs: T-67 · files: src/hilink/macfilter.ts, src/hilink/client.ts, src/hilink/parse.ts, src/hilink/ussd.ts, src/domain/devices.ts, src/main/main.ts, src/main/devices-window.ts, src/renderer/devices.ts, src/renderer/devices.html, src/renderer/preload.cts, docs/ARCHITECTURE.md, test/hilink/macfilter.test.ts, test/hilink/token.test.ts, test/domain/devices.test.ts, test/main/main.test.ts, test/main/devices-window.test.ts, test/renderer/devices.test.ts
 
 This is the first `POST` outside the USSD path, and it inherits every rule that path established.
 
@@ -3890,30 +3943,96 @@ afterwards rather than the state the click assumed.
 
 ### Acceptance
 
-- [ ] blocking a device reads the current filter, writes it back with that MAC added, and leaves every other entry present
-- [ ] blocking a device while the filter is off enables blacklist mode in the same write
-- [ ] unblocking the last blocked device leaves the mode unchanged, asserted explicitly
-- [ ] a failed filter read aborts the write entirely — no `POST` is made, asserted by call count
-- [ ] a `125003` refreshes the token and retries the write once, and never re-authenticates, asserted the way T-24 asserts it
-- [ ] a failed login is not retried, and a second press after a failure is required to try again
-- [ ] with the filter at its cap, a further block is refused before any request is made and the reason names the cap
-- [ ] a block is only sent after an explicit confirmation, asserted by no request being made when the confirmation is declined
-- [ ] the row's state after a write comes from a re-read of the filter, not from the click
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] blocking a device reads the current filter, writes it back with that MAC added, and leaves every other entry present
+- [x] blocking a device while the filter is off enables blacklist mode in the same write
+- [x] unblocking the last blocked device leaves the mode unchanged, asserted explicitly
+- [x] a failed filter read aborts the write entirely — no `POST` is made, asserted by call count
+- [x] a `125003` refreshes the token and retries the write once, and never re-authenticates, asserted the way T-24 asserts it
+- [x] a failed login is not retried, and a second press after a failure is required to try again
+- [x] with the filter at its cap, a further block is refused before any request is made and the reason names the cap
+- [x] a block is only sent after an explicit confirmation, asserted by no request being made when the confirmation is declined
+- [x] the row's state after a write comes from a re-read of the filter, not from the click
+- [x] blacklist is the only mode this task ever writes: a write that would set whitelist mode is refused before any request is made, asserted by call count — _added, see Notes_
+- [x] a block requested for this machine's own MAC is refused at the domain layer before any request is made, so the guard does not depend on the UI — _pulled forward from T-69, see Notes_
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests for the read-modify-write, the mode transitions, the abort-on-read-failure and the cap
-2. Implement the filter write at the `src/hilink/` boundary, reusing the token and login path
-3. Route `125003` through the existing refresh-and-retry-once helper
-4. Add the confirmation step in the renderer
-5. Re-read the filter after every write and render from that
-6. Refuse a block at the cap before any request
-7. Run test, lint and build
+1. [x] Write the failing tests for the read-modify-write, the mode transitions, the abort-on-read-failure and the cap
+2. [x] Implement the filter write at the `src/hilink/` boundary, reusing the token and login path
+3. [x] Route `125003` through the existing refresh-and-retry-once helper
+4. [x] Add the confirmation step in the renderer
+5. [x] Re-read the filter after every write and render from that
+6. [x] Refuse a block at the cap before any request
+7. [x] Refuse any write that would set whitelist mode, and refuse a block of this machine's own MAC, both before a request is made
+8. [x] Run test, lint and build
+
+### Notes
+
+- **Two safety measures were added to this task on the user's decision, before it was built.**
+  T-67 established that the `1`→whitelist / `2`→blacklist mapping is _inferred from the router's
+  web UI, never observed_ — T-62's capture is all zeros. This task is the first that **writes** the
+  filter, so a backwards mapping would turn "blacklist this one device" into "whitelist only this
+  device", cutting every other device — including this Mac — off the network. That is the exact
+  failure T-69 exists to prevent, and T-69 lands after this task.
+  1. **Whitelist mode is never written.** Status `1` is refused outright. Note carefully what this
+     does **not** buy: it does _not_ make a backwards mapping safe. If `2` is really whitelist,
+     then writing `2` while believing it is blacklist sends "whitelist, allowed = [the one MAC we
+     meant to block]", which blocks every other device including this Mac. The guard never fires,
+     because the write looks intentional. The self-block guard does not catch it either — this
+     Mac's address is never in the list; it is locked out by omission. **Only the observed mapping
+     protects against this**, which is why the capture below is a prerequisite, not a precaution.
+  2. **T-69's domain-layer self-block refusal is pulled forward** into this task, so no write can
+     ever remove this machine's own access. T-69 keeps the renderer-facing half.
+- **The mapping was NOT verified before this task was built.** The browser capture was attempted
+  and failed — a plain navigation to `/api/wlan/multi-macfilter-settings` answers `125002` (wrong
+  session), because the router's own web UI supplies the `__RequestVerificationToken` header that a
+  URL navigation cannot. The user chose to proceed without it. This task was therefore built
+  entirely against fixtures, with no live write performed, and **the live block/unblock press
+  remains untested against real hardware**. Capture the value from the web UI's own
+  `multi-macfilter-settings` request (DevTools → Network) while a blacklist block is active before
+  trusting a real press: `2` confirms the mapping, `1` means it is inverted.
+- **From T-62's fixture, both of which the architecture originally guessed wrong:** the cap is
+  **ten** entries per SSID (`WifiMacFilterMac0..9`), not 32, and the reply is **per-SSID** — four
+  `<Ssid>` blocks, and _a write must carry all four or it rewrites the ones it omits_.
+  `parseMacFilter` already preserves all four in `MacFilter.ssids`.
+
+**Outcome.** QA passed all twelve criteria. All five "no request was made" criteria are asserted by
+counting actual writes (`expect(access.writes).toHaveLength(0)`), not by inspecting a return value;
+the self-block criterion also asserts the read never happened. The mode mapping is a genuine
+one-line fix: `MODES` (`src/hilink/macfilter.ts:63`) is read by `modeOf` when parsing and
+reverse-looked-up by `macFilterStatus` when writing, so correcting it corrects both directions.
+
+- **The manual gate deliberately stopped short of a real block.** Steps covering the Action column,
+  the absent self-block control, the declined confirmation and the unreachable-router abort all
+  passed. **Confirming a real block was NOT tested and must not be, until the mapping is observed** —
+  an inverted mapping makes that single press set whitelist mode with one allowed device, dropping
+  every other device including this Mac, recoverable only from the router's web UI on another
+  machine or a factory reset.
+- **This task widened from 5 declared files to 17.** The live filter read genuinely needed
+  `main.ts`, `poller.ts` and `client.ts` (authorised). Beyond that it refactored the USSD path
+  (`UssdFailure` split into a shared `RouterFailure`; `NO_RIGHTS_CODE` moved to `parse.ts`) — QA
+  judged this justified, since `parse.ts` needed the code, and confirmed all 36 USSD tests still
+  pass with behaviour unchanged.
+- **A real leak was found and fixed while going green:** `main.ts` fired a filter `GET` at the
+  configured router in any test that injected `hosts` but not `access`. The read is now gated on a
+  stored credential and on the host list having answered. **Any new source added to the poll needs
+  the same gate** — this applies to T-70.
+- **The preload bridges are separated by convention, not enforcement.** `src/renderer/preload.cts`
+  exposes both `popoverBridge` and `devicesBridge` to both windows; what keeps the popover away from
+  `setBlocked` is that its page code does not call it. Acceptable while neither page runs untrusted
+  code; it would need a real boundary before any webview or remote content is introduced.
+- **For T-70:** `setDeviceBlocked` returns a `DeviceBlockOutcome` — `{ok:true}`, or a
+  `DeviceBlockRefusal` (`{kind: "self"|"full"|"whitelist"|"unreadable"}`, cost no request), or a
+  `RouterFailure` carrying the router's own code and endpoint. `main.ts` currently drops it
+  (`void setDeviceBlocked(request)`); surfacing it is T-70's job.
+- **For T-69:** `isLocalDevice(mac, localMacs)` and `refuseDeviceBlock(...)` are built and tested in
+  `src/domain/devices.ts`. T-69's domain half is done — it needs the renderer half (withhold the
+  control, state the reason) and to re-assert the refusal, not reimplement it.
 
 ## T-69 Never let this Mac block itself off the router
 
-T-69 · status: todo · size: S · needs: T-68 · files: src/domain/devices.ts, src/renderer/devices.ts, test/domain/devices.test.ts, test/renderer/devices.test.ts
+T-69 · status: done · size: S · needs: T-68 · files: src/domain/devices.ts, src/main/devices-window.ts, src/main/main.ts, src/renderer/devices.ts, docs/ARCHITECTURE.md, test/domain/devices.test.ts, test/renderer/devices.test.ts, test/main/devices-window.test.ts, test/main/main.test.ts
 
 Blocking the machine the app runs on cuts the app off from the router it is talking to, and
 nothing inside the app can undo it — the unblock would have to travel over the connection that
@@ -3931,26 +4050,54 @@ than a fallback to be worked around.
 
 ### Acceptance
 
-- [ ] the row whose MAC matches a local interface renders without a block control
-- [ ] that row states why the control is absent, in text and not only by omission
-- [ ] every other row keeps its control
-- [ ] the match is on MAC address and ignores case and separator style
-- [ ] a block requested for the local MAC is refused at the domain layer as well, so the guard does not depend on the UI, asserted by no request being made
-- [ ] with no local MAC present in the list, every row keeps its control and nothing errors
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the row whose MAC matches a local interface renders without a block control
+- [x] that row states why the control is absent, in text and not only by omission
+- [x] every other row keeps its control
+- [x] the match is on MAC address and ignores case and separator style
+- [x] a block requested for the local MAC is refused at the domain layer as well, so the guard does not depend on the UI, asserted by no request being made — _built in T-68 instead; re-assert here, do not duplicate the implementation_
+- [x] with no local MAC present in the list, every row keeps its control and nothing errors
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests for the absent control, the domain-layer refusal and the no-match case
-2. Read the local interface MACs and expose them to the device model
-3. Mark the matching device in `src/domain/`
-4. Withhold the control and state the reason in the renderer
-5. Refuse the write at the domain layer regardless of the UI
-6. Run test, lint and build
+1. [x] Write the failing tests for the absent control, the domain-layer refusal and the no-match case
+2. [x] Read the local interface MACs and expose them to the device model
+3. [x] Mark the matching device in `src/domain/`
+4. [x] Withhold the control and state the reason in the renderer
+5. [x] Refuse the write at the domain layer regardless of the UI
+6. [x] Run test, lint and build
+
+### Notes
+
+- **The domain half was already built by T-68** (`isLocalDevice`, `refuseDeviceBlock`), so this task
+  re-asserted it rather than rebuilding it — QA confirmed `main.ts` calls T-68's functions directly
+  and that T-68's own assertions still pass unmodified. What was actually missing was the renderer
+  half: `DeviceRow` had no `local` flag and `fillAction` rendered a button for every row, this Mac's
+  included.
+- **The control is absent from the DOM, not disabled or hidden** — a disabled control can be
+  re-enabled from the page. QA verified the test asserts both `[data-block]` and any `button` are
+  null in that cell.
+- **The control is withheld unconditionally on a local row, including when it is already blocked.**
+  QA confirmed the criteria do _not_ force this reading — `device.local && !device.blocked` would
+  satisfy all seven equally and would preserve a recovery path for the exotic case (this Mac's Wi-Fi
+  MAC blacklisted while the app reaches the router over Ethernet). Kept unconditional deliberately:
+  `LOCAL_REASON` reads "blocking it would cut off the app", so a row offering **Unblock** beneath
+  that text would be displaying protection wording that does not describe the button. The domain
+  layer still permits a self-_unblock_ (T-68's "frees rather than severs" test is untouched), so the
+  recovery exists programmatically and from the router's own web UI. One-line reversal at
+  `src/renderer/devices.ts:122` if it is ever wanted.
+- **Handler hygiene is pinned in both directions.** `fillAction` assigns `onclick` rather than adding
+  a listener, because rows survive polls and a per-render listener would turn one press into several
+  writes. Tests cover control→reason (no stale handler) and reason→control (armed exactly once).
+- **A load-bearing test mock:** `test/main/main.test.ts` partially mocks `node:os`
+  (`networkInterfaces: () => ({})`, `tmpdir` left real). `main.ts` falls back to the real interfaces
+  when `localMacs` is not injected, and this task extended that fallback from `setDeviceBlocked` to
+  every poll refresh — without the mock, device-window tests would depend on the host machine's
+  adapters. **T-70 must keep it.**
 
 ## T-70 Say why the list is empty or a block did not take
 
-T-70 · status: todo · size: S · needs: T-66, T-68 · files: src/main/devices-window.ts, src/renderer/devices.ts, test/renderer/devices.test.ts
+T-70 · status: done · size: S · needs: T-66, T-68 · files: src/main/devices-window.ts, src/main/main.ts, src/renderer/devices.ts, src/renderer/devices.html, docs/ARCHITECTURE.md, test/renderer/devices.test.ts, test/main/main.test.ts
 
 An unrecognised router error code is carried to the surface with its code and endpoint, never
 collapsed into a bare "it failed" — that decision predates this feature and applies to it. The
@@ -3969,21 +4116,50 @@ for.
 
 ### Acceptance
 
-- [ ] each of the five conditions renders a distinct message, asserted one per condition
-- [ ] an unrecognised router refusal shows its numeric code and the endpoint, asserted with a code not handled by name
-- [ ] a missing password is stated as a missing password and links to where it is set, not as a failure
-- [ ] a failed write leaves every device row present, asserted by row count before and after
-- [ ] no condition renders as an empty table with no explanation
-- [ ] no condition raises a dialog
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] each of the five conditions renders a distinct message, asserted one per condition
+- [x] an unrecognised router refusal shows its numeric code and the endpoint, asserted with a code not handled by name
+- [x] a missing password is stated as a missing password and links to where it is set, not as a failure
+- [x] a failed write leaves every device row present, asserted by row count before and after
+- [x] no condition renders as an empty table with no explanation
+- [x] no condition raises a dialog
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests, one per condition, including the unhandled-code case
-2. Model the conditions as a single discriminated state rather than several flags
-3. Render each one in the window
-4. Keep the rows on write failure
-5. Run test, lint and build
+1. [x] Write the failing tests, one per condition, including the unhandled-code case
+2. [x] Model the conditions as a single discriminated state rather than several flags
+3. [x] Render each one in the window
+4. [x] Keep the rows on write failure
+5. [x] Run test, lint and build
+
+### Notes
+
+- **The conflation this task existed to break:** no stored password used to degrade into the offline
+  state, so "you never set a password" and "the router is not answering" looked identical. They are
+  different problems with different fixes and only one is the router's fault. `no-password` is now a
+  fourth value of the existing `data-devices-state` attribute — not a rename — so T-66's `empty` vs
+  `offline` assertions are untouched. One `docs/ARCHITECTURE.md` line is marked as CORRECTING the
+  earlier claim that a missing password was an empty state.
+- **The state is one discriminated union, not parallel flags:** `{state:"listed"; devices; refusal?}`
+  | `{state:"offline"}` | `{state:"no-password"}`. `"empty"` stays derived in the renderer from
+  `devices.length === 0`. The refusal **rides** `listed` rather than replacing it — that is what keeps
+  the rows on a failed write. QA confirmed no contradictory state can be represented.
+- **Row preservation is asserted by identity, not just count.** `expect(bodyRows()[0]).toBe(phone)`
+  means re-creating rows with a matching count would fail the test, protecting T-66's MAC-keyed
+  diffing.
+- **The unrecognised-code path is genuinely general:** the test uses `100004`, which `grep` confirms
+  is named nowhere in `src/`. Both the code and the endpoint appear in the rendered text. Codes this
+  codebase does name: 100002, 100003, 108006, 108007, 111019, 125002, 125003.
+- **`{kind:"whitelist"}` got its own sentence** rather than a generic refusal: it tells the user the
+  filter is a whitelist, that this app only ever writes a blocked list, that nothing was changed, and
+  to change it in the router's own web page. That is T-68's safety refusal made legible. `{kind:"self"}`
+  stays where T-69 handles it, in the row.
+- **No stale refusal is possible:** `lastRefusal` is cleared to `undefined` on every successful write
+  before `refreshDevices()` runs, so an earlier refusal can never outlive a later success. QA verified
+  the scenario explicitly.
+- **No new poll leak.** The no-password bit is set only by `readHostList` and the credential check in
+  `attemptDeviceBlock`, never recomputed per render — so no Keychain read per render and no test path
+  reaching 192.168.8.1. T-69's `vi.mock("node:os", ...)` is intact and still partial.
 
 ## T-71 Show the devices window in the README
 
@@ -4013,6 +4189,194 @@ that should not be committed legibly.
 
 1. Extend the link/asset check to cover the new image so it fails first
 2. Capture the window against the live router and redact the image
-3. Write the README section
-4. Correct the `docs/media/` line in the architecture doc
-5. Run test, lint and build
+3. [x] Write the README section
+4. [x] Correct the `docs/media/` line in the architecture doc
+5. [x] Run test, lint and build — lint and build exit 0; test fails on the missing image only
+
+### Notes
+
+**HELD, not failed.** Everything except the screenshot is written and committed on
+`worktree-agent-a375eefabb51721e9`, worktree kept at
+`.claude/worktrees/agent-a375eefabb51721e9`. The branch is deliberately NOT merged: the link check
+fails on the missing image, and that red is what stops a README shipping with a reference to a file
+that is not there.
+
+- **What the user must supply:** `docs/media/devices.png` — a capture of the devices window against
+  the real router, with every device name, IP address and MAC address redacted with opaque filled
+  shapes and flattened on export (an annotation layer that survives in the file can be peeled off).
+- **What the two tests assert:** the generic link check (`existsSync`), plus a second test requiring
+  the PNG magic bytes and an IHDR width `>= DEVICES_WINDOW_WIDTH` (520, read out of
+  `src/main/devices-window.ts` by regex). Width is a floor, so a 1x or Retina 2x capture both pass;
+  height is unconstrained, so cropping the chrome is fine.
+- **No test can verify the redaction** — that assertion is deliberately absent and documented as such
+  above the describe block. It is a human check, and it is the one that matters: this is a
+  household's device list going into a repository.
+- **To finish:** drop the file in, run `npm test`, then QA and merge the branch.
+- The agent was explicitly forbidden from creating a placeholder in any form — a stand-in risks
+  shipping as though it were the real capture.
+
+## T-72 Put the device list on a tab inside the panel
+
+T-72 · status: done · size: M · needs: T-66, T-70 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/popover.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts
+
+T-66 gave the devices their own 520 px window because the panel had 497 of its 520 px spent
+and no room to scroll. That reasoning holds for putting the list _beside_ the usage figures
+and not for putting it _behind_ them: two tabs never draw at once, so the second pane costs
+nothing the first is using. The window is the thing being removed — a second surface to
+summon, to find again behind other windows, and to remember to close.
+
+This task builds the strip and the switching only. The Devices pane arrives empty; T-73
+fills it.
+
+### Acceptance
+
+- [x] the panel renders exactly two tab controls, Usage and Devices, and exactly one pane is visible at a time
+- [x] both panes are in the DOM before either has been selected, asserted by querying the hidden one
+- [x] selecting a tab changes an attribute and creates no elements, asserted by node identity across a switch and back
+- [x] the tab controls are operable from the keyboard and the selected one is exposed as selected to assistive tech
+- [x] reopening the panel shows the tab that was last selected, asserted across a hide and show cycle
+- [x] the popover is still 320×520 and every existing Usage assertion passes untouched
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [x] Write the failing tests — two panes, one visible, identity across a switch, the remembered tab
+2. [x] Add the tab strip to `index.html` and style it in `popover.css`
+3. [x] Drive the visible pane from one attribute on the page root, as the other panel states already are
+4. [x] Remember the last tab so a reopen lands on it
+5. [x] Run test, lint and build
+
+### Notes
+
+The strip lives inside `data-main-view`, so the ⚙ settings still take the whole
+panel and there is no third surface competing with the two tabs. `resetPopoverView`
+puts the settings away on every open but deliberately leaves `data-tab` alone —
+that is what makes the reopen land where the user left it.
+
+`applyTabs` derives everything (pane `hidden`, `aria-selected`, roving `tabindex`)
+from the one root attribute and defaults an absent one to Usage, so a reloaded page
+heals itself rather than trusting what the static markup last said.
+
+One pre-existing assertion was retargeted rather than weakened: the notice row's
+"foot of the panel" check moved from `mainView().lastElementChild` to
+`pane("usage").lastElementChild`, because the Devices pane is the main view's last
+child now and is never on the panel at the same time.
+
+## T-73 Draw the device rows at the panel's own width
+
+T-73 · status: todo · size: M · needs: T-72 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/view-model.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts, test/main/view-model.test.ts
+
+The rendering built in T-66, T-67, T-69 and T-70 moves out of `devices.ts` into the Devices
+pane and is restated for 320 px rather than 520: the name and the IP stack in one column,
+the access word sits on the right. Nothing about _what_ is shown changes — the five states,
+the MAC-keyed in-place update, the blocked-and-absent rows and this machine's sentence are
+all carried across, and the tests move with them.
+
+The one genuine departure is scrolling. A household's device count is unbounded and no
+layout fits an unknown number of rows, so this pane scrolls where the Usage pane still may
+not.
+
+### Acceptance
+
+- [ ] the Devices pane renders one row per host carrying the name, the IP address and the access word
+- [ ] nothing in the pane overflows horizontally at 320 px, asserted against the stylesheet's widths
+- [ ] all five T-70 conditions render distinct sentences, one assertion per condition
+- [ ] a row survives a refresh by identity, asserted with the same MAC's element before and after
+- [ ] an address the filter blocks and `host-list` does not report still gets a row (T-67)
+- [ ] the Devices pane scrolls vertically and the Usage pane does not, both asserted against the stylesheet
+- [ ] the popover is still 320×520
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Move `test/renderer/devices.test.ts`'s assertions onto the pane and watch them fail
+2. [ ] Move the row markup into the Devices pane in `index.html`
+3. [ ] Restate the row as a stacked two-line layout with the access word right-aligned
+4. [ ] Carry the five states and the MAC-keyed diffing across unchanged
+5. [ ] Scope the scroll to this pane alone
+6. [ ] Run test, lint and build
+
+## T-74 Move blocking onto the panel's own bridge
+
+T-74 · status: todo · size: M · needs: T-72, T-73 · files: src/renderer/preload.cts, src/renderer/popover.ts, src/main/main.ts, docs/ARCHITECTURE.md, test/main/main.test.ts, test/renderer/popover.test.ts
+
+The block channel exists and is validated in the main process; only the bridge it arrives on
+moves, from the devices page's preload to the popover's. Which window sent it was never what
+made it safe — the validation is, and it stays exactly where it is.
+
+Everything T-68 and T-69 decided about a press is carried over rather than rewritten: the
+confirmation, the read-before-write, the re-read after, the whitelist refusal, the cap, and
+this machine's row having no control at all.
+
+### Acceptance
+
+- [ ] the popover preload exposes the block channel and the main process rejects a malformed payload on it, asserted with a payload that is not a MAC
+- [ ] every eligible row carries a block or unblock control
+- [ ] this machine's row carries a sentence where the control would be and no control at all (T-69)
+- [ ] the confirmation still precedes a block, and a cancelled confirmation issues no request
+- [ ] the row after a write is drawn from a re-read of the filter, never from the press (T-68)
+- [ ] a refused write leaves every row present and states the refusal beside the list (T-70)
+- [ ] a filter already in whitelist mode is refused before any request is made (T-68)
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Write the failing tests, including the malformed-payload rejection
+2. [ ] Expose the block channel on the popover preload
+3. [ ] Wire the pane's controls to it and keep the confirmation
+4. [ ] Confirm the main-process validation is unchanged, not re-implemented
+5. [ ] Run test, lint and build
+
+## T-75 Read the host list only while its tab is showing
+
+T-75 · status: todo · size: S · needs: T-72, T-73 · files: src/main/poller.ts, src/main/main.ts, src/main/popover.ts, docs/ARCHITECTURE.md, test/main/poller.test.ts, test/main/main.test.ts
+
+T-66 gated the authenticated `host-list` request on the devices window being open. There is
+no such window after T-76, so the gate is retargeted rather than removed: it becomes the
+popover being open _and_ the Devices tab being the visible one. A hidden panel and a panel
+showing Usage stand the fetch down identically — neither is looking at a device list, and
+both would otherwise pay a login and a request every 30 seconds for nothing.
+
+### Acceptance
+
+- [ ] no `host-list` request is issued while the popover is hidden, asserted over several poll ticks
+- [ ] no `host-list` request is issued while the popover is open on Usage, asserted the same way
+- [ ] selecting Devices causes the fetch on the next tick, issued inside the tick and not beside it
+- [ ] leaving the tab, and closing the panel, each stop it — asserted by request count after the change
+- [ ] a login refused for the list still stands the list down for the rest of the run (T-66)
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Write the failing tests for the four gate cases
+2. [ ] Replace the window-open condition with the tab-and-visibility one
+3. [ ] Keep the fetch inside the poll's own tick
+4. [ ] Run test, lint and build
+
+## T-76 Retire the separate devices window
+
+T-76 · status: todo · size: S · needs: T-73, T-74, T-75 · files: src/main/devices-window.ts, src/renderer/devices.html, src/renderer/devices.ts, src/main/main.ts, src/main/tray.ts, README.md, docs/media/, test/main/devices-window.test.ts, test/renderer/devices.test.ts
+
+The window and its page are deleted, along with the tests that covered them — their
+assertions live on the pane after T-73 and T-74, so keeping both would be two descriptions of
+one feature, one of which is testing dead code.
+
+The tray keeps its devices entry: it opens the panel on the Devices tab instead of a window,
+so the fastest route to the device list is unchanged even though the surface is not. T-71
+puts the window in the README; this task replaces that with the tab.
+
+### Acceptance
+
+- [ ] no file under `src/` or `test/` mentions `devices-window`, `devices.html` or `devices.ts`, asserted by a test that greps the tree
+- [ ] the tray's devices entry opens the panel on the Devices tab and creates no window
+- [ ] the build output contains no devices page, asserted against the emitted file list
+- [ ] the README describes and screenshots the tab, not a window
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Write the failing grep test and the tray assertion
+2. [ ] Delete the window, the page and their tests
+3. [ ] Point the tray entry at the panel's Devices tab
+4. [ ] Retake the README screenshot and rewrite the section
+5. [ ] Run test, lint and build

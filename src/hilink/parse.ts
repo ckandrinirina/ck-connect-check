@@ -28,6 +28,13 @@ export const STALE_SESSION_CODE = 125002;
  */
 export const SPENT_TOKEN_CODE = 125003;
 
+/**
+ * The router's code for "you have no rights here" — what every protected
+ * endpoint answers on a session that has not signed in. It is a cue to ask for
+ * the password, never to retry: five refused sign-ins lock the account.
+ */
+export const NO_RIGHTS_CODE = 100003;
+
 /** How much of the `<token>` element the device actually accepts back. */
 const TOKEN_LENGTH = 32;
 

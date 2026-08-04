@@ -377,6 +377,145 @@ function settingsAreOpen(): boolean {
   return settingsToggle()?.getAttribute("aria-pressed") === "true";
 }
 
+/**
+ * The panel's two panes, in the order the strip draws them. The order is the
+ * arrow keys' order, so it lives here rather than being read back off the DOM.
+ */
+const TAB_NAMES = ["usage", "devices"] as const;
+
+type TabName = (typeof TAB_NAMES)[number];
+
+function isTabName(value: string | undefined): value is TabName {
+  return TAB_NAMES.some((name) => name === value);
+}
+
+/**
+ * Which pane is showing, as the root element holds it.
+ *
+ * The root attribute is the state and this reads it back, rather than a
+ * variable here that a reloaded page would leave disagreeing with the markup.
+ * Usage when the attribute says nothing: the tray title already states the
+ * usage figure, so it is the pane the panel is opened for.
+ */
+function currentTab(): TabName {
+  const held = document.documentElement.dataset["tab"];
+
+  return isTabName(held) ? held : "usage";
+}
+
+function tabControl(name: TabName): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>(
+    `[role="tab"][data-tab="${name}"]`,
+  );
+}
+
+function tabPane(name: TabName): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-pane="${name}"]`);
+}
+
+/**
+ * Draws the strip and the panes from whichever tab is currently selected.
+ *
+ * Everything here is derived from the one root attribute — which pane is
+ * hidden, which tab reads as selected, and which of them is in the tab order.
+ * Nothing is created: both panes ship in the markup and a switch only writes
+ * attributes onto them, so a device row keeps its identity across a press.
+ *
+ * Called on every model and on every open, for the reason `bindControls` is: a
+ * reload — and every test that loads the markup afresh — replaces the page
+ * beneath this module, and the freshly loaded panes would otherwise show
+ * whatever the static markup last said rather than the tab the user left on.
+ */
+function applyTabs(): void {
+  const selected = currentTab();
+
+  document.documentElement.dataset["tab"] = selected;
+
+  for (const name of TAB_NAMES) {
+    const control = tabControl(name);
+
+    if (control !== null) {
+      control.setAttribute("aria-selected", String(name === selected));
+      // Roving tabindex: Tab reaches the strip once and the arrows move within
+      // it, rather than every tab being its own stop on the way to the panel.
+      control.tabIndex = name === selected ? 0 : -1;
+    }
+
+    const pane = tabPane(name);
+
+    if (pane !== null) {
+      pane.hidden = name !== selected;
+    }
+  }
+}
+
+/** Selects a pane, and puts the focus where a keyboard user left it. */
+function showTab(name: TabName, focus = false): void {
+  document.documentElement.dataset["tab"] = name;
+  applyTabs();
+
+  if (focus) {
+    tabControl(name)?.focus();
+  }
+}
+
+/**
+ * Where an arrow, Home or End press lands, or null when the key is not the
+ * strip's own. Wraps at both ends: two tabs and no wrap would make one arrow
+ * key dead on each of them.
+ */
+function tabAfterKey(key: string, from: TabName): TabName | null {
+  const index = TAB_NAMES.indexOf(from);
+  const count = TAB_NAMES.length;
+
+  switch (key) {
+    case "ArrowRight":
+      return TAB_NAMES[(index + 1) % count] ?? null;
+    case "ArrowLeft":
+      return TAB_NAMES[(index - 1 + count) % count] ?? null;
+    case "Home":
+      return TAB_NAMES[0] ?? null;
+    case "End":
+      return TAB_NAMES[count - 1] ?? null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Hangs the strip's listeners off each tab, once each.
+ *
+ * One listener per control rather than one on the strip: the panes are what
+ * the strip contains once T-73 fills them, and a delegated handler would then
+ * have to tell a tab press from a press on a device row inside a pane.
+ */
+function bindTabs(): void {
+  for (const name of TAB_NAMES) {
+    const control = tabControl(name);
+
+    if (control === null || control.dataset["bound"] === "true") {
+      continue;
+    }
+
+    control.dataset["bound"] = "true";
+    control.addEventListener("click", () => {
+      showTab(name);
+    });
+    control.addEventListener("keydown", (event) => {
+      const next = tabAfterKey(event.key, name);
+
+      if (next === null) {
+        return;
+      }
+
+      // The arrows belong to the strip once it has the focus; letting them
+      // also scroll the panel would move two things with one press.
+      event.preventDefault();
+      showTab(next, true);
+    });
+  }
+}
+
 function planCapConfirm(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>("[data-plan-cap-confirm]");
 }
@@ -391,6 +530,8 @@ function planCapConfirm(): HTMLButtonElement | null {
  * so one press stays one message however many models have arrived since.
  */
 function bindControls(): void {
+  bindTabs();
+
   const button = syncButton();
 
   if (button !== null && button.dataset["bound"] !== "true") {
@@ -786,6 +927,11 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   // on the page in time for this model's own strings to reach it.
   applyControls(model);
   bindControls();
+  // From the root attribute, never from the model: which pane is showing is
+  // the user's, and a poll lands every couple of seconds while the panel is
+  // open. A model that decided this would snatch the panel back to Usage
+  // mid-read.
+  applyTabs();
 
   const fields = fieldsOf(model);
 
@@ -836,6 +982,12 @@ window.applyPopoverModel = (model: PopoverModel): void => {
 window.resetPopoverView = (): void => {
   bindControls();
   showSettings(false);
+  // Redrawn from the tab already selected, never reset to Usage. The settings
+  // are put away on every open because they are typed a few times a year and
+  // the figures are what the panel is opened for; a tab is the opposite —
+  // someone who went looking for a device usually looks again, and the tray
+  // title states the usage figure without the panel being opened at all.
+  applyTabs();
 };
 
 // The page is static and the script is deferred, so the controls exist by now.

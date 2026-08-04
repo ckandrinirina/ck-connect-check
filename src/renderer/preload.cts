@@ -25,6 +25,9 @@ const SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
 const SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 const CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
 
+/** Kept in step with `src/main/devices-window.ts`, which listens on this one. */
+const SET_BLOCKED_CHANNEL = "devices:set-blocked";
+
 contextBridge.exposeInMainWorld("popoverBridge", {
   sync(): void {
     ipcRenderer.send(SYNC_CHANNEL);
@@ -50,5 +53,26 @@ contextBridge.exposeInMainWorld("popoverBridge", {
     // The carrier's own label, untouched. Which plan it names is settled
     // against the next page read, not here.
     ipcRenderer.send(CHOOSE_FORFAIT_CHANNEL, String(label));
+  },
+});
+
+/**
+ * The devices window's own bridge, exposing one send and nothing else.
+ *
+ * The same file serves both pages — each loads this script and reaches only the
+ * bridge it uses — so the devices page has no way to sync, store a password or
+ * change a setting, and the panel has no way to block a device.
+ *
+ * Confirming the press is the page's business and has already happened by the
+ * time this runs; deciding what it costs the router is the main process's.
+ */
+contextBridge.exposeInMainWorld("devicesBridge", {
+  setBlocked(request: { mac: string; blocked: boolean }): void {
+    // Rebuilt rather than forwarded, so nothing the page hangs off the object
+    // travels with it.
+    ipcRenderer.send(SET_BLOCKED_CHANNEL, {
+      mac: String(request.mac),
+      blocked: request.blocked === true,
+    });
   },
 });

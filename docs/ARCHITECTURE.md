@@ -127,7 +127,7 @@ right.
 | `/api/wlan/host-list`                | GET    | login | one `<Host>` per Wi-Fi client — `ID`, `MacAddress`, `IpAddress`, `HostName`, `AssociatedTime`, `AssociatedSsid`   |
 | `/api/lan/HostInfo`                  | GET    | —     | **not implemented**: `100002`, even on an authenticated session                                                   |
 | `/api/wlan/multi-macfilter-settings` | GET    | login | `<Ssids>` → four `<Ssid>` blocks, each `Index`, `WifiMacFilterStatus`, `WifiMacFilterMac0..9`, `wifihostname0..9` |
-| `/api/wlan/multi-macfilter-settings` | POST   | login | writes the whole filter back — not yet exercised; T-68 is the first write                                         |
+| `/api/wlan/multi-macfilter-settings` | POST   | login | writes the whole filter back — built by T-68, and **never yet sent to a real device**: see the mode warning below |
 
 **`host-list` is the only device source, and the app reads nothing else.** `/api/lan/HostInfo`
 was expected to add wired clients and the connection medium; it does not exist on this
@@ -159,7 +159,24 @@ One parsing trap, and it is the router's own: the MAC slots are `WifiMacFilterMa
 name slots are `wifihostnameN`, lower-case. A write has to reproduce both spellings exactly.
 
 At rest the filter is off — `WifiMacFilterStatus` is `0` on all four SSIDs — and that is the
-shape a write has to start from.
+shape a write has to start from. `0` is therefore the only status this device has been
+observed to send; `1` is read as a whitelist and `2` as a blacklist, which is the order the
+router's own web UI offers (disabled, allow, deny) and the mapping `src/hilink/macfilter.ts`
+converts at the boundary. A status outside those three is rejected rather than guessed at,
+so a firmware that numbers them differently fails loudly instead of drawing the wrong
+verdict on every row.
+
+> **The `1`/`2` mapping is inferred and has never been observed (T-68).** The only captured
+> reply is all zeros, so nothing in this repository proves which integer the firmware means by
+> which mode; a live check was attempted and did not settle it. If `2` is in fact the
+> whitelist, a write believing it is the blacklist would tell the router "allow only this one
+> address" and cut off every other device — including the Mac running this app, over the very
+> connection the undo would have to travel. Two things follow, and both are enforced in code:
+> the mapping lives in exactly one table (`MODES` in `src/hilink/macfilter.ts`, which both
+> `parseMacFilter` and `macFilterStatus` read, so one edit corrects the reader and the writer
+> together), and **blacklist is the only mode the app ever writes** — a change to a filter
+> already in whitelist mode is refused in `refuseDeviceBlock` before any request is made,
+> rather than reasoned about against a mapping nobody has verified.
 
 ## Orange portal
 
@@ -376,7 +393,7 @@ src/
   config/       read and write the plan limit, router address and allowance anchor
   main/         Electron main process — tray, poll loop, popover window, login item,
                 keychain-backed router password
-  renderer/     popover UI (HTML + CSS + TS), and the connected-devices window
+  renderer/     popover UI (HTML + CSS + TS) — the Usage and Devices tabs are one page
 test/           mirrors src/, one .test.ts per source file
 assets/         icon sources — hand-written SVG, and the PNG/.icns rasterised from them
 scripts/        build-time scripts that are not part of the app — icon rasterisation
@@ -457,7 +474,7 @@ Append-only. One line each, always with the reason.
 - On Orange the plan period is the calendar month, derived, and only the cap is typed — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly
 - The router's month counter has no role at all on Orange — it read 51.1 Go against the portal's 7.37 Go on the same day, so the two count different traffic and joining them would produce a confident wrong number
 - An unreachable portal is rendered like an unreachable router, as a state and not an error — the portal only answers on the Orange network, so a laptop on any other Wi-Fi is an ordinary condition
-- The connected devices live in their own window, not in the popover — a device list is a table that grows with the household, and the panel is 320×520 with 497 px already spent and no room to scroll
+- **Reverses the separate-window decision this line used to state (T-72):** the connected devices are a second tab inside the popover, not a window of their own — a window was chosen because the panel had 497 of its 520 px spent, but a tab spends none of them: the two panes never draw at once, so the list gets the whole 320×520 and the app stays one screen with nothing to summon and nothing left open behind the menu bar
 - The device list is the one place text beats a drawing, despite the graphical-default rule — names, IP addresses and MAC addresses are identifiers with no magnitude, and the rule reserves text for exactly that
 - Devices are read on the ordinary poll, not on a timer of their own — `host-list` is an unauthenticated `GET` alongside the monitoring endpoints, so a second schedule would be a second thing to keep in step for no saving
 - Blocking is the router's WLAN MAC filter, not a per-device API — the device holds one list and the write replaces it whole, so every block reads the current filter first and never composes a write from a remembered one
@@ -467,6 +484,38 @@ Append-only. One line each, always with the reason.
 - **Corrects the poll line above (T-62):** devices are read only when a password is stored, because `host-list` answers `100003` on an unauthenticated session — it is not on the same footing as `/api/monitoring/status`, so the list rides the poll only once logged in, and "no password stored" is an empty state the window renders rather than an error
 - **Corrects the cap in the line above (T-62):** the filter holds ten entries per SSID, not 32, and the reply is four `<Ssid>` blocks rather than one list — a write carries all four or it silently clears the ones it omits
 - The devices window drops the 2.4/5 GHz column it was sketched with (T-62) — `host-list` carries no band, frequency or medium field, `/api/lan/HostInfo` does not exist on this firmware, and a column with no source is not worth inventing one for
+- **Narrows the "devices ride the poll" line above (T-66, retargeted by T-75):** the host list is read only while the Devices tab is the visible one and the popover itself is open — it is an authenticated request the menu bar never needs, so a pane nobody is looking at must not cost one every 30 seconds; a hidden popover and a popover showing Usage stand it down identically
+- The device list is fetched inside the poll's own tick rather than beside it — a request started next to the poll could stack on the router, which is the one thing the settle-then-schedule cadence exists to prevent
+- A login taken out for the device list is attempted once and, if refused, stands the list down for the rest of the run — the list is read on every poll while the window is open, and a retry on that cadence would reach the five-failure lockout in minutes
+- An empty device list and an unreachable router are different states in the window, not one blank table — only the router can say that nothing is connected, and a router that did not answer has said nothing at all
+- The devices window drops the active dot too (T-66) — `host-list` carries no `Active` element and reports only the hosts currently associated, so the dot would be lit on every row it ever drew
+- Device rows are keyed by MAC in the renderer and updated in place — the list refreshes on the poll, and rebuilding the table would replace the row under a user reading it
+- `WifiMacFilterStatus` becomes a named mode at the `src/hilink/` boundary (T-67) — unlike `CurrentNetworkTypeEx`, which is a carrier-agnostic label table, this number _is_ the reply's own encoding of a state, and a bare `2` crossing into the app would leave every caller re-reading the router's numbering
+- "Blocked" is a predicate over the filter's mode and its list together, never a membership test (T-67) — a blacklist holding a MAC blocks it and a whitelist holding the same MAC allows it and blocks everyone else, so the list alone answers the opposite question half the time
+- MAC comparison drops separators and case before comparing (T-67) — the host list and the filter slots are the same router spelling the same address two ways, and a raw string test would read a blocked device as allowed
+- The four per-SSID blocks are kept beside the collapsed mode and address set (T-67) — the write replaces the filter whole, so the read T-68's `POST` is composed from has to carry the blocks it came from
+- An address the filter blocks and `host-list` does not report is shown as a device that is blocked and absent (T-67) — a blocked device stops associating, so without a row of its own it could only be unblocked by connecting first, which is the one thing it cannot do
+- A remembered address that does not read as blocked adds no row (T-67) — with the filter off, or under a whitelist, such an entry names a device that is merely remembered or merely permitted, and a ghost row for it answers no question the window was asked
+- The blocked state is a word in an Access column, not a tint on the row (T-67) — the window ships unstyled, and the pace meter's rule already stands: colour is never the only carrier of a verdict
+- Every write reads the filter first and sends back all four blocks with one address added or removed (T-68) — the router replaces the filter with whatever it is sent, so a write composed from a remembered list silently unblocks whoever joined it since, and a read that fails ends the press rather than guessing
+- Blocking the first device turns blacklist mode on in the same write, and unblocking the last one leaves the mode exactly as it found it (T-68) — the user asked about one device, and switching the filter off is a change to every other one
+- Blacklist is the only mode this app ever writes, and a filter already in whitelist mode is refused before any request (T-68) — the `1`/`2` mapping is inferred and unverified, and a whitelist blocks every device it does not name, so there is no safe way to reason about one
+- A block requested for this machine's own MAC is refused in `src/domain/` before any request, not only hidden in the page (T-68) — the guard must hold whatever the UI renders, and it matches on MAC rather than IP because a DHCP lease moves and the wrong row is the exact failure it prevents
+- The cap is stated rather than attempted (T-68) — ten entries per SSID is the firmware's limit, a household reaching it has done nothing wrong, and the refusal names the cap instead of reporting a write that failed
+- A press gets its own single sign-in, where the poll's list gets one for the whole run (T-68) — a refused login is never retried inside one press, but a second press tries again, because a press is deliberate and a poll is not
+- The row after a write is drawn from a re-read of the filter, never from the click (T-68) — the router is the only thing that knows what it is now refusing, and a row painted optimistically would state a block that may have been refused
+- The devices page talks back over a preload bridge on a named channel, where the model rides a global (T-68) — the model only ever flows main → renderer, and this ends in an authenticated `POST`, so it is validated in the main process like every other channel that can reach the router
+- This machine's own row carries no block control at all, with a sentence where the button would have been (T-69) — absent rather than disabled, because a disabled control is one attribute away from being pressed and an empty cell would leave the omission to be guessed at; the domain refusal above stands whatever the page renders
+- Which row is this machine is decided in `src/domain/` from the interface MACs the main process reads, and travels on the row (T-69) — the page is told the verdict rather than working it out, exactly as it is told the blocked one, and a machine with no interface in the list marks nothing and leaves every row its control
+- **Corrects "no password stored is an empty state" above (T-70):** no password stored is a state of its own, `no-password`, and never the offline one — the router is fine and has not been asked anything, and blaming it for something the user settles in the panel in ten seconds sends them looking in the wrong place
+- Why a press changed nothing rides beside the list rather than replacing it (T-70) — a write that failed has said nothing whatever about which devices are connected, and a table that emptied over a refused toggle would throw away the one thing the window exists to show
+- The refusal the window states is the `DeviceBlockRefusal | RouterFailure` the domain and the router boundary already speak, joined and not re-invented (T-70) — a second vocabulary in the renderer would have to be kept in step with both, and the refusal it could not name is exactly the one whose number matters
+- An unrecognised router refusal reaches the devices window with its code and its endpoint intact (T-70) — the same rule the sync panel already keeps, because a bare "the change was refused" leaves nothing to act on and nothing to report
+- Every one of the five reasons the window has no list, or no change, is a sentence on the page and never a dialog (T-70) — the app runs unattended, so a modal nobody dismisses blocks it for as long as it is left alone; the block confirmation stays, being the one thing a person is standing there for
+- Both tabs exist in the DOM from first paint and selection only flips an attribute (T-72) — device rows are keyed by MAC and updated in place, and a pane rebuilt on every tab press would discard exactly the identity that keeps a row steady under a reader
+- The panel reopens on whichever tab was last shown (T-72) — someone who went looking for a device usually looks again, and the tray title already states the usage figure, so re-showing Usage on every open would cost a press to get back where they were
+- The Devices pane scrolls and the Usage pane does not (T-73) — the panel's no-scrolling rule exists because the usage figures are a fixed set that must all be readable at once, whereas a household's device count is unbounded and there is no layout that fits an unknown number of rows
+- The block control keeps its own preload channel, now on the popover's bridge rather than a second page's (T-74) — the channel is validated in the main process because it ends in an authenticated `POST`, and which window it arrived from was never what made it safe
 
 ## Conventions
 

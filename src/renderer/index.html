@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-stale="true" data-limit="unset">
+<html lang="en" data-stale="true" data-limit="unset" data-tab="usage">
   <head>
     <meta charset="utf-8" />
     <!-- No remote anything: the panel only ever renders strings handed to it by the main process. -->
@@ -94,42 +94,85 @@
       is the settings below, and the toggle in the header decides which.
     -->
     <div class="view" data-main-view>
-      <section class="usage">
-        <!--
+      <!--
+        Which of the two panes below is showing. A strip rather than a second
+        window: the panes never draw at once, so the devices list costs the
+        panel none of the 520 px the figures already spend.
+
+        Both tabs are real buttons and both panes are in the document from
+        first paint. Selecting one flips `data-tab` on the root element — the
+        same bargain every other panel state makes — and builds nothing, which
+        is what lets a device row keep its identity under a reader.
+      -->
+      <div class="tabs" role="tablist" aria-label="Panel sections">
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          id="tab-usage"
+          data-tab="usage"
+          aria-controls="pane-usage"
+          aria-selected="true"
+        >
+          Usage
+        </button>
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          id="tab-devices"
+          data-tab="devices"
+          aria-controls="pane-devices"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Devices
+        </button>
+      </div>
+
+      <div
+        class="pane"
+        id="pane-usage"
+        data-pane="usage"
+        role="tabpanel"
+        aria-labelledby="tab-usage"
+      >
+        <section class="usage">
+          <!--
           The ring itself is built by `popover.ts`: its geometry comes from the
           model, and an SVG whose only job is to be redrawn belongs where the
           redrawing happens. The percentage stays here as ordinary text so the
           page reads the same as every other field.
         -->
-        <div class="dial" data-dial role="img" aria-label="No usage read yet">
-          <span class="dial-value" data-field="percent">—</span>
-        </div>
+          <div class="dial" data-dial role="img" aria-label="No usage read yet">
+            <span class="dial-value" data-field="percent">—</span>
+          </div>
 
-        <div class="usage-figures">
-          <span class="total" data-field="monthTotal">—</span>
-          <span class="caption">used this month</span>
-          <p class="prompt" data-field="prompt"></p>
+          <div class="usage-figures">
+            <span class="total" data-field="monthTotal">—</span>
+            <span class="caption">used this month</span>
+            <p class="prompt" data-field="prompt"></p>
 
-          <!--
+            <!--
             Shown only when a sync brought back a plan the stored cap cannot
             describe. Confirming re-submits whatever is already in the field
             above, so an unchanged plan size costs one press rather than a
             retype — the panel has no separate "confirm" message to send.
           -->
-          <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
-            <p class="plan-cap-message" data-field="planCapMessage"></p>
-            <button
-              class="plan-cap-confirm"
-              type="button"
-              data-plan-cap-confirm
-            >
-              Confirm
-            </button>
+            <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
+              <p class="plan-cap-message" data-field="planCapMessage"></p>
+              <button
+                class="plan-cap-confirm"
+                type="button"
+                data-plan-cap-confirm
+              >
+                Confirm
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!--
+        <!--
         Whether that share is being spent faster than the month is passing. It
         shows one reading, never two: the meter once the two figures are typed
         into the settings view, and the recovery line — what is left to spend a
@@ -146,14 +189,20 @@
         widths come from the model; the stylesheet holds every colour and this
         page holds neither.
       -->
-      <section class="pace" data-pace hidden>
-        <p class="pace-sustainable" data-field="paceSustainable"></p>
-        <div class="pace-meter" data-pace-meter role="img" aria-label="" hidden>
-          <span class="pace-track">
-            <span class="pace-fill" data-pace-fill></span>
-            <span class="pace-tick" data-pace-tick></span>
-          </span>
-          <!--
+        <section class="pace" data-pace hidden>
+          <p class="pace-sustainable" data-field="paceSustainable"></p>
+          <div
+            class="pace-meter"
+            data-pace-meter
+            role="img"
+            aria-label=""
+            hidden
+          >
+            <span class="pace-track">
+              <span class="pace-fill" data-pace-fill></span>
+              <span class="pace-tick" data-pace-tick></span>
+            </span>
+            <!--
             The two numerals say which is which themselves. There is no legend
             anywhere else on the panel, so an unlabelled `6.15 Go / 5.00 Go`
             leaves the reader to guess which half is the spending and which the
@@ -161,19 +210,19 @@
             the page; only the figures come from the model. `a day` still
             trails the pair and governs both, as it always did.
           -->
-          <span class="pace-figures">
-            <span class="pace-average" data-field="paceAverage"></span>
-            <span class="pace-figures-label">spent</span>
-            <span class="pace-figures-rule">/</span>
-            <span data-field="paceAfforded"></span>
-            <span class="pace-figures-label">budget</span>
-            <span class="pace-figures-unit">a day</span>
-          </span>
-        </div>
-        <p class="pace-hint" data-field="paceHint"></p>
-      </section>
+            <span class="pace-figures">
+              <span class="pace-average" data-field="paceAverage"></span>
+              <span class="pace-figures-label">spent</span>
+              <span class="pace-figures-rule">/</span>
+              <span data-field="paceAfforded"></span>
+              <span class="pace-figures-label">budget</span>
+              <span class="pace-figures-unit">a day</span>
+            </span>
+          </div>
+          <p class="pace-hint" data-field="paceHint"></p>
+        </section>
 
-      <!--
+        <!--
         The volume left, and where the figure came from. It is a different
         question from the dial above it — that is a share of the plan, this is
         the volume itself — so it gets its own strip rather than another number
@@ -184,18 +233,18 @@
         what was used, and a caption fixed in the markup would credit the
         second with a sentence it never said.
       -->
-      <section class="allowance">
-        <div class="allowance-figure">
-          <span class="allowance-remaining" data-field="allowanceRemaining"
-            >—</span
-          >
-          <span class="caption" data-field="allowanceCaption"></span>
-        </div>
-        <div class="allowance-meta">
-          <span class="allowance-plan" data-field="allowancePlan">—</span>
-          <span class="allowance-synced" data-field="allowanceSynced">—</span>
-        </div>
-        <!--
+        <section class="allowance">
+          <div class="allowance-figure">
+            <span class="allowance-remaining" data-field="allowanceRemaining"
+              >—</span
+            >
+            <span class="caption" data-field="allowanceCaption"></span>
+          </div>
+          <div class="allowance-meta">
+            <span class="allowance-plan" data-field="allowancePlan">—</span>
+            <span class="allowance-synced" data-field="allowanceSynced">—</span>
+          </div>
+          <!--
           When the volume above runs out, on one line with it. They were two
           tiles of the grid below until the panel outgrew its window; they are
           the same carrier's answer about the same allowance, so they read
@@ -205,20 +254,20 @@
           expiry leaves this able to read only "— · —", and a dashed row is
           still read out in full to a screen reader.
         -->
-        <div class="allowance-validity" data-validity-row>
-          <span class="caption">Expires</span>
-          <span data-field="allowanceExpires">—</span>
-          <span class="allowance-days-left" data-field="allowanceDaysLeft"
-            >—</span
-          >
-        </div>
-        <!--
+          <div class="allowance-validity" data-validity-row>
+            <span class="caption">Expires</span>
+            <span data-field="allowanceExpires">—</span>
+            <span class="allowance-days-left" data-field="allowanceDaysLeft"
+              >—</span
+            >
+          </div>
+          <!--
           The re-sync marker. It is text, never a colour on its own: a figure
           that can no longer be trusted has to say so out loud.
         -->
-        <p class="allowance-note" data-field="allowanceNote"></p>
+          <p class="allowance-note" data-field="allowanceNote"></p>
 
-        <!--
+          <!--
           Which plan the figure above is about, when the app picked it from
           several rather than the user. It sits here because it qualifies that
           figure — the name itself is already on the line above, in the slot a
@@ -229,55 +278,55 @@
           buttons are built by `popover.ts` — there are as many as the carrier
           listed, which is not a number this page can know.
         -->
-        <div class="forfait-choice" data-forfait-choice hidden>
-          <p class="forfait-note" data-field="forfaitNote"></p>
-          <div class="forfait-alternatives" data-forfait-alternatives></div>
-        </div>
-      </section>
+          <div class="forfait-choice" data-forfait-choice hidden>
+            <p class="forfait-note" data-field="forfaitNote"></p>
+            <div class="forfait-alternatives" data-forfait-alternatives></div>
+          </div>
+        </section>
 
-      <!--
+        <!--
         Live throughput, as a shape rather than a figure. Each row is a label,
         the sparkline the last few minutes drew, and the current rate as text.
         The two SVGs are built by `popover.ts` for the same reason the dial's
         is: they exist to be redrawn, so they belong where the redrawing happens.
       -->
-      <section class="rates">
-        <div class="rate">
-          <span class="rate-label">Down</span>
-          <span class="spark" data-spark="download" data-empty="true"></span>
-          <span class="rate-value" data-field="downloadRate">—</span>
-        </div>
-        <div class="rate">
-          <span class="rate-label">Up</span>
-          <span class="spark" data-spark="upload" data-empty="true"></span>
-          <span class="rate-value" data-field="uploadRate">—</span>
-        </div>
-      </section>
+        <section class="rates">
+          <div class="rate">
+            <span class="rate-label">Down</span>
+            <span class="spark" data-spark="download" data-empty="true"></span>
+            <span class="rate-value" data-field="downloadRate">—</span>
+          </div>
+          <div class="rate">
+            <span class="rate-label">Up</span>
+            <span class="spark" data-spark="upload" data-empty="true"></span>
+            <span class="rate-value" data-field="uploadRate">—</span>
+          </div>
+        </section>
 
-      <!--
+        <!--
         What is left once every figure stated somewhere else has gone. The
         month's download and upload totals went because the plan is billed on
         their sum, and both the dial and the allowance already state that sum;
         the expiry and the days left went up to the strip they qualify.
       -->
-      <dl class="stats">
-        <div class="stat">
-          <dt>Devices</dt>
-          <dd data-field="connectedDevices">—</dd>
-        </div>
-      </dl>
+        <dl class="stats">
+          <div class="stat">
+            <dt>Devices</dt>
+            <dd data-field="connectedDevices">—</dd>
+          </div>
+        </dl>
 
-      <!--
+        <!--
         What the dialogue is doing, reported where there is room for it to run
         to several lines. A live region: the step names arriving in it are the
         proof the panel has not frozen. The button that starts it is in the
         header.
       -->
-      <footer class="sync" data-sync-row>
-        <p class="sync-status" data-field="syncStatus" role="status"></p>
-      </footer>
+        <footer class="sync" data-sync-row>
+          <p class="sync-status" data-field="syncStatus" role="status"></p>
+        </footer>
 
-      <!--
+        <!--
         Why there is no figure, when there is none. It stands in the row the
         sync status line holds, and takes that row's place on the carriers
         where the line is not on the panel at all — which is every carrier
@@ -291,9 +340,25 @@
         Hidden through the `hidden` attribute, so it costs no height at all
         while every figure is present.
       -->
-      <footer class="notice" data-notice-row hidden>
-        <p class="notice-message" data-field="notice" role="status"></p>
-      </footer>
+        <footer class="notice" data-notice-row hidden>
+          <p class="notice-message" data-field="notice" role="status"></p>
+        </footer>
+      </div>
+
+      <!--
+        The other pane. Empty here on purpose: this task builds the strip and
+        the switching, and T-73 fills the rows in. It is in the document from
+        the start all the same — a pane built on first press would throw away
+        the row identity that keeps a device steady while it is being read.
+      -->
+      <div
+        class="pane"
+        id="pane-devices"
+        data-pane="devices"
+        role="tabpanel"
+        aria-labelledby="tab-devices"
+        hidden
+      ></div>
     </div>
 
     <!--

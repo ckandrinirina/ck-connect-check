@@ -37,7 +37,7 @@ import {
   type Clock,
   type UsageState,
 } from "../domain/quota.js";
-import type { SnapshotResult } from "../hilink/client.js";
+import type { HostListResult, SnapshotResult } from "../hilink/client.js";
 import type { OrangePortalResult } from "../orange/portal.js";
 import { selectForfait } from "../orange/select.js";
 import type { OrangeForfait } from "../orange/types.js";
@@ -60,6 +60,11 @@ export interface SnapshotSource {
 /** The slice of the Orange boundary the poller needs — a stub satisfies it in tests. */
 export interface PortalSource {
   read(): Promise<OrangePortalResult>;
+}
+
+/** The slice of the router the device list needs — a stub satisfies it in tests. */
+export interface HostListSource {
+  hosts(): Promise<HostListResult>;
 }
 
 /**
@@ -105,6 +110,23 @@ export interface UsagePollerOptions {
   portal?: PortalSource;
   /** Called after every settled portal fetch, so the panel can be re-pushed. */
   onPortal?: (status: PortalStatus) => void;
+  /**
+   * The connected devices. Absent means the list is never read — which is what
+   * every test that is not about devices wants.
+   */
+  hosts?: HostListSource;
+  /**
+   * Whether anything is looking at the device list — the devices window being
+   * open, in the app. Read on every tick rather than set once, for the reason
+   * the panel's visibility is: a window can be closed without telling us.
+   *
+   * False, and absent, both mean no host-list request is made at all. The list
+   * costs a request the monitoring endpoints do not, and a window nobody has
+   * open is not worth one.
+   */
+  wantsDevices?: () => boolean;
+  /** Called after every settled device read, so the window can be re-pushed. */
+  onDevices?: (result: HostListResult) => void;
   /** Injected so a reading's age is testable without a real clock. */
   clock?: Clock;
   /** Called only when the title actually changes, so the tray is not rewritten needlessly. */
@@ -125,6 +147,9 @@ export class UsagePoller {
   readonly #onState: ((state: UsageState) => void) | undefined;
   readonly #portalSource: PortalSource | undefined;
   readonly #onPortal: ((status: PortalStatus) => void) | undefined;
+  readonly #hosts: HostListSource | undefined;
+  readonly #wantsDevices: (() => boolean) | undefined;
+  readonly #onDevices: ((result: HostListResult) => void) | undefined;
   readonly #clock: Clock;
 
   #title = STARTUP_TRAY_TITLE;
@@ -150,6 +175,9 @@ export class UsagePoller {
     this.#onState = options.onState;
     this.#portalSource = options.portal;
     this.#onPortal = options.onPortal;
+    this.#hosts = options.hosts;
+    this.#wantsDevices = options.wantsDevices;
+    this.#onDevices = options.onDevices;
     this.#clock = options.clock ?? systemClock;
   }
 
@@ -249,7 +277,66 @@ export class UsagePoller {
     }
 
     this.#apply(result);
+
+    // Awaited inside the tick rather than left running beside it, so the device
+    // request can no more stack on the router than a second poll can. Nothing
+    // is awaited at all when no window wants the list, so a poll that reads
+    // only the router keeps exactly the shape it had.
+    if (this.#wantsDevices?.() === true) {
+      await this.#readDevices(result);
+
+      if (!this.#running) {
+        return;
+      }
+    }
+
     this.#scheduleNext();
+  }
+
+  /**
+   * The connected devices, for as long as something is looking at them.
+   *
+   * Everything here is subordinate to the poll that has just landed: the
+   * snapshot is applied before this runs, so a host list that fails — or throws
+   * — cannot touch the title, the usage state or the panel's figures. The
+   * window is told instead, which is the whole difference between a list that
+   * is unavailable and a router with nothing connected to it.
+   *
+   * Only ever called with a window open — {@link UsagePoller.#tick} makes that
+   * decision, so that a closed window costs not even the await.
+   */
+  async #readDevices(result: SnapshotResult): Promise<void> {
+    if (!result.online) {
+      // The router just failed to answer five endpoints; asking it a sixth is a
+      // request nobody needs, and an unreachable router has not said that
+      // nothing is connected to it.
+      this.#onDevices?.({ online: false, reason: result.reason });
+
+      return;
+    }
+
+    if (this.#hosts === undefined) {
+      return;
+    }
+
+    let listed: HostListResult;
+
+    try {
+      listed = await this.#hosts.hosts();
+    } catch {
+      // The client resolves rather than rejects, but a stub or a future
+      // implementation might throw; an unattended app must not die of it.
+      listed = { online: false, reason: "error" };
+    }
+
+    if (!this.#running) {
+      return;
+    }
+
+    // Published exactly as the router answered. What the list is *called* and
+    // what order it reads in are display rules, and they live with the model
+    // the window is built from.
+    this.#onDevices?.(listed);
   }
 
   #apply(result: SnapshotResult): void {

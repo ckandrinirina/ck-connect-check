@@ -184,6 +184,65 @@ body {
 }
 
 /*
+  The two panes, on the same terms as the two views above them: a `display` of
+  their own, so the UA rule for `hidden` would not take the put-away one off
+  the panel. The panes never draw at once, which is the whole reason the device
+  list costs the figures none of their 520 px.
+*/
+.pane {
+  display: block;
+}
+
+.pane[hidden] {
+  display: none;
+}
+
+/*
+  The strip that chooses between them. Two words on one row above the figures —
+  the panel is read top to bottom and this decides what the rest of it is.
+
+  A rule under the strip rather than a border around each tab: the selected tab
+  is marked by the line running under it, so the pair reads as one control with
+  a current side rather than as two buttons of which one happens to be darker.
+*/
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  flex: 1;
+  padding: 5px 0 4px;
+  border: none;
+  /* The selected marker, transparent until it is the selected one. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: default;
+}
+
+/*
+  Never colour alone: the selected tab is brighter *and* underlined, so the
+  panel still reads on a greyscale screen and to anyone who cannot separate
+  the two hues.
+*/
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/*
   The way through to the three typed values. A glyph rather than a word: the
   header already carries a carrier name that can run long, and this is the one
   control on it that is not read every time the panel is opened.
