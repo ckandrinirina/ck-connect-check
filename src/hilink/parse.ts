@@ -203,6 +203,36 @@ export function readReply(xml: string, endpoint: string): Map<string, string> {
   return fields;
 }
 
+/**
+ * Read a reply whose payload repeats an element, returning one field map per
+ * block. Every monitoring endpoint sends a flat leaf list, which `readReply`
+ * covers; `host-list` is the only nested reply this firmware offers, and the
+ * flat scanner records leaves at depth 1 only. Each block is therefore rescanned
+ * under a root of its own, which reuses the same tag scanner and entity
+ * decoding rather than growing a second one.
+ *
+ * The whole reply is read first, so an `<error>` root still becomes a typed API
+ * error and a truncated capture still becomes a parse error — a missing block
+ * and a refused request must never look alike.
+ */
+export function readBlocks(
+  xml: string,
+  endpoint: string,
+  block: string,
+): Map<string, string>[] {
+  readReply(xml, endpoint);
+
+  const source = xml
+    .replace(/<\?[\s\S]*?\?>/g, "")
+    .replace(/<!--[\s\S]*?-->/g, "");
+  const pattern = new RegExp(`<${block}>([\\s\\S]*?)</${block}>`, "g");
+
+  return [...source.matchAll(pattern)].map(
+    (match) =>
+      scan(`<${block}Block>${match[1]}</${block}Block>`, endpoint).fields,
+  );
+}
+
 export function requireText(
   fields: Map<string, string>,
   key: string,
@@ -215,7 +245,7 @@ export function requireText(
   return value;
 }
 
-function requireNumber(
+export function requireNumber(
   fields: Map<string, string>,
   key: string,
   endpoint: string,

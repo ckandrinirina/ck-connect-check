@@ -64,8 +64,8 @@
 | T-61 | Stop the allowance strip claiming what Orange never said                | done   | S    | T-60                         |
 | T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
 | T-62 | Find out what the router actually says about connected devices          | done   | M    | —                            |
-| T-63 | Turn the router's host list into typed devices                          | todo   | M    | T-62                         |
-| T-64 | Name, label and order the devices for reading                           | todo   | S    | T-63                         |
+| T-63 | Turn the router's host list into typed devices                          | done   | M    | T-62                         |
+| T-64 | Name, label and order the devices for reading                           | done   | S    | T-63                         |
 | T-65 | Open a window for the connected devices                                 | done   | M    | —                            |
 | T-66 | Fill the devices window from the live router                            | todo   | M    | T-64, T-65                   |
 | T-67 | Know which devices the router is already blocking                       | todo   | M    | T-62, T-63                   |
@@ -3585,9 +3585,10 @@ write here is the household losing Wi-Fi, and there is no test that justifies it
   as the edge case T-64 has to name.
 - Parsing trap preserved in the fixture: the router spells the MAC slots `WifiMacFilterMacN` but
   the name slots `wifihostnameN`, lower-case.
+
 ## T-63 Turn the router's host list into typed devices
 
-T-63 · status: todo · size: M · needs: T-62 · files: src/hilink/devices.ts, src/hilink/parse.ts, test/hilink/devices.test.ts
+T-63 · status: done · size: M · needs: T-62 · files: src/hilink/devices.ts, src/hilink/parse.ts, test/hilink/devices.test.ts
 
 XML never escapes `src/hilink/`, and every numeric field from the router arrives as a string —
 both conventions apply here exactly as they do to the monitoring endpoints. This task adds the
@@ -3607,27 +3608,55 @@ error code and endpoint, the way every other unrecognised failure does.
 
 ### Acceptance
 
-- [ ] a fixture with several hosts parses into one typed device per host, with the MAC, IP, name, medium and association time from the fixture
-- [ ] a host with an empty or missing name parses without inventing one — the field is empty, not filled in at this layer
-- [ ] a single-host reply parses into a one-element array, not into a bare object
-- [ ] an empty host list parses into an empty array and is not an error
-- [ ] two entries sharing a MAC address collapse to one device rather than appearing twice
-- [ ] a malformed reply raises an error carrying the router's code and the endpoint, asserted the way T-23 asserts its error path
-- [ ] every numeric and boolean field on the returned type is a number or boolean, never the router's string
-- [ ] no XML type crosses out of `src/hilink/`, asserted by the exported signature
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] a fixture with several hosts parses into one typed device per host, with the MAC, IP, name, ~~medium~~ and association time from the fixture — _amended, see Notes_
+- [x] a host with an empty or missing name parses without inventing one — the field is empty, not filled in at this layer
+- [x] a single-host reply parses into a one-element array, not into a bare object
+- [x] an empty host list parses into an empty array and is not an error
+- [x] two entries sharing a MAC address collapse to one device rather than appearing twice
+- [x] a malformed reply raises an error carrying the router's code and the endpoint, asserted the way T-23 asserts its error path
+- [x] every numeric and boolean field on the returned type is a number or boolean, never the router's string
+- [x] no XML type crosses out of `src/hilink/`, asserted by the exported signature
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests over T-62's fixtures, including the empty, single-host, duplicate-MAC and malformed cases
-2. Define the `Device` type at the `src/hilink/` boundary
-3. Parse the chosen endpoint into it, converting every field at the boundary
-4. Route the failure path through the existing error carrier
-5. Run test, lint and build
+1. [x] Write the failing tests over T-62's fixtures, including the empty, single-host, duplicate-MAC and malformed cases
+2. [x] Define the `Device` type at the `src/hilink/` boundary
+3. [x] Parse the chosen endpoint into it, converting every field at the boundary
+4. [x] Route the failure path through the existing error carrier
+5. [x] Run test, lint and build
+
+### Notes
+
+- **Two fields named in this task's description have no source and were dropped**, on the
+  user's explicit decision when the conflict was put to them. T-62's probe established that
+  `host-list` carries no band, frequency or connection-medium element, and no `<Active>`
+  element either — `test/hilink/device-fixtures.test.ts` asserts both absences as findings.
+  `Device` therefore carries `mac`, `ip`, `name`, `ssid` and `associatedSeconds` and nothing
+  more. The principle chosen was that no field should lie about data that does not exist, so
+  neither an optional-always-absent field nor an `AssociatedSsid` stand-in was added. A test
+  pins the exact key set, so a later firmware that starts sending these cannot add them
+  silently.
+- `ssid` is kept because `AssociatedSsid` is real data present on every host and T-67/T-68
+  need it — the MAC filter is per-SSID. It is explicitly **not** a band: all four SSIDs share
+  one name on this device.
+- **`host-list` is the first nested reply the app reads.** Every monitoring endpoint sends a
+  flat leaf list, and `scan()` in `parse.ts` only records leaves at depth 1. Rather than grow a
+  second scanner, `readBlocks()` was added: it reads the whole reply first (so an `<error>`
+  root still becomes a typed `HilinkApiError` and a truncated capture still becomes a
+  `HilinkParseError`), then rescans each repeated block under a root of its own.
+  `requireNumber` was exported from `parse.ts` for the same reason.
+- **Duplicate MACs collapse last-wins**, and the MAC is upper-cased on the way in so a router
+  that varies its spelling cannot present one device twice. The fixture holds no duplicate, so
+  both cases are covered by synthetic replies built in the test rather than by editing a
+  capture.
+- The manual gate was signed off against the committed fixtures. The live-router diff (step 4
+  of the offered steps) was not run — it needs an authenticated session, and nothing in this
+  task depends on it.
 
 ## T-64 Name, label and order the devices for reading
 
-T-64 · status: todo · size: S · needs: T-63 · files: src/domain/devices.ts, test/domain/devices.test.ts
+T-64 · status: done · size: S · needs: T-63 · files: src/domain/devices.ts, test/domain/devices.test.ts
 
 `src/domain/` imports neither Electron nor the network, and the code-to-label tables live there
 for the same reason `CurrentNetworkTypeEx` does — they are presentation rules over plain data,
@@ -3649,23 +3678,49 @@ formatted with the same French-facing units the rest of the app uses.
 
 ### Acceptance
 
-- [ ] a device with a name displays that name unchanged
-- [ ] a device with an empty name displays its MAC address, and two nameless devices display differently from each other
-- [ ] each medium value from T-62's fixtures maps to its French label
-- [ ] an unrecognised medium value is displayed verbatim, not hidden and not guessed
-- [ ] active devices sort before inactive ones, and the order of an unchanged list is byte-identical across two calls
-- [ ] two devices with the same name sort deterministically by MAC
-- [ ] association time formats through the existing duration helper, asserted against at least one hour-scale and one day-scale value
-- [ ] the module imports nothing from Electron or the network, asserted the way `src/domain/` already is
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] a device with a name displays that name unchanged
+- [x] a device with an empty name displays its MAC address, and two nameless devices display differently from each other
+- [ ] ~~each medium value from T-62's fixtures maps to its French label~~ — **dropped, see Notes**
+- [ ] ~~an unrecognised medium value is displayed verbatim, not hidden and not guessed~~ — **dropped, see Notes**
+- [x] ~~active devices sort before inactive ones, and~~ the order of an unchanged list is byte-identical across two calls — _amended, see Notes_
+- [x] two devices with the same name sort deterministically by MAC
+- [x] association time formats through the existing duration helper, asserted against at least one hour-scale and one ~~day-scale~~ larger value — _amended, see Notes_
+- [x] the module imports nothing from Electron or the network, asserted the way `src/domain/` already is
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. Write the failing tests for the fallback name, the medium labels, the unknown medium and the ordering
-2. Implement the display-name fallback
-3. Implement the medium label table with its verbatim fallback
-4. Implement the stable comparator
-5. Run test, lint and build
+1. [x] Write the failing tests for the fallback name, ~~the medium labels, the unknown medium~~ and the ordering
+2. [x] Implement the display-name fallback
+3. [ ] ~~Implement the medium label table with its verbatim fallback~~ — dropped, no data to map
+4. [x] Implement the stable comparator
+5. [x] Run test, lint and build
+
+### Notes
+
+- **The medium rule was dropped whole, on the user's explicit decision.** Two of this task's
+  three planned rules and two of its nine criteria hung on a `medium` field. T-62's probe
+  established that `host-list` carries no band, frequency or connection-medium element at all,
+  so criterion 3 was _vacuous_ — there were zero fixture values to map — and criterion 4 had
+  nothing to fall back from. The alternative offered was to write the label table anyway
+  against synthetic inputs; it was declined as dead code with no caller. A test asserts
+  `src/domain/devices.ts` contains no `2,4 GHz`, `5 GHz` or `Ethernet` literal, so the table
+  cannot reappear unnoticed if a later firmware tempts it.
+- **"Active before inactive" was dropped as moot, not merely unsourced.** There is no
+  `<Active>` element, but more to the point `host-list` reports only the hosts currently
+  associated — there is no inactive set to sort behind. The surviving half of the criterion,
+  a byte-identical order across two calls, is tested directly and with a shuffled input.
+- **Ordering deliberately avoids `localeCompare`.** The comparator comes down to raw code-unit
+  comparison on the lower-cased display name, then the MAC, which T-63 guarantees is unique and
+  upper-cased. The panel refreshes on a timer, so an order that shifted with an ICU build would
+  reshuffle the list under a click — the exact failure this rule exists to prevent.
+- **`formatDuration` caps at hours by design**, and `src/domain/format.ts` is outside this
+  task's declared `files:`. The criterion's "day-scale" assertion is therefore made against
+  what the helper really renders — `200_000` seconds reads `55h 33m`. Extending the helper to
+  days was offered and declined as scope the task never claimed. If a day format is wanted
+  later it is its own task, touching `format.ts` and every screen already using it.
+- The manual gate was signed off against the committed fixtures. There is still no UI behind
+  any of this: the devices window is not fed live data until **T-66**.
 
 ## T-65 Open a window for the connected devices
 
@@ -3720,6 +3775,7 @@ second window is exactly the kind of thing that works in development and 404s in
 - Carried into T-66: the app runs `LSUIElement` with the Dock icon hidden, so `open()`/`focus()`
   may raise the window without bringing the app forward. `app.focus({ steal: true })` in
   `devices-window.ts` is the fix if it shows up in use.
+
 ## T-66 Fill the devices window from the live router
 
 T-66 · status: todo · size: M · needs: T-64, T-65 · files: src/main/poll.ts, src/main/devices-window.ts, src/renderer/devices.ts, test/main/poll.test.ts, test/renderer/devices.test.ts
