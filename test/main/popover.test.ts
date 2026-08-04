@@ -4,8 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig } from "../../src/config/defaults.js";
 import {
+  POPOVER_CHOOSE_FORFAIT_CHANNEL,
+  POPOVER_HEIGHT,
   POPOVER_SAVE_PASSWORD_CHANNEL,
   POPOVER_SYNC_CHANNEL,
+  POPOVER_WIDTH,
   bindTrayToPopover,
   createPopover,
 } from "../../src/main/popover.js";
@@ -173,7 +176,7 @@ function snapshot(usedBytes: number): RouterSnapshot {
       connectedDevices: 3,
       networkTypeCode: 101,
     },
-    carrier: { carrier: "Yas" },
+    carrier: { carrier: "Yas", id: "yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
   };
 }
@@ -390,6 +393,46 @@ describe("createPopover", () => {
     popover.destroy();
   });
 
+  it("keeps the window the size the page is laid out to fit", () => {
+    // The panel was compacted to fit this window rather than the window grown
+    // to fit the panel: a popover that closes on blur cannot usefully scroll,
+    // and a taller one would hang further down the screen every open.
+    expect(POPOVER_WIDTH).toBe(320);
+    expect(POPOVER_HEIGHT).toBe(520);
+
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    expect(lastWindow().options).toMatchObject({ width: 320, height: 520 });
+
+    popover.destroy();
+  });
+
+  it("puts the page back on its main view every time it is opened", () => {
+    // The window is hidden rather than destroyed between opens, so a panel
+    // left on the settings would still be on them the next time the tray item
+    // is clicked — and the figures are what the panel is opened for.
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    window.webContents.handlers.get("did-finish-load")?.();
+    popover.hide();
+    window.webContents.executeJavaScript.mockClear();
+
+    popover.show(TRAY_BOUNDS);
+
+    const scripts = window.webContents.executeJavaScript.mock.calls.map(
+      (call) => (call as [string])[0],
+    );
+
+    expect(scripts.some((script) => script.includes("resetPopoverView"))).toBe(
+      true,
+    );
+
+    popover.destroy();
+  });
+
   it("releases the window when destroyed", () => {
     const popover = createPopover({ htmlPath: "/tmp/index.html" });
     popover.show(TRAY_BOUNDS);
@@ -505,6 +548,46 @@ describe("createPopover — the panel talking back", () => {
     send(POPOVER_SAVE_PASSWORD_CHANNEL, sender, null);
 
     expect(onSavePassword).not.toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("passes a chosen forfait label on as the page sent it", () => {
+    const onChooseForfait = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onChooseForfait,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(
+      POPOVER_CHOOSE_FORFAIT_CHANNEL,
+      lastWindow().webContents,
+      "Pass Internet 5 Go",
+    );
+
+    expect(onChooseForfait).toHaveBeenCalledWith("Pass Internet 5 Go");
+
+    popover.destroy();
+  });
+
+  it("drops a forfait message that is not a label", () => {
+    // A channel that writes to the config validates its own input rather than
+    // trusting that only our page can reach it.
+    const onChooseForfait = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onChooseForfait,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+
+    send(POPOVER_CHOOSE_FORFAIT_CHANNEL, sender, 42);
+    send(POPOVER_CHOOSE_FORFAIT_CHANNEL, sender, null);
+    send(POPOVER_CHOOSE_FORFAIT_CHANNEL, { someone: "else" }, "Wifiber Go+");
+
+    expect(onChooseForfait).not.toHaveBeenCalled();
 
     popover.destroy();
   });

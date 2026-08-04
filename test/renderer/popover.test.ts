@@ -27,9 +27,12 @@ import type { SyncFailure, SyncState } from "../../src/main/sync.js";
 import type { RateSample } from "../../src/domain/history.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import { selectForfait } from "../../src/orange/select.js";
+import type { OrangeForfait } from "../../src/orange/types.js";
 import {
   buildPopoverModel,
   type PopoverModel,
+  type PortalFailure,
 } from "../../src/main/view-model.js";
 
 /**
@@ -98,7 +101,7 @@ function snapshot(
       connectedDevices: 3,
       networkTypeCode: 101,
     },
-    carrier: { carrier: "Yas" },
+    carrier: { carrier: "Yas", id: "yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
   };
 }
@@ -467,20 +470,26 @@ describe("the popover page", () => {
   });
 
   it("keeps the dial and the sparklines small enough for the panel to fit its window", () => {
-    // No layout engine, so this is a budget rather than a measurement: the
-    // room everything other than the dial and the two sparklines takes, which
-    // is 30px of body padding, ~29px of header and its rule, 22px of padding
-    // around the dial, ~56px for the allowance strip and its rule, 23px of rule
-    // and spacing above the sparklines, ~160px for the three-row stats grid
-    // with its own rule and ~46px for the sync row — call it 330px, rounded up
-    // to 350 so a stray line of text does not silently overrun. Anything that
-    // outgrows what is left pushes the panel past POPOVER_HEIGHT and raises a
-    // scrollbar, which a popover has no room for. The password prompt is
-    // `hidden` until it is needed, so it costs nothing here.
+    // No layout engine, so this is a budget rather than a measurement: the room
+    // the main view takes other than the dial and the two sparklines, which is
+    // 30px of body padding, ~35px of header and its rule, 22px of padding
+    // around the dial, ~57px for the pace section at its tallest, ~85px for the
+    // allowance strip and its validity line, 23px of rule and spacing above the
+    // sparklines, ~59px for the one-tile stats grid with its own rule and ~38px
+    // for the sync row — call it 349px, rounded up to 350 so a stray line of
+    // text does not silently overrun. Anything that outgrows what is left
+    // pushes the panel past POPOVER_HEIGHT and raises a scrollbar, which a
+    // popover has no room for.
     //
-    // The plan-size field and its refusal line sit in the column beside the
-    // dial, not under it, so they are free until that column outgrows the
-    // dial's own height — which is what the extra 10px covers.
+    // That ~57px is tiers 1 and 2 now, not tier 3: 21px of padding and rule,
+    // a 17px recovery line, a 4px gap and a 15px hint. Since T-49 tier 3 shows
+    // no recovery line at all, and its meter — a 6px track, a 6px gap and the
+    // 15px pair beneath it — brings the section to ~48px. The tallest state
+    // did not move, so neither does this figure; what changed is which state
+    // it describes.
+    //
+    // The three typed fields cost nothing here: they are in the settings view,
+    // which is `hidden` whenever this one is not.
     const CHROME_HEIGHT = 350;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
     const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
@@ -707,16 +716,32 @@ describe("the stat tiles", () => {
   it("keeps the carrier's own expiry, which is the figure that governs", () => {
     apply(modelUsing(10 * GB));
 
-    expect(tileTerms()).toContain("Valid for");
+    // It reads on the allowance line now rather than as a tile of its own, but
+    // it is still on the panel and still filled from the model.
     expect(textOf("allowanceDaysLeft")).not.toBe("");
+    expect(textOf("allowanceExpires")).not.toBe("");
   });
 
-  it("lays out an odd number of tiles without leaving an empty one", () => {
+  it("no longer splits the month into a download and an upload total", () => {
+    // The plan is billed on their sum, which the dial and the carrier's
+    // remaining already state twice over. The split is a question nobody asks
+    // of a menu bar app, and it cost two of the five tiles.
+    apply(modelUsing(10 * GB));
+
+    expect(tileTerms()).not.toContain("Downloaded");
+    expect(tileTerms()).not.toContain("Uploaded");
+    expect(document.querySelector('[data-field="monthDownload"]')).toBeNull();
+    expect(document.querySelector('[data-field="monthUpload"]')).toBeNull();
+    expect(INDEX_HTML).not.toContain("monthDownload");
+    expect(INDEX_HTML).not.toContain("monthUpload");
+  });
+
+  it("keeps only what neither the allowance line nor the dial already says", () => {
     apply(modelUsing(10 * GB));
 
     const tiles = [...document.querySelectorAll(".stat")];
 
-    expect(tiles).toHaveLength(5);
+    expect(tileTerms()).toEqual(["Devices"]);
 
     // Every tile still carries both halves — a term and a value bound to the
     // model. A cell left behind by the removal would show up as a missing one.
@@ -724,6 +749,25 @@ describe("the stat tiles", () => {
       expect(tile.querySelector("dt")?.textContent?.trim()).toBeTruthy();
       expect(tile.querySelector("dd[data-field]")).not.toBeNull();
     }
+  });
+
+  it("reads the expiry and the days left on one line with the allowance", () => {
+    apply(modelUsing(10 * GB));
+
+    const expires = document.querySelector('[data-field="allowanceExpires"]');
+    const daysLeft = document.querySelector('[data-field="allowanceDaysLeft"]');
+
+    if (expires === null || daysLeft === null) {
+      throw new Error("the allowance strip has no validity line");
+    }
+
+    // Both inside the allowance strip, and both in the same row element — one
+    // line rather than two tiles that happen to have moved.
+    expect(expires.closest(".allowance")).not.toBeNull();
+    expect(daysLeft.closest(".allowance")).not.toBeNull();
+    expect(expires.parentElement).toBe(daysLeft.parentElement);
+    expect(expires.closest(".stat")).toBeNull();
+    expect(daysLeft.closest(".stat")).toBeNull();
   });
 });
 
@@ -980,6 +1024,8 @@ interface FakeBridge {
   sync: ReturnType<typeof vi.fn>;
   savePassword: ReturnType<typeof vi.fn>;
   setPlanLimit: ReturnType<typeof vi.fn>;
+  setPlanDays: ReturnType<typeof vi.fn>;
+  chooseForfait: ReturnType<typeof vi.fn>;
 }
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
@@ -988,6 +1034,8 @@ function stubBridge(): FakeBridge {
     sync: vi.fn(),
     savePassword: vi.fn(),
     setPlanLimit: vi.fn(),
+    setPlanDays: vi.fn(),
+    chooseForfait: vi.fn(),
   };
 
   window.popoverBridge = bridge;
@@ -1091,7 +1139,7 @@ describe("the allowance — a successful sync", () => {
   });
 
   it("renders the expiry as a date and the days left", () => {
-    expect(textOf("allowanceExpires")).toBe("12/08/2026");
+    expect(textOf("allowanceExpires")).toBe("11/08/2026");
     expect(textOf("allowanceDaysLeft")).toBe("16 days");
   });
 
@@ -1272,8 +1320,9 @@ describe("the plan limit field", () => {
   let bridge: FakeBridge;
 
   function form(): HTMLFormElement {
-    const element =
-      document.querySelector<HTMLFormElement>("[data-plan-limit]");
+    const element = document.querySelector<HTMLFormElement>(
+      "form[data-plan-limit]",
+    );
 
     if (element === null) {
       throw new Error("the panel has no plan limit field");
@@ -1379,6 +1428,253 @@ describe("the plan limit field", () => {
       "";
 
     expect(name.trim()).not.toBe("");
+  });
+});
+
+describe("the plan length field", () => {
+  let bridge: FakeBridge;
+
+  function form(): HTMLFormElement {
+    const element = document.querySelector<HTMLFormElement>(
+      "form[data-plan-days]",
+    );
+
+    if (element === null) {
+      throw new Error("the panel has no plan length field");
+    }
+
+    return element;
+  }
+
+  function input(): HTMLInputElement {
+    const element = document.querySelector<HTMLInputElement>(
+      "[data-plan-days-input]",
+    );
+
+    if (element === null) {
+      throw new Error("the plan length field has no input");
+    }
+
+    return element;
+  }
+
+  function modelLasting(days: number | null): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: { ...configWithLimit(150 * GB), planDays: days },
+      clock,
+    });
+  }
+
+  function submit(typed: string): void {
+    input().value = typed;
+    form().dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+  }
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelLasting(null));
+  });
+
+  it("sits beside the cap, the other figure the carrier never states", () => {
+    const capField = document.querySelector("form[data-plan-limit]");
+
+    if (capField === null) {
+      throw new Error("the panel has no plan limit field");
+    }
+
+    expect(form().parentElement).toBe(capField.parentElement);
+  });
+
+  it("sends what was typed, without working out what it means", () => {
+    submit("30");
+
+    expect(bridge.setPlanDays).toHaveBeenCalledWith("30");
+  });
+
+  it("sends a refusable entry too, rather than judging it itself", () => {
+    for (const typed of ["", "abc", "0", "-5", "30.5"]) {
+      bridge.setPlanDays.mockClear();
+      submit(typed);
+
+      expect(bridge.setPlanDays, typed).toHaveBeenCalledWith(typed);
+    }
+  });
+
+  it("never navigates on submit — the page is the app", () => {
+    const event = new window.Event("submit", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    form().dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("shows the stored length so it can be corrected rather than retyped", () => {
+    apply(modelLasting(30));
+
+    expect(input().value).toBe("30");
+  });
+
+  it("leaves the field empty while no length is stored", () => {
+    expect(input().value).toBe("");
+  });
+
+  it("does not overwrite what is being typed when a poll lands", () => {
+    input().focus();
+    input().value = "3";
+
+    apply(modelLasting(30));
+
+    expect(input().value).toBe("3");
+  });
+
+  it("shows the reason an entry was refused", () => {
+    apply(
+      buildPopoverModel({
+        result: { online: true, snapshot: snapshot(10 * GB) },
+        lastReading: null,
+        config: configWithLimit(150 * GB),
+        planDaysProblem: "not-whole",
+        clock,
+      }),
+    );
+
+    expect(textOf("planDaysError")).not.toBe("");
+  });
+
+  it("says nothing when there is nothing to complain about", () => {
+    expect(textOf("planDaysError")).toBe("");
+  });
+
+  it("is reachable without a mouse and says what it is for", () => {
+    expect(input().tabIndex).toBeGreaterThanOrEqual(0);
+
+    const name =
+      input().getAttribute("aria-label") ??
+      document.querySelector(`label[for="${input().id}"]`)?.textContent ??
+      "";
+
+    expect(name.trim()).not.toBe("");
+  });
+});
+
+describe("the new-plan confirmation", () => {
+  let bridge: FakeBridge;
+
+  /** A live model for a 150 Go plan with 30 Go left, cap confirmed or not. */
+  function modelConfirming(planCapConfirmed: boolean): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(150 * GB),
+        planDays: 30,
+        planCapConfirmed,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 30 * GB,
+          expiresAt: new Date(2026, 7, 6),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  function prompt(): HTMLElement {
+    const element = document.querySelector<HTMLElement>(
+      "[data-plan-cap-prompt]",
+    );
+
+    if (element === null) {
+      throw new Error("the panel has no plan-cap prompt");
+    }
+
+    return element;
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    const element = document.querySelector<HTMLButtonElement>(
+      "[data-plan-cap-confirm]",
+    );
+
+    if (element === null) {
+      throw new Error("the plan-cap prompt has no confirm button");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    bridge = stubBridge();
+  });
+
+  it("stays off the panel while the cap is confirmed", () => {
+    apply(modelConfirming(true));
+
+    expect(prompt().hidden).toBe(true);
+  });
+
+  it("appears when a sync brings back a plan the cap cannot describe", () => {
+    apply(modelConfirming(false));
+
+    expect(prompt().hidden).toBe(false);
+    expect(textOf("planCapMessage")).not.toBe("");
+  });
+
+  it("costs no height while it is hidden", () => {
+    // Asserted against the stylesheet, since jsdom lays nothing out.
+    expect(POPOVER_CSS).toMatch(
+      /\.plan-cap-prompt\[hidden\]\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("is styled at all, rather than inheriting whatever sits above it", () => {
+    expect(POPOVER_CSS).toMatch(/\.plan-cap-prompt\s*\{[^}]*\}/);
+  });
+
+  it("draws no dial beside it", () => {
+    apply(modelConfirming(false));
+
+    expect(document.documentElement.dataset["limit"]).toBe("unset");
+    // The stylesheet is what takes the ring's figure off the panel.
+    expect(POPOVER_CSS).toMatch(
+      /:root\[data-limit="unset"\][^{]*\.dial-value[^{]*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("puts the dial back once the cap is confirmed", () => {
+    apply(modelConfirming(true));
+
+    expect(document.documentElement.dataset["limit"]).toBe("set");
+  });
+
+  it("confirms by re-submitting the stored cap, so one click is enough", () => {
+    apply(modelConfirming(false));
+    confirmButton().click();
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+
+  it("is reachable without a mouse and says what it does", () => {
+    apply(modelConfirming(false));
+
+    expect(confirmButton().tabIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      (
+        confirmButton().getAttribute("aria-label") ??
+        confirmButton().textContent ??
+        ""
+      ).trim(),
+    ).not.toBe("");
   });
 });
 
@@ -1517,5 +1813,1363 @@ describe("the Sync control — reaching it without a mouse", () => {
 
     expect(note?.textContent?.trim()).not.toBe("");
     expect(note?.getAttribute("aria-hidden")).not.toBe("true");
+  });
+});
+
+describe("the pace row", () => {
+  /** A model whose pace row is built from real stored and typed-in figures. */
+  function modelPacing(options: {
+    remainingGo?: number;
+    expiresAt?: Date | null;
+    limitGo?: number | null;
+    planDays?: number | null;
+  }): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes:
+          options.limitGo === undefined || options.limitGo === null
+            ? null
+            : options.limitGo * GB,
+        planDays: options.planDays ?? null,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: (options.remainingGo ?? 30) * GB,
+          expiresAt:
+            options.expiresAt === undefined
+              ? new Date(2026, 7, 6)
+              : options.expiresAt,
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  /**
+   * The same row for a plan measured from now rather than from a written
+   * expiry, so the elapsed share — and with it the pace the meter draws — is
+   * exact rather than approximately a fortnight.
+   */
+  function modelMetering(options: {
+    usedGo: number;
+    limitGo: number;
+    planDays: number;
+    elapsedDays: number;
+    planCapConfirmed?: boolean;
+  }): PopoverModel {
+    const DAY_MS = 86_400_000;
+
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes: options.limitGo * GB,
+        planDays: options.planDays,
+        ...(options.planCapConfirmed === undefined
+          ? {}
+          : { planCapConfirmed: options.planCapConfirmed }),
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: (options.limitGo - options.usedGo) * GB,
+          expiresAt: new Date(
+            NOW.getTime() + (options.planDays - options.elapsedDays) * DAY_MS,
+          ),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  /** 100 Go of a 150 Go plan, 20 days into 30: a pace of exactly 1. */
+  const ON_BUDGET = {
+    usedGo: 100,
+    limitGo: 150,
+    planDays: 30,
+    elapsedDays: 20,
+  };
+
+  function row(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-pace]");
+
+    if (element === null) {
+      throw new Error("the panel has no pace row");
+    }
+
+    return element;
+  }
+
+  function meter(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-pace-meter]");
+
+    if (element === null) {
+      throw new Error("the panel has no pace meter");
+    }
+
+    return element;
+  }
+
+  /** Everything the meter reads out on the panel, whitespace collapsed. */
+  function meterText(): string {
+    return (meter().textContent ?? "").replace(/\s+/g, " ").trim();
+  }
+
+  /** A drawn share of the meter's track, as the renderer wrote it. */
+  function shareOf(selector: string, property: "width" | "left"): number {
+    const element = meter().querySelector<HTMLElement>(selector);
+
+    if (element === null) {
+      throw new Error(`the meter has no ${selector}`);
+    }
+
+    return Number.parseFloat(element.style[property]);
+  }
+
+  function fillShare(): number {
+    return shareOf("[data-pace-fill]", "width");
+  }
+
+  function tickShare(): number {
+    return shareOf("[data-pace-tick]", "left");
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("shows the sustainable figure and its date at tier 1", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(row().hidden).toBe(false);
+    expect(textOf("paceSustainable")).toContain("3.00 Go");
+    expect(textOf("paceSustainable")).toContain("05/08/2026");
+  });
+
+  it("says the recovery figure is what is left to spend, not what has gone", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(textOf("paceSustainable")).toContain("left to spend");
+  });
+
+  it("says which numeral is spent and which is the budget, in the pair itself", () => {
+    // No legend anywhere else on the panel: the pair has to name its own two
+    // halves, or `6.00 / 5.00` beside `3.00` reads as a contradiction.
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(meterText()).toBe("6.00 Go spent / 5.00 Go budget a day");
+  });
+
+  it("keeps tier 1 free of meter vocabulary it has no figures for", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(meter().hidden).toBe(true);
+    expect(textOf("paceSustainable")).not.toMatch(/spent|budget/i);
+    expect(textOf("paceHint")).not.toMatch(/spent|budget/i);
+  });
+
+  it("keeps the drawn figures byte-identical while the recovery line goes", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(textOf("paceAverage")).toBe("6.00 Go");
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
+
+    // The recovery figure is pinned where it still appears — tier 1, where it
+    // is now the only pace reading on the panel.
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(textOf("paceSustainable")).toBe(
+      "3.00 Go a day left to spend until 05/08/2026",
+    );
+  });
+
+  it("keeps the band's verdict on the meter's accessible name", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(meter().getAttribute("aria-label")).toContain("Too fast");
+  });
+
+  it("draws no meter and sets no state at tier 1", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    expect(meter().hidden).toBe(true);
+    expect(row().dataset["paceState"] ?? "").toBe("");
+  });
+
+  it("draws no meter at tier 2 either — there is no afforded figure", () => {
+    apply(modelPacing({ remainingGo: 30, limitGo: 150 }));
+
+    expect(row().hidden).toBe(false);
+    expect(meter().hidden).toBe(true);
+    expect(row().dataset["paceState"] ?? "").toBe("");
+  });
+
+  it("draws the meter and its numerals at tier 3, and nothing else", () => {
+    apply(modelMetering(ON_BUDGET));
+
+    expect(meter().hidden).toBe(false);
+    expect(textOf("paceAverage")).toBe("5.00 Go");
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
+    // The meter speaks alone here: a forward-facing daily figure beside its
+    // two backward-facing ones reads as the app contradicting itself.
+    expect(textOf("paceSustainable")).toBe("");
+  });
+
+  it("collapses the emptied recovery line rather than leaving a gap", () => {
+    // The line is emptied at tier 3, not removed from the page, so the
+    // stylesheet has to give its box back or the section keeps the height the
+    // removal was meant to hand over.
+    expect(POPOVER_CSS).toMatch(
+      /\.pace-sustainable:empty[^{]*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("gives the bar its own row, so the numerals stop taking its width", () => {
+    // T-48 paid for `spent` and `budget` out of the bar's width because the
+    // row had no height to spare. The recovery line's departure is that
+    // height, so the track takes the whole row back and the pair sits under it.
+    const rule = /\.pace-meter\s*\{([^}]*)\}/.exec(POPOVER_CSS)?.[1] ?? "";
+
+    expect(rule).not.toBe("");
+    expect(rule).not.toMatch(/grid-template-columns/);
+  });
+
+  it("marks the section with each band in turn", () => {
+    apply(modelMetering(ON_BUDGET));
+    const safe = row().dataset["paceState"];
+
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 110 }));
+    const warning = row().dataset["paceState"];
+
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+    const over = row().dataset["paceState"];
+
+    expect([safe, warning, over]).toEqual(["safe", "warning", "over"]);
+  });
+
+  it("maps those three states to green, orange and red in the stylesheet", () => {
+    const colours = ["safe", "warning", "over"].map(
+      (state) =>
+        new RegExp(
+          `\\[data-pace-state="${state}"\\][^{]*\\{[^}]*:\\s*([^;]+);`,
+        ).exec(POPOVER_CSS)?.[1],
+    );
+
+    // The same visual language the dial already speaks, not a new one.
+    expect(colours).toEqual(["var(--safe)", "var(--warn)", "var(--over)"]);
+    // Green has to exist as a property of its own before it can be mapped to.
+    expect(POPOVER_CSS).toMatch(/--safe:\s*#[0-9a-f]{6}/i);
+  });
+
+  it("fills exactly to the tick when the spending matches the budget", () => {
+    apply(modelMetering(ON_BUDGET));
+
+    expect(fillShare()).toBeCloseTo(tickShare(), 5);
+  });
+
+  it("fills half of the tick when half the budget is being spent", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 50 }));
+
+    expect(fillShare()).toBeCloseTo(tickShare() / 2, 5);
+  });
+
+  it("pins a runaway pace at the drawn maximum, numerals still true", () => {
+    apply(
+      modelMetering({
+        usedGo: 112.5,
+        limitGo: 150,
+        planDays: 30,
+        elapsedDays: 7.5,
+      }),
+    );
+
+    expect(fillShare()).toBeCloseTo(100, 5);
+    expect(textOf("paceAverage")).toBe("15.00 Go");
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
+  });
+
+  it("names the meter in words, so the colour is never the only carrier", () => {
+    apply(modelMetering({ ...ON_BUDGET, usedGo: 120 }));
+
+    expect(meter().getAttribute("aria-label")?.trim()).not.toBe("");
+  });
+
+  it("no longer narrates the band, the budget or the consumed share", () => {
+    apply(modelMetering(ON_BUDGET));
+
+    for (const field of ["paceBand", "paceConsumed", "paceNote"]) {
+      expect(document.querySelector(`[data-field="${field}"]`)).toBeNull();
+    }
+    // The afforded figure survives only as a numeral beside the bar.
+    expect(textOf("paceAfforded")).toBe("5.00 Go");
+  });
+
+  it("hides the row entirely when there is no pace to report", () => {
+    apply(modelPacing({ expiresAt: null }));
+
+    expect(row().hidden).toBe(true);
+    expect(meter().hidden).toBe(true);
+    expect(textOf("paceSustainable")).toBe("");
+  });
+
+  it("draws no meter while the plan cap is unconfirmed", () => {
+    // A sync brought back a plan the stored cap cannot describe, so the pace
+    // drops to tier 1. Drawing a band from that cap is exactly the fault the
+    // confirmation exists to prevent.
+    apply(modelMetering({ ...ON_BUDGET, planCapConfirmed: true }));
+    expect(meter().hidden).toBe(false);
+
+    apply(modelMetering({ ...ON_BUDGET, planCapConfirmed: false }));
+
+    expect(row().hidden).toBe(false);
+    expect(meter().hidden).toBe(true);
+    expect(row().dataset["paceState"] ?? "").toBe("");
+    // The tier 1 line needs no cap, so it stays rather than the row vanishing.
+    expect(textOf("paceSustainable")).toContain("Go");
+    // And it has to stand on its own here: the pair that names the budget is
+    // off the panel, so a label leaning on it would label nothing.
+    expect(textOf("paceSustainable")).toContain("left to spend");
+    expect(textOf("paceSustainable")).not.toMatch(/spent|budget/i);
+  });
+
+  it("hints at the setting that would sharpen tiers 1 and 2, and none at tier 3", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+    expect(textOf("paceHint")).not.toBe("");
+
+    apply(modelPacing({ remainingGo: 30, limitGo: 150 }));
+    expect(textOf("paceHint")).not.toBe("");
+
+    apply(modelPacing({ remainingGo: 30, limitGo: 150, planDays: 30 }));
+    expect(textOf("paceHint")).toBe("");
+  });
+
+  it("sits under the dial, where the share it explains is drawn", () => {
+    apply(modelPacing({ remainingGo: 30 }));
+
+    const figures = document.querySelector(".usage");
+
+    if (figures === null) {
+      throw new Error("the panel has no usage section");
+    }
+
+    expect(
+      figures.compareDocumentPosition(row()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+  });
+});
+
+/*
+ * The panel shows one of two views, never both: the figures, or the three
+ * values that have to be typed. jsdom lays nothing out, so "it fits" is
+ * asserted structurally — which sections each view holds, and which of the two
+ * is carrying the `hidden` attribute.
+ */
+
+function mainView(): HTMLElement {
+  const element = document.querySelector<HTMLElement>("[data-main-view]");
+
+  if (element === null) {
+    throw new Error("the panel has no main view");
+  }
+
+  return element;
+}
+
+function settingsView(): HTMLElement {
+  const element = document.querySelector<HTMLElement>("[data-settings-view]");
+
+  if (element === null) {
+    throw new Error("the panel has no settings view");
+  }
+
+  return element;
+}
+
+function settingsToggle(): HTMLButtonElement {
+  const element = document.querySelector<HTMLButtonElement>(
+    "[data-settings-toggle]",
+  );
+
+  if (element === null) {
+    throw new Error("the panel has no settings toggle");
+  }
+
+  return element;
+}
+
+/** The three things the panel asks the user to type, by their form element. */
+function typedForms(): Record<string, HTMLElement> {
+  const forms = {
+    cap: document.querySelector<HTMLElement>("form[data-plan-limit]"),
+    length: document.querySelector<HTMLElement>("form[data-plan-days]"),
+    password: document.querySelector<HTMLElement>("[data-password-prompt]"),
+  };
+
+  for (const [name, form] of Object.entries(forms)) {
+    if (form === null) {
+      throw new Error(`the panel has no ${name} form`);
+    }
+  }
+
+  return forms as Record<string, HTMLElement>;
+}
+
+describe("the panel's two views", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("opens on the main view, with the settings put away", () => {
+    expect(mainView().hidden).toBe(false);
+    expect(settingsView().hidden).toBe(true);
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("carries the toggle in the header, where the panel is read first", () => {
+    expect(settingsToggle().closest(".header")).not.toBeNull();
+    expect(settingsToggle().tagName).toBe("BUTTON");
+    expect(settingsToggle().getAttribute("type")).toBe("button");
+  });
+
+  it("swaps which view is hidden when the toggle is pressed", () => {
+    settingsToggle().click();
+
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("true");
+    expect(mainView().hidden).toBe(true);
+    expect(settingsView().hidden).toBe(false);
+  });
+
+  it("comes back to the figures on a second press", () => {
+    settingsToggle().click();
+    settingsToggle().click();
+
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+    expect(mainView().hidden).toBe(false);
+    expect(settingsView().hidden).toBe(true);
+  });
+
+  it("holds all three typed values in the settings view", () => {
+    settingsToggle().click();
+
+    for (const form of Object.values(typedForms())) {
+      expect(form.closest("[data-settings-view]")).toBe(settingsView());
+      expect(form.closest("[data-main-view]")).toBeNull();
+    }
+  });
+
+  it("keeps the cap and length fields readable once settings are open", () => {
+    settingsToggle().click();
+
+    const { cap, length } = typedForms();
+
+    expect(cap.hidden).toBe(false);
+    expect(length.hidden).toBe(false);
+  });
+
+  it("puts every typed form away again with the settings closed", () => {
+    expect(settingsView().hidden).toBe(true);
+
+    for (const form of Object.values(typedForms())) {
+      expect(form.closest("[data-settings-view]")).toBe(settingsView());
+    }
+  });
+
+  it("keeps the figures in the main view rather than behind the toggle", () => {
+    for (const selector of [
+      "[data-dial]",
+      "[data-pace]",
+      "[data-pace-meter]",
+      ".allowance",
+      ".rates",
+      ".stats",
+    ]) {
+      const section = document.querySelector(selector);
+
+      if (section === null) {
+        throw new Error(`the panel has no ${selector}`);
+      }
+
+      expect(section.closest("[data-main-view]")).toBe(mainView());
+      expect(section.closest("[data-settings-view]")).toBeNull();
+    }
+
+    expect(mainView().hidden).toBe(false);
+  });
+
+  it("costs no height at all for whichever view is put away", () => {
+    // Asserted against the stylesheet, since jsdom lays nothing out: both views
+    // are given a `display` of their own, so the UA rule for `hidden` alone
+    // would not take them off the panel.
+    expect(POPOVER_CSS).toMatch(/\.view\[hidden\]\s*\{[^}]*display:\s*none/);
+  });
+
+  it("does not reopen the settings when a poll lands", () => {
+    settingsToggle().click();
+
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(settingsView().hidden).toBe(false);
+    expect(mainView().hidden).toBe(true);
+  });
+
+  it("marks the toggle while no router password is stored", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+
+    expect(settingsToggle().dataset["attention"]).toBe("true");
+    // The form itself is still behind the toggle, so the marker is the only
+    // thing that makes a missing password discoverable.
+    expect(typedForms()["password"]?.closest("[data-settings-view]")).toBe(
+      settingsView(),
+    );
+  });
+
+  it("drops the marker once a password is stored", () => {
+    apply(modelSyncing({ phase: "needs-password" }));
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(settingsToggle().dataset["attention"]).toBe("false");
+  });
+
+  it("styles that marker at all, rather than leaving it invisible", () => {
+    expect(POPOVER_CSS).toMatch(
+      /\.settings-toggle\[data-attention="true"\][^{]*\{[^}]*\}/,
+    );
+  });
+
+  it("is reachable without a mouse and says what it opens", () => {
+    expect(settingsToggle().tabIndex).toBeGreaterThanOrEqual(0);
+
+    const name =
+      settingsToggle().getAttribute("aria-label") ??
+      settingsToggle().textContent ??
+      "";
+
+    expect(name.trim()).not.toBe("");
+    expect(name).toMatch(/setting/i);
+  });
+
+  it("returns to the main view when the panel is opened again", () => {
+    settingsToggle().click();
+    expect(settingsView().hidden).toBe(false);
+
+    // What `src/main/popover.ts` calls on every open. The window is hidden
+    // rather than destroyed between opens, so without this a panel left on
+    // the settings would still be on them the next time it is clicked.
+    window.resetPopoverView();
+
+    expect(mainView().hidden).toBe(false);
+    expect(settingsView().hidden).toBe(true);
+    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("the typed settings — driven from inside the settings view", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+    settingsToggle().click();
+  });
+
+  function submit(form: string, input: string, typed: string): void {
+    const field = document.querySelector<HTMLInputElement>(input);
+    const element = document.querySelector<HTMLFormElement>(form);
+
+    if (field === null || element === null) {
+      throw new Error(`the settings view has no ${form}`);
+    }
+
+    field.value = typed;
+    element.dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+  }
+
+  it("still sends the cap over the same channel it always did", () => {
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "150");
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+
+  it("still sends the plan length over its own channel", () => {
+    submit("form[data-plan-days]", "[data-plan-days-input]", "30");
+
+    expect(bridge.setPlanDays).toHaveBeenCalledWith("30");
+  });
+
+  it("still shows a refusal, where the field that caused it now lives", () => {
+    apply(modelRefusing("not-a-number"));
+
+    const error = document.querySelector('[data-field="planLimitError"]');
+
+    expect(error?.textContent).not.toBe("");
+    expect(error?.closest("[data-settings-view]")).toBe(settingsView());
+  });
+
+  it("still shows a refused plan length beside its own field", () => {
+    apply(
+      buildPopoverModel({
+        result: { online: true, snapshot: snapshot(10 * GB) },
+        lastReading: null,
+        config: configWithLimit(150 * GB),
+        planDaysProblem: "not-whole",
+        clock,
+      }),
+    );
+
+    const error = document.querySelector('[data-field="planDaysError"]');
+
+    expect(error?.textContent).not.toBe("");
+    expect(error?.closest("[data-settings-view]")).toBe(settingsView());
+  });
+});
+
+describe("the new-plan confirmation — which view it belongs to", () => {
+  /** A live 150 Go plan whose stored cap the last sync contradicted. */
+  function modelUnconfirmed(): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(150 * GB),
+        planDays: 30,
+        planCapConfirmed: false,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 30 * GB,
+          expiresAt: new Date(2026, 7, 6),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("stays in the main view, where the dial it replaces was", () => {
+    // It is an alert about a figure the carrier contradicted, not a setting.
+    // Behind the toggle, a user whose cap was contradicted would open the panel,
+    // find no dial and no explanation, and no reason to look in the settings.
+    apply(modelUnconfirmed());
+
+    const prompt = document.querySelector("[data-plan-cap-prompt]");
+
+    if (prompt === null) {
+      throw new Error("the panel has no plan-cap prompt");
+    }
+
+    expect(prompt.closest("[data-main-view]")).toBe(mainView());
+    expect(prompt.closest("[data-settings-view]")).toBeNull();
+    expect(mainView().hidden).toBe(false);
+    expect((prompt as HTMLElement).hidden).toBe(false);
+  });
+
+  it("still confirms from there, without a trip through the settings", () => {
+    const bridge = stubBridge();
+    apply(modelUnconfirmed());
+
+    document
+      .querySelector<HTMLButtonElement>("[data-plan-cap-confirm]")
+      ?.click();
+
+    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+});
+
+/**
+ * The Orange panel. Two of its controls have nothing behind them, and a
+ * control the user can reach but not use is worse than the space it costs —
+ * so they come off the page rather than being greyed out or hidden. Everything
+ * below therefore asserts against the rendered document, never against a class
+ * or a `display` rule: an element that is present but invisible is still
+ * focusable and still reachable by keyboard.
+ */
+const ORANGE_SNAPSHOT: RouterSnapshot = {
+  ...snapshot(10 * GB),
+  carrier: { carrier: "ORANGE MG", id: "orange" },
+};
+
+/** The live capture's Wifiber plan: 7.37 Go consumed, no cap stated anywhere. */
+const WIFIBER: OrangeForfait = {
+  label: "Wifiber Go+ SSE",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 7_370_000_000,
+};
+
+/** A top-up beside it, so a choice has something to choose between. */
+const TOP_UP: OrangeForfait = {
+  label: "Pass Internet 5 Go",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 1_000_000_000,
+};
+
+/** The Orange panel over `forfaits`, with `rememberedLabel` chosen or not. */
+function orangeModel(
+  forfaits: readonly OrangeForfait[] = [WIFIBER],
+  rememberedLabel?: string,
+): PopoverModel {
+  const selection = selectForfait(forfaits, rememberedLabel);
+
+  return buildPopoverModel({
+    result: { online: true, snapshot: ORANGE_SNAPSHOT },
+    lastReading: null,
+    config: configWithLimit(20 * GB),
+    portal: {
+      reading: {
+        forfait: selection.selected,
+        candidates: selection.candidates,
+        remembered: selection.remembered,
+        at: NOW,
+      },
+      live: true,
+    },
+    clock,
+  });
+}
+
+describe("the Orange panel — the controls it does not offer", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(orangeModel());
+  });
+
+  it("has no Sync button anywhere in the document", () => {
+    expect(document.querySelector("[data-sync]")).toBeNull();
+  });
+
+  it("has no sync status line either, the button's report having no button", () => {
+    expect(document.querySelector('[data-field="syncStatus"]')).toBeNull();
+    expect(document.querySelector("[data-sync-row]")).toBeNull();
+  });
+
+  it("has no plan-length field in the settings view", () => {
+    settingsToggle().click();
+
+    expect(document.querySelector("form[data-plan-days]")).toBeNull();
+    expect(document.querySelector("[data-plan-days-input]")).toBeNull();
+    expect(document.querySelector('[data-field="planDaysError"]')).toBeNull();
+  });
+
+  it("keeps the plan cap, which the portal genuinely never states", () => {
+    settingsToggle().click();
+
+    const cap = document.querySelector<HTMLInputElement>(
+      "[data-plan-limit-input]",
+    );
+
+    expect(cap).not.toBeNull();
+    expect(cap?.value).toBe("20");
+  });
+
+  it("puts every one of them back when a Yas model follows", () => {
+    // The SIM decides, and a SIM can be swapped without the app restarting.
+    apply(modelUsing(10 * GB));
+
+    expect(document.querySelector("[data-sync]")).not.toBeNull();
+    expect(document.querySelector('[data-field="syncStatus"]')).not.toBeNull();
+    expect(document.querySelector("form[data-plan-days]")).not.toBeNull();
+    expect(
+      document.querySelector('[data-field="planDaysError"]'),
+    ).not.toBeNull();
+  });
+
+  it("still fills the sync line once it is back, rather than leaving it stale", () => {
+    apply(modelSyncing({ phase: "failed", reason: "timeout" }));
+
+    expect(textOf("syncStatus")).not.toBe("");
+  });
+});
+
+describe("the Orange panel — what it does not claim about the figure", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(orangeModel());
+  });
+
+  it("captions the volume left as the plan's rather than the carrier's", () => {
+    // The page states consumption; the remainder is the typed cap minus it.
+    expect(textOf("allowanceCaption")).toBe("left on your plan");
+    expect(textOf("allowanceCaption")).not.toMatch(/carrier/i);
+  });
+
+  it("has no expiry row anywhere in the document, not one full of dashes", () => {
+    // Taken off rather than dashed or hidden, for the reason the sync row is:
+    // a row that can only ever say "— · —" is still read out in full by a
+    // screen reader, which is the one reader a dash tells nothing at all.
+    expect(document.querySelector("[data-validity-row]")).toBeNull();
+    expect(
+      document.querySelector('[data-field="allowanceExpires"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-field="allowanceDaysLeft"]'),
+    ).toBeNull();
+  });
+
+  it("puts the row and the carrier's caption back when a Yas model follows", () => {
+    // The SIM decides, and a SIM can be swapped without the app restarting.
+    apply(modelUsing(10 * GB));
+
+    expect(document.querySelector("[data-validity-row]")).not.toBeNull();
+    expect(textOf("allowanceExpires")).not.toBe("");
+    expect(textOf("allowanceCaption")).toBe("left with the carrier");
+  });
+});
+
+describe("the Yas panel — every control it always had", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelUsing(10 * GB));
+  });
+
+  it("still carries the Sync button and its status line", () => {
+    expect(document.querySelector("[data-sync]")).not.toBeNull();
+    expect(document.querySelector('[data-field="syncStatus"]')).not.toBeNull();
+  });
+
+  it("still carries the expiry row and the caption crediting the carrier", () => {
+    expect(document.querySelector("[data-validity-row]")).not.toBeNull();
+    expect(textOf("allowanceExpires")).not.toBe("—");
+    expect(textOf("allowanceDaysLeft")).not.toBe("—");
+    expect(textOf("allowanceCaption")).toBe("left with the carrier");
+  });
+
+  it("still carries the plan-length field beside the cap", () => {
+    settingsToggle().click();
+
+    const { cap, length } = typedForms();
+
+    expect(cap.hidden).toBe(false);
+    expect(length.hidden).toBe(false);
+  });
+
+  it("still sends a sync when the button is pressed", () => {
+    const bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+
+    document.querySelector<HTMLButtonElement>("[data-sync]")?.click();
+
+    expect(bridge.sync).toHaveBeenCalledTimes(1);
+  });
+
+  it("still sends the plan length when its form is submitted", () => {
+    const bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+    settingsToggle().click();
+
+    const field = document.querySelector<HTMLInputElement>(
+      "[data-plan-days-input]",
+    );
+
+    if (field === null) {
+      throw new Error("the settings view has no plan-length field");
+    }
+
+    field.value = "30";
+    document
+      .querySelector<HTMLFormElement>("form[data-plan-days]")
+      ?.dispatchEvent(
+        new window.Event("submit", { bubbles: true, cancelable: true }),
+      );
+
+    expect(bridge.setPlanDays).toHaveBeenCalledWith("30");
+  });
+});
+
+describe("the Orange panel — the forfait it names", () => {
+  function choices(): HTMLButtonElement[] {
+    return [
+      ...document.querySelectorAll<HTMLButtonElement>("[data-forfait-label]"),
+    ];
+  }
+
+  function choiceBlock(): HTMLElement {
+    const element = document.querySelector<HTMLElement>(
+      "[data-forfait-choice]",
+    );
+
+    if (element === null) {
+      throw new Error("the panel has no forfait choice block");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("renders the detected plan's own name on the panel", () => {
+    apply(orangeModel());
+
+    expect(textOf("allowancePlan")).toBe("Wifiber Go+ SSE");
+  });
+
+  it("offers nothing to choose when one plan was live", () => {
+    apply(orangeModel());
+
+    expect(choiceBlock().hidden).toBe(true);
+    expect(choices()).toHaveLength(0);
+  });
+
+  it("names the chosen plan and lists the others when several were live", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    expect(textOf("allowancePlan")).toBe("Wifiber Go+ SSE");
+    expect(textOf("forfaitNote")).not.toBe("");
+    expect(choiceBlock().hidden).toBe(false);
+    expect(choices().map((one) => one.textContent)).toEqual([
+      "Pass Internet 5 Go",
+    ]);
+  });
+
+  it("draws each alternative as a real button with a name of its own", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    for (const choice of choices()) {
+      expect(choice.tagName).toBe("BUTTON");
+      expect(choice.getAttribute("type")).toBe("button");
+      expect(choice.tabIndex).toBeGreaterThanOrEqual(0);
+      expect(choice.getAttribute("aria-label")).not.toBe("");
+    }
+  });
+
+  it("sends the chosen label over the bridge exactly once", () => {
+    const bridge = stubBridge();
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    choices()[0]?.click();
+
+    expect(bridge.chooseForfait).toHaveBeenCalledTimes(1);
+    expect(bridge.chooseForfait).toHaveBeenCalledWith("Pass Internet 5 Go");
+  });
+
+  it("sends one message per press, not one per model pushed since", () => {
+    const bridge = stubBridge();
+    apply(orangeModel([WIFIBER, TOP_UP]));
+    apply(orangeModel([WIFIBER, TOP_UP]));
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    choices()[0]?.click();
+
+    expect(bridge.chooseForfait).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes the offer away once the choice is remembered", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+    apply(orangeModel([WIFIBER, TOP_UP], "Pass Internet 5 Go"));
+
+    expect(textOf("allowancePlan")).toBe("Pass Internet 5 Go");
+    expect(choiceBlock().hidden).toBe(true);
+    expect(choices()).toHaveLength(0);
+  });
+
+  it("costs no height while there is nothing to choose", () => {
+    // `hidden` alone would leave the box open: the block is a grid, and the UA
+    // rule loses to a `display` of its own — the same bargain `.pace-meter`
+    // and `.password-prompt` already make.
+    expect(POPOVER_CSS).toMatch(
+      /\.forfait-choice\[hidden\]\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("sits in the main view rather than behind the settings toggle", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    expect(choiceBlock().closest("[data-main-view]")).toBe(mainView());
+    expect(choiceBlock().closest("[data-settings-view]")).toBeNull();
+  });
+});
+
+describe("the Orange panel — the height it has to fit", () => {
+  it("fits the same window once its two dead controls are gone", () => {
+    // Read the way T-45 reads it: no layout engine, so this is a budget rather
+    // than a measurement. Orange starts from T-45's 350px of chrome, gives back
+    // the ~38px sync row at the foot of the main view, and spends up to 48px on
+    // the forfait choice at its tallest — a 15px note, a 4px gap, a ~22px row
+    // of buttons and the 6px above it. The plan-length field costs nothing
+    // either way: it is in the settings view, which is `hidden` whenever this
+    // one is not.
+    const ORANGE_CHROME_HEIGHT = 350 - 38 + 48;
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+    expect(
+      Number(dialSize) +
+        Number(sparkSize) * SPARK_ROWS +
+        SPARK_GAP +
+        ORANGE_CHROME_HEIGHT,
+    ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+
+  it("fits it still when the panel has to say why there is no figure", () => {
+    // The notice takes the sync row's place rather than a row of its own, and
+    // is built the same way: 12px of margin, 10px of padding, a 1px rule and
+    // one 15px line — the ~38px the sync footer cost before T-56 gave it back.
+    //
+    // It is never on the panel beside the forfait choice: every alternative is
+    // a dead control wherever a notice stands, so the model withdraws them.
+    // The taller of the two is therefore the worst case, and that is still the
+    // 48px choice block T-56 measured — the panel does not grow at all.
+    const ORANGE_NOTICE_HEIGHT = 38;
+    const ORANGE_CHOICE_HEIGHT = 48;
+    const ORANGE_CHROME_HEIGHT =
+      350 - 38 + Math.max(ORANGE_NOTICE_HEIGHT, ORANGE_CHOICE_HEIGHT);
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+    expect(
+      Number(dialSize) +
+        Number(sparkSize) * SPARK_ROWS +
+        SPARK_GAP +
+        ORANGE_CHROME_HEIGHT,
+    ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+
+  it("fits it on a carrier the app cannot place either", () => {
+    // That panel keeps the anchored half's chrome and gives back the same
+    // ~38px sync row, there being no dialogue to press for on a network with
+    // no known allowance source — which is exactly what the notice spends.
+    const UNPLACED_CHROME_HEIGHT = 350 - 38 + 38;
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+    expect(
+      Number(dialSize) +
+        Number(sparkSize) * SPARK_ROWS +
+        SPARK_GAP +
+        UNPLACED_CHROME_HEIGHT,
+    ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+
+  it("gives back the expiry row the portal can never fill", () => {
+    // Reclaimed space that goes unmeasured is space the next task spends
+    // twice, so the row's height is taken out of the worst case here and the
+    // figure is named rather than only bounded.
+    //
+    // Read the way every budget above is read: the row is 11px text, which is
+    // a 15px line box by the same convention the 11px notice and forfait note
+    // are counted with, and the 2px gap of the `.allowance` grid goes with it.
+    stubBridge();
+    apply(orangeModel());
+
+    // The height only comes back if the row is genuinely off the panel, and
+    // an absent row proves nothing unless the page ships one to begin with —
+    // a selector that matches no markup at all would pass this vacuously.
+    expect(INDEX_HTML).toContain("data-validity-row");
+    expect(document.querySelector("[data-validity-row]")).toBeNull();
+
+    const ORANGE_VALIDITY_HEIGHT = 15 + 2;
+    const ORANGE_CHOICE_HEIGHT = 48;
+    const ORANGE_CHROME_HEIGHT =
+      350 - 38 + ORANGE_CHOICE_HEIGHT - ORANGE_VALIDITY_HEIGHT;
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+
+    const worstCase =
+      Number(dialSize) +
+      Number(sparkSize) * SPARK_ROWS +
+      SPARK_GAP +
+      ORANGE_CHROME_HEIGHT;
+
+    expect(worstCase).toBe(497);
+    expect(worstCase).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+});
+
+/**
+ * The line the panel says instead of a figure, in the position the sync status
+ * line held before Orange gave that row back.
+ *
+ * Every assertion below is against the rendered document rather than a class:
+ * the point of the row is that the user reads it, and an element that is
+ * present but collapsed says nothing at all.
+ */
+const UNPLACED: OrangeForfait = {
+  label: "Pass Mystère",
+  nature: "Autre",
+};
+
+/** The Orange panel whose last portal attempt failed for `failure`. */
+function orangeFailingModel(
+  failure: PortalFailure,
+  forfaits: readonly OrangeForfait[] = [WIFIBER],
+): PopoverModel {
+  const selection = selectForfait(forfaits);
+
+  return buildPopoverModel({
+    result: { online: true, snapshot: ORANGE_SNAPSHOT },
+    lastReading: null,
+    config: configWithLimit(20 * GB),
+    portal: {
+      reading: {
+        forfait: selection.selected,
+        candidates: selection.candidates,
+        remembered: selection.remembered,
+        at: NOW,
+      },
+      live: false,
+      failure,
+    },
+    clock,
+  });
+}
+
+/** The panel for a SIM whose network the carrier table does not cover. */
+function unplacedCarrierModel(): PopoverModel {
+  return buildPopoverModel({
+    result: {
+      online: true,
+      snapshot: {
+        ...snapshot(10 * GB),
+        carrier: { carrier: "AIRTEL MG", id: "unknown" },
+      },
+    },
+    lastReading: null,
+    config: configWithLimit(20 * GB),
+    clock,
+  });
+}
+
+describe("the panel's notice row", () => {
+  function noticeRow(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-notice-row]");
+
+    if (element === null) {
+      throw new Error("the panel has no notice row");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("says nothing, and shows nothing, on an ordinary panel", () => {
+    apply(modelUsing(10 * GB));
+
+    expect(noticeRow().hidden).toBe(true);
+    expect(textOf("notice")).toBe("");
+  });
+
+  it("costs no height at all while it is hidden", () => {
+    // `hidden` alone would leave the box open: the row carries a rule and a
+    // margin of its own, and the UA rule loses to a `display` of its own —
+    // the same bargain `.pace-meter` and `.forfait-choice` already make.
+    expect(POPOVER_CSS).toMatch(/\.notice\[hidden\]\s*\{[^}]*display:\s*none/);
+  });
+
+  it("shows the model's own sentence when the portal cannot be reached", () => {
+    const model = orangeFailingModel({
+      state: "unreachable",
+      reason: "offline",
+    });
+
+    apply(model);
+
+    expect(noticeRow().hidden).toBe(false);
+    expect(textOf("notice")).toBe(model.notice);
+    expect(textOf("notice")).not.toBe("");
+  });
+
+  it("names the status code on the panel, not only in the model", () => {
+    apply(
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+    );
+
+    expect(textOf("notice")).toContain("503");
+  });
+
+  it("reads differently for a page that answered but could not be read", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    const unreachable = textOf("notice");
+
+    apply(orangeFailingModel({ state: "unreadable" }));
+
+    expect(textOf("notice")).not.toBe("");
+    expect(textOf("notice")).not.toBe(unreachable);
+  });
+
+  it("reads differently again for a page with no Internet plan on it", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    const unreachable = textOf("notice");
+
+    apply(orangeModel([UNPLACED]));
+
+    expect(textOf("notice")).not.toBe("");
+    expect(textOf("notice")).not.toBe(unreachable);
+  });
+
+  it("names the network the router reported on a carrier it cannot place", () => {
+    apply(unplacedCarrierModel());
+
+    expect(noticeRow().hidden).toBe(false);
+    expect(textOf("notice")).toContain("AIRTEL MG");
+  });
+
+  it("stands on the panel with no line above it still claiming a wait", () => {
+    // The dial's prompt is the larger, earlier text: left waiting for a page
+    // that has already answered, it is what the reader takes first, and this
+    // line then reads as the contradiction rather than as the correction.
+    const models = [
+      orangeModel([UNPLACED]),
+      orangeFailingModel({ state: "unreadable" }, []),
+      orangeFailingModel(
+        { state: "unreachable", reason: "http", status: 503 },
+        [UNPLACED],
+      ),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(textOf("notice")).not.toBe("");
+      expect(textOf("prompt")).not.toMatch(/waiting/i);
+    }
+  });
+
+  it("stands where the sync status line stood, at the foot of the main view", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    expect(noticeRow().closest("[data-main-view]")).toBe(mainView());
+    expect(noticeRow().closest("[data-settings-view]")).toBeNull();
+    expect(mainView().lastElementChild).toBe(noticeRow());
+  });
+
+  it("draws the last figure the portal gave beside the line, not instead of it", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    expect(textOf("allowanceRemaining")).toBe("12.63 Go");
+    expect(textOf("notice")).not.toBe("");
+    expect(document.documentElement.dataset["allowance"]).toBe("stale");
+  });
+
+  it("puts no plan choice on the panel while the line is standing", () => {
+    const choice = (): HTMLElement => {
+      const element = document.querySelector<HTMLElement>(
+        "[data-forfait-choice]",
+      );
+
+      if (element === null) {
+        throw new Error("the panel has no forfait choice block");
+      }
+
+      return element;
+    };
+
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    expect(choice().hidden).toBe(false);
+
+    apply(
+      orangeFailingModel({ state: "unreachable", reason: "offline" }, [
+        WIFIBER,
+        TOP_UP,
+      ]),
+    );
+
+    expect(textOf("notice")).not.toBe("");
+    expect(choice().hidden).toBe(true);
+    expect(document.querySelectorAll("[data-forfait-label]")).toHaveLength(0);
+  });
+
+  it("takes the line away again as soon as the portal answers", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+    apply(orangeModel());
+
+    expect(noticeRow().hidden).toBe(true);
+    expect(textOf("notice")).toBe("");
+  });
+
+  it("leaves the panel with its router figures on it in every state", () => {
+    const models = [
+      orangeFailingModel({ state: "unreachable", reason: "offline" }),
+      orangeFailingModel({ state: "unreachable", reason: "timeout" }),
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+      orangeFailingModel({ state: "unreadable" }),
+      orangeModel([UNPLACED]),
+      unplacedCarrierModel(),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(textOf("notice")).not.toBe("");
+      expect(textOf("downloadRate")).not.toBe("");
+      expect(textOf("connectedDevices")).toBe("3");
+      expect(mainView().hidden).toBe(false);
+    }
+  });
+
+  it("is a live region, the panel having nobody to show a dialog to", () => {
+    expect(INDEX_HTML).toMatch(
+      /data-field="notice"[^>]*role="status"|role="status"[^>]*data-field="notice"/,
+    );
+  });
+
+  it("has no Sync button beside it on a carrier the app cannot place", () => {
+    apply(unplacedCarrierModel());
+
+    expect(document.querySelector("[data-sync]")).toBeNull();
+    expect(document.querySelector("[data-sync-row]")).toBeNull();
+  });
+
+  it("never stands on the page beside the row it takes the place of", () => {
+    // The panel is 320×520 and does not scroll, so the row the line spends is
+    // the row the sync status line gave back. Asserted rather than assumed:
+    // the height budget above is only true while the two never coincide.
+    const models = [
+      orangeFailingModel({ state: "unreachable", reason: "offline" }),
+      orangeFailingModel({ state: "unreachable", reason: "timeout" }),
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+      orangeFailingModel({ state: "unreadable" }),
+      orangeModel([UNPLACED]),
+      unplacedCarrierModel(),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(noticeRow().hidden).toBe(false);
+      expect(document.querySelector("[data-sync-row]")).toBeNull();
+      expect(document.querySelector("[data-forfait-choice]")?.hidden).toBe(
+        true,
+      );
+    }
   });
 });

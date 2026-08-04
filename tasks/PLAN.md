@@ -1,42 +1,78 @@
 # PLAN — ck-connect-check
 
-| ID   | Title                                                                   | Status | Size | Needs            |
-| ---- | ----------------------------------------------------------------------- | ------ | ---- | ---------------- |
-| T-01 | Set the project up so tests can run                                     | done   | S    | —                |
-| T-02 | Turn the router's XML replies into typed data                           | done   | S    | T-01             |
-| T-03 | Fetch a live usage snapshot from the router                             | done   | M    | T-02             |
-| T-04 | Work out how much of the plan is used and when it resets                | done   | S    | T-01             |
-| T-05 | Remember the plan limit and router address                              | done   | S    | T-01             |
-| T-06 | Show usage in the macOS menu bar                                        | done   | M    | T-03, T-04, T-05 |
-| T-07 | Show the details when the menu bar item is clicked                      | done   | M    | T-06             |
-| T-08 | Warn when usage approaches or passes the limit                          | done   | S    | T-04, T-06       |
-| T-09 | Launch the app on login without a Dock icon                             | done   | S    | T-06             |
-| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | done   | S    | T-07             |
-| T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10             |
-| T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03             |
-| T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10             |
-| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13       |
-| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14             |
-| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02             |
-| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03             |
-| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17       |
-| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17             |
-| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05       |
-| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20       |
-| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21             |
-| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21             |
-| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23             |
-| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21             |
-| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25             |
-| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25             |
-| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21             |
-| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25             |
-| T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07             |
-| T-31 | Say which network the router is actually on                             | done   | S    | T-30             |
-| T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21             |
-| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                |
-| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30       |
-| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34       |
+| ID   | Title                                                                   | Status | Size | Needs                        |
+| ---- | ----------------------------------------------------------------------- | ------ | ---- | ---------------------------- |
+| T-01 | Set the project up so tests can run                                     | done   | S    | —                            |
+| T-02 | Turn the router's XML replies into typed data                           | done   | S    | T-01                         |
+| T-03 | Fetch a live usage snapshot from the router                             | done   | M    | T-02                         |
+| T-04 | Work out how much of the plan is used and when it resets                | done   | S    | T-01                         |
+| T-05 | Remember the plan limit and router address                              | done   | S    | T-01                         |
+| T-06 | Show usage in the macOS menu bar                                        | done   | M    | T-03, T-04, T-05             |
+| T-07 | Show the details when the menu bar item is clicked                      | done   | M    | T-06                         |
+| T-08 | Warn when usage approaches or passes the limit                          | done   | S    | T-04, T-06                   |
+| T-09 | Launch the app on login without a Dock icon                             | done   | S    | T-06                         |
+| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | done   | S    | T-07                         |
+| T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10                         |
+| T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03                         |
+| T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10                         |
+| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13                   |
+| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14                         |
+| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02                         |
+| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03                         |
+| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17                   |
+| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17                         |
+| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05                   |
+| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20                   |
+| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21                         |
+| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21                         |
+| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23                         |
+| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21                         |
+| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25                         |
+| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25                         |
+| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21                         |
+| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25                         |
+| T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07                         |
+| T-31 | Say which network the router is actually on                             | done   | S    | T-30                         |
+| T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21                         |
+| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                            |
+| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30                   |
+| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34                   |
+| T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27                         |
+| T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36                         |
+| T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37                         |
+| T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28                         |
+| T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39                         |
+| T-41 | Release the pace and the automatic sync as 0.2.0                        | done   | S    | T-38, T-40, T-42, T-45, T-46 |
+| T-42 | Notice a new plan instead of reporting the old one's share              | done   | M    | T-27, T-28                   |
+| T-43 | State the pace as a daily volume against the plan's daily budget        | done   | S    | T-37                         |
+| T-44 | Draw the pace as a coloured meter instead of describing it              | done   | M    | T-43, T-38                   |
+| T-45 | Fit the whole panel on screen without scrolling                         | done   | M    | T-44                         |
+| T-46 | Count the carrier's last valid day as a day of the plan                 | done   | S    | T-43                         |
+| T-47 | Show the carrier's last valid day, not the midnight after it            | done   | S    | T-46                         |
+| T-48 | Say which daily figure is which                                         | done   | S    | T-47                         |
+| T-49 | Let the meter speak alone where it speaks                               | done   | S    | T-48                         |
+| T-50 | Know which carrier the SIM is on                                        | done   | S    | T-03                         |
+| T-51 | Read Orange's forfaits out of the portal page                           | done   | S    | T-01                         |
+| T-52 | Fetch the Orange portal without blocking the app                        | done   | S    | T-51                         |
+| T-53 | Pick the Internet forfait when several are active                       | done   | S    | T-51                         |
+| T-54 | Measure a Wifiber plan against the calendar month                       | done   | M    | T-53                         |
+| T-55 | Feed the panel from whichever carrier the SIM is on                     | done   | M    | T-50, T-52, T-54             |
+| T-56 | Show the forfait's name and hide what Orange cannot answer              | done   | S    | T-55                         |
+| T-57 | Say when the portal cannot be reached or the forfait is unreadable      | done   | S    | T-55                         |
+| T-58 | Bring the README and screenshots up to the Orange setup                 | done   | S    | T-56, T-57, T-59             |
+| T-60 | Stop the dial contradicting the notice beneath it                       | done   | S    | T-57                         |
+| T-61 | Stop the allowance strip claiming what Orange never said                | done   | S    | T-60                         |
+| T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
+| T-62 | Find out what the router actually says about connected devices          | done   | M    | —                            |
+| T-63 | Turn the router's host list into typed devices                          | done   | M    | T-62                         |
+| T-64 | Name, label and order the devices for reading                           | done   | S    | T-63                         |
+| T-65 | Open a window for the connected devices                                 | done   | M    | —                            |
+| T-66 | Fill the devices window from the live router                            | todo   | M    | T-64, T-65                   |
+| T-67 | Know which devices the router is already blocking                       | todo   | M    | T-62, T-63                   |
+| T-68 | Block and unblock a device from the list                                | todo   | M    | T-67                         |
+| T-69 | Never let this Mac block itself off the router                          | todo   | S    | T-68                         |
+| T-70 | Say why the list is empty or a block did not take                       | todo   | S    | T-66, T-68                   |
+| T-71 | Show the devices window in the README                                   | todo   | S    | T-66, T-68                   |
 
 ## T-01 Set the project up so tests can run
 
@@ -1694,3 +1730,2289 @@ The README states the tested device and version as what was tested, never as a
 compatibility claim, and says in as many words that the `#359#` path is one
 carrier's own menu. Both are the honest narrow parts of this project, and the
 test asserts they stay stated.
+
+## T-36 Ask how long the plan lasts so the pace has a period
+
+T-36 · status: done · size: M · needs: T-27 · files: src/config/config.ts, src/config/defaults.ts, src/main/view-model.ts, src/main/main.ts, src/main/popover.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, README.md, test/config/config.test.ts, test/main/view-model.test.ts, test/main/main.test.ts, test/renderer/popover.test.ts
+
+The cap answers "how much"; nothing yet answers "over how long". T-27 put a cap
+field in the panel and this puts a plan-length field beside it, because the
+`pace` band in T-37 divides by a period the carrier's USSD reply never states —
+it gives an expiry date, not a duration. With `planDays` set, the period start is
+`expiresAt − planDays` and the band becomes arithmetic on figures already in hand.
+
+This field is a **refinement, not a precondition**. T-37's tier 1 reading
+(`remainingNow / daysUntilExpiry`) needs neither this nor the cap, so the panel is
+useful before this is ever typed. Filling it in adds the band and the flat daily
+budget, and nothing else stops working while it is blank.
+
+`planDays` is `number | null` like `planLimitBytes`, so an unset value
+round-trips rather than defaulting to 30 and quietly inventing a period.
+
+### Acceptance
+
+- [x] `config.ts` round-trips `planDays` as `number | null` and an absent key loads as `null`
+- [x] a `planDays` of `0`, a negative number or a non-integer is rejected on load and read as `null`
+- [x] the popover model exposes `planDays` and an editor flag for the set and unset cases
+- [x] the panel has a plan-length input next to the cap, and typing `30` in it writes `30` to config through the preload bridge
+- [x] a blank plan-length submission is rejected and leaves the stored value untouched
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above
+- [x] Add `planDays` to `AppConfig`, its validation on load and its default in `defaults.ts`
+- [x] Expose it through the view-model with the editor flag
+- [x] Add the input, its handler and its style beside the cap field
+- [x] Route the setter through `preload.cts` alongside the existing cap setter
+- [x] Manual: type `30` in the panel and confirm `config.json` holds it after a restart
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The form lookups in `src/renderer/popover.ts` are element-qualified —
+`form[data-plan-limit]`, `form[data-plan-days]` — because `applyPlanLimit` and
+`applyPlanDays` write those same attribute names onto the `<html>` root as state
+flags. A bare attribute selector matches the root element first, so the listener
+was being hung off `<html>` rather than off the form. T-27's cap only worked
+because a submit event bubbles up to the root; adding a second form broke it,
+since both then contended for the same `data-bound` marker on one element. The
+cap's lookup was corrected in the same pass.
+
+`:root[data-plan-limit="unset"]`'s accent rule is now scoped to
+`[data-plan-limit-input]` for the same reason: both fields share the
+`.plan-limit-input` class, so the unscoped rule outlined the length field too.
+The length is a refinement rather than a precondition, so it is deliberately not
+flagged when blank.
+
+`src/main/popover.ts`, `test/main/main.test.ts` and `README.md` joined the
+`files:` list — the IPC channel, the wiring test, and the settings row
+`readme.test.ts` derives from `AppConfig`.
+
+## T-37 Work out whether the connection is being used moderately
+
+T-37 · status: done · size: M · needs: T-36 · files: src/domain/pace.ts, test/domain/pace.test.ts
+
+The arithmetic from `## Reading the consumption pace` in `docs/ARCHITECTURE.md`,
+as a pure function in `src/domain/` with no Electron and no network — the same
+boundary `allowance.ts` keeps.
+
+The reading is **tiered**, because the app already holds most of what the answer
+needs. A sync states a remaining volume and an expiry date, and those two alone
+give the number that gets looked at daily. The cap and the plan length each add a
+layer on top; neither gates the others.
+
+```
+readPace({ anchor, month, planLimitBytes, planDays, clock })
+  → null                                     // no anchor, or no expiry, or expired
+  | { tier: 1 | 2 | 3,
+      daysUntilExpiry,
+      sustainablePerDay,        // tier 1+: remainingNow / daysUntilExpiry
+      usedShare:         null,  // tier 2+: usedNow / planLimitBytes
+      elapsedShare:      null,  // tier 3:  (now − periodStart) / planDays
+      pace:              null,  // tier 3:  usedShare / elapsedShare
+      affordedPerDay:    null,  // tier 3:  planLimitBytes / planDays
+      state:             null } // tier 3:  'safe' | 'warning' | 'over'
+```
+
+Tier 1 needs the anchor only. Tier 2 adds `planLimitBytes`. Tier 3 adds
+`planDays`. Fields belonging to an unreached tier are `null`, never absent, so the
+caller reads one shape and the renderer branches on `tier`.
+
+The bands are `safe` at `pace ≤ 1.00`, `warning` up to `1.20`, `over` above it.
+The weekend case in the request needs no special handling: both shares are
+cumulative, so a week of nothing pulls `usedShare` back under `elapsedShare` on
+its own.
+
+Three edges decide whether this is trustworthy or noise. On the plan's first hours
+`elapsedShare` is near zero and the ratio explodes, so a period less than one day
+elapsed reports `safe` regardless. Past the expiry `daysUntilExpiry` is zero and
+every division would blow up, so an expired anchor yields `null` outright — the
+same answer `allowance.ts` already gives it. And a carrier reply that stated no
+expiry at all leaves `daysUntilExpiry` null, which is the same `null` for the same
+reason: there is no period to divide by.
+
+An untrustworthy anchor — T-28's `counter-reset` — also yields `null`. Its
+`remainingNow` is the anchored figure with no delta applied, so a pace drawn from
+it would describe a moment that has already passed.
+
+### Acceptance
+
+- [x] **tier 1** — an anchor with 30 Go remaining and 10 days to expiry, no cap and no `planDays`, reports `tier: 1` and a `sustainablePerDay` of 3 Go
+- [x] a tier 1 result has `pace`, `state`, `usedShare`, `elapsedShare` and `affordedPerDay` all exactly `null`
+- [x] **tier 2** — adding a 150 Go cap reports `tier: 2`, a `usedShare` matching `readAllowanceNow`'s share, and still a `null` `state`
+- [x] **tier 3** — 30 Go over 30 days with 2 Go used on day 1 reports `tier: 3` and `over` — one day elapsed, two days' worth spent
+- [x] the same plan with 2 Go used on day 8 reports `safe`, and `pace` is below 1
+- [x] 30 Go over 30 days with 20 Go used on day 15 reports `over`, and 16 Go on day 15 reports `warning`
+- [x] a missing anchor, an anchor with a null `expiresAt`, and an anchor past its expiry each yield `null` and never divide by zero
+- [x] an anchor whose staleness is `counter-reset` yields `null`
+- [x] under one elapsed day the state is `safe` whatever has been used, and `pace` is not `Infinity` or `NaN`
+- [x] `affordedPerDay` is 1 Go for a 30 Go / 30 day plan, and `sustainablePerDay` rises as usage stops while `affordedPerDay` does not
+- [x] `sustainablePerDay` is computed from `readAllowanceNow(...).remainingBytes`, asserted by a case where the router counter has advanced since the anchor
+- [x] `src/domain/pace.ts` imports neither `electron` nor anything under `src/hilink/`
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, with a fixed clock, one describe block per tier
+- [x] Implement the tier 1 core — `daysUntilExpiry` and `sustainablePerDay` — and its null cases
+- [x] Layer tier 2's `usedShare` and tier 3's `elapsedShare`, `pace`, `affordedPerDay` and band on top
+- [x] Name the band thresholds and the one-day floor as constants
+- [x] Reuse `readAllowanceNow` for `remainingNow` and `daysUntilExpiry` rather than recomputing either
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+`src/domain/allowance.ts` was in the planned `files:` list but needed no change:
+`AllowanceNowInput` was already exported, so `pace.ts` reaches the router's
+month-counter type through it and imports nothing under `src/hilink/` — which is
+what the boundary criterion asks for.
+
+Both null guards are on the reading rather than on the anchor: `!trustworthy`
+covers the expired and counter-reset cases in one, and `daysUntilExpiry <= 0`
+catches an expiry later today, which is not yet past but has no run of days to
+divide the remainder across.
+
+## T-38 Show the pace and its warning on the panel
+
+T-38 · status: done · size: M · needs: T-37 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+One row under the dial, in the same shape as the existing tiles, growing with the
+tier T-37 reports:
+
+- **tier 1** — `sustainablePerDay` alone: "2.40 Go/jour jusqu'au 15 août". This is
+  the row every synced user sees, with nothing typed in.
+- **tier 2** — the same, plus the consumed share already on the dial, so the row
+  says what the ring shows in words.
+- **tier 3** — the band as a coloured word, `affordedPerDay` beside
+  `sustainablePerDay`, and a sentence saying which way the pace is going.
+
+`over` uses the same accent the warning threshold already uses so the panel has
+one visual language for trouble. Below tier 3 there is no band and no colour — an
+uncoloured row is the honest rendering of "here is the figure, no judgement".
+
+When `readPace` yields `null` the row is absent rather than empty — a pace over a
+period nobody stated is the same lie the dial refuses to draw before a sync.
+
+Tiers 1 and 2 hint at what would sharpen them, pointing at the cap and plan-length
+fields T-27 and T-36 put in the panel, so the reason the band is missing is on
+screen next to its absence.
+
+### Acceptance
+
+- [x] the popover model carries a `pace` field that is `null` exactly when `readPace` returns `null`, and otherwise carries the tier through unchanged
+- [x] a tier 1 model renders `sustainablePerDay` and the expiry, and no band word, no `data-state` and no `affordedPerDay`
+- [x] a tier 2 model renders the consumed share as well, and still no band word
+- [x] a tier 3 `safe` model renders the band word, `affordedPerDay` and `sustainablePerDay` together
+- [x] `warning` and `over` models render with distinct `data-state` values, asserted against the stylesheet's selectors
+- [x] a `null` pace renders no pace row at all, and the panel's height is unchanged in every other respect
+- [x] tiers 1 and 2 render a hint naming the missing setting, and tier 3 renders none
+- [x] the daily figures are formatted with the octet helper, so a 1 000 000 000-byte figure reads `1.00 Go`
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, one per tier
+- [x] Thread `readPace` into `buildPopoverModel`
+- [x] Render the row, branching on `tier`, with the three band states inside tier 3
+- [x] Style the bands against the existing accent variables, adding none that duplicate them
+- [x] Manual: with a real anchor and no cap typed, confirm the tier 1 row reads correctly
+- [x] Manual: type the cap and the length, confirm the band appears and matches a hand calculation
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+The row's date comes from the allowance reading rather than from `readPace`:
+the pace carries the _days_ left, which is what it divides by, and the row
+states the date those days run to. `readPace` already refuses a reading with no
+expiry, so the two can never disagree.
+
+`pace.tier` is a number on a model that is otherwise display strings, so the
+pre-existing "hands the renderer only display strings" test was extended to
+treat it as a control value alongside `progress.sweep` — it decides which rows
+to show, and is never printed.
+
+The band words carry the meaning as well as the colour: `over` is red and says
+"Too fast", so the reading survives a colourblind eye and an accessible label.
+Both accents are the ones the dial already uses for trouble; no new colour was
+added.
+
+## T-39 Know when the carrier figure has gone stale
+
+T-39 · status: done · size: S · needs: T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, README.md, test/domain/allowance.test.ts, test/config/config.test.ts
+
+T-28 decides whether an anchor is _usable_. This adds the second question —
+whether a usable anchor is _recent_ — as a pure predicate beside it, so T-40 wires
+policy without holding any arithmetic:
+
+```
+isAnchorStale(anchor, now, staleAfterMinutes) → boolean
+```
+
+`syncStaleAfterMinutes` joins the config with a default of 30. No anchor at all is
+not "stale": that case is already T-28's no-usable-anchor path, and conflating the
+two would make the caller run the same dialogue for two different reasons.
+
+### Acceptance
+
+- [x] an anchor synced 31 minutes ago with a 30-minute setting is stale, and one synced 29 minutes ago is not
+- [x] the boundary is exact — 30 minutes to the millisecond is not yet stale
+- [x] a `null` anchor is reported not-stale, and the existing usability check still reports it unusable
+- [x] an anchor with a `syncedAt` in the future is not stale and throws nothing
+- [x] `config.ts` round-trips `syncStaleAfterMinutes`, defaults it to 30, and rejects zero or negative values back to the default
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, with a fixed clock
+- [x] Implement `isAnchorStale` next to the existing usability predicate
+- [x] Add the config key, its default and its validation
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+An invalid `syncStaleAfterMinutes` falls back for that key alone rather than
+throwing, which is the one setting in `config.ts` that does not take the whole
+file down with it. A hand-typed `0` would otherwise discard the stored allowance
+anchor, and recovering that costs a full USSD dialogue and a login against a
+device that locks after five refusals. Decided with the user during the build.
+
+`README.md` joined the `files:` list: `readme.test.ts` derives the documented
+settings list from the `AppConfig` interface, so a new config key without a
+README row fails the suite.
+
+## T-40 Re-sync by itself on open and after a long silence
+
+T-40 · status: done · size: M · needs: T-39 · files: src/main/sync.ts, src/main/main.ts, src/main/view-model.ts, test/main/sync.test.ts, test/main/main.test.ts
+
+Both halves of the request are the same rule evaluated at two moments: if the
+anchor is stale, run one dialogue. Opening the panel evaluates it, and a
+background timer evaluates it for an app nobody has opened all afternoon.
+
+The guards are what keep a 30-minute window off the router's five-failure
+lockout, and each is a test rather than a comment:
+
+- one dialogue in flight at a time, ever
+- nothing starts without a stored password, or while the router is unreachable,
+  or before the first successful snapshot
+- a failure parks automatic syncing until an explicit Sync press; the stale clock
+  restarts only on success
+- the check is on open and on its own timer, never on a poll tick
+
+### Acceptance
+
+- [x] opening the panel with a stale anchor starts exactly one dialogue, and opening it with a fresh one starts none
+- [x] the background timer starts a dialogue for a stale anchor with the panel closed
+- [x] opening the panel twice inside one stale window starts exactly one dialogue in total
+- [x] a dialogue already in flight is never joined by a second, asserted with a deferred stub
+- [x] a failed automatic sync issues exactly one dialogue, and no further automatic dialogue is issued however long the anchor stays stale
+- [x] an explicit Sync press after that failure runs, and a success re-arms automatic syncing
+- [x] no dialogue starts with no stored password, with the router unreachable, or before the first snapshot
+- [x] a poll tick alone never starts a dialogue
+- [x] the panel reports an automatic sync's steps in the same status line an explicit press uses, marked as automatic
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, with a fake timer and a stubbed dialogue
+- [x] Extend `sync.ts` with the stale-triggered entry point and the in-flight and parked flags
+- [x] Call it from the popover's show path and from a timer in `main.ts`
+- [x] Surface the automatic marker through the view-model
+- [x] Manual: back-date `syncedAt` in `config.json`, open the panel, confirm one dialogue runs and a second open does not
+- [x] Manual: with a wrong password stored, confirm one attempt is made and none follow
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+`src/main/popover.ts` was in the planned `files:` list but needed no change: the
+panel's show and toggle both run through the `panel` wrapper in `main.ts`, which
+already existed to keep the poller's cadence in step with visibility, and that is
+where the staleness check belongs. A tray click is the only route to a visible
+panel and it goes through the same wrapper.
+
+`parked` is set by _any_ failed dialogue, not only an automatic one, and cleared
+by any that succeeds. A failed press parks the timer too — the account locks
+after five refused sign-ins, and a press that just failed is not evidence the
+next automatic attempt would fare better.
+
+The staleness check is deliberately never reached from `client.snapshot`: a poll
+comes round every couple of seconds and a dialogue takes tens of them.
+
+## T-41 Release the pace and the automatic sync as 0.2.0
+
+T-41 · status: done · size: S · needs: T-38, T-40, T-42, T-45, T-46 · files: package.json, package-lock.json, README.md, src/app-info.ts, test/readme.test.ts, test/project-setup.test.ts
+
+Version 0.2.0, and a README that describes the app as it now behaves: a tiered
+pace reading under the dial, a plan length to enter beside the cap, a sync that
+happens by itself when the carrier figure is over half an hour old, and what to do
+after a top-up. T-35's README test already asserts the document matches reality,
+so this extends that test rather than trusting prose.
+
+### Acceptance
+
+- [x] `package.json` reads `0.2.0` and `package-lock.json` agrees
+- [x] `app-info.ts`'s version, or whatever the app reports as its version, reads 0.2.0
+- [x] the README documents the plan-length setting, the three pace tiers and their bands, the 30-minute automatic sync, and the top-up flow
+- [x] the README states that loading a new plan needs a Sync and a cap confirmation, and no reset
+- [x] the README test asserts each of those claims against the source that implements it
+- [x] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
+- [x] the README describes the pace as a coloured meter and states the three bands with the 5 Go/day worked example
+- [x] the README's screenshot shows the app's current compacted panel with the settings toggle, not the pre-T-45 layout
+- [x] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
+
+### Tasks
+
+- [x] Failing README and project-setup tests for the claims above
+- [x] Bump the version in `package.json` and refresh the lockfile
+- [x] Write the four README sections
+- [x] Manual: package the app and confirm it reports 0.2.0
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- **Closed on 2026-08-04 against `docs/media/panel-orange.png`, after its criterion was
+  rewritten.** As written, the criterion implied a YAS capture: the sections this release
+  documents — the pace tiers, the plan-length setting, the 30-minute automatic sync — are all
+  YAS behaviour. That capture became impossible the same day, when the SIM moved to Orange and
+  set the T-50..T-61 work going; a YAS panel cannot be photographed without a YAS SIM back in
+  the router. The word "current" replaced the implied "YAS", because what the criterion was
+  really protecting against was a **stale layout**, not a particular carrier, and the Orange
+  capture is the compacted post-T-45 panel with the settings toggle in the header.
+  - The honest cost of that rewrite: a reader of this release's YAS sections now sees a panel
+    with no plan-length input and no Sync button, because Orange withdraws both. If a YAS SIM
+    is ever back in the router, a second capture would be worth taking.
+  - The image is held to more than existence: `test/readme.test.ts` reads the PNG's own IHDR
+    height and requires 497 px, the figure the renderer suite independently derives from the
+    CSS budget. A pre-T-61 capture at 514 px is rejected rather than accepted quietly.
+- `needs` gained T-46 after the fact: manual testing of the merged wave found the pace
+  under-reporting by a full day, and releasing 0.2.0 with its headline feature wrong was
+  not worth the earlier ship date.
+- The README test anchors every documented claim to the source implementing it rather than
+  grepping for prose: band boundaries against `SAFE_PACE`/`WARNING_PACE`, the 5 Go/day
+  example recomputed through the real `readPace`, the window against
+  `DEFAULT_SYNC_STALE_AFTER_MINUTES`, the three colours against `popover.css`'s own rules.
+- A pre-existing README claim was corrected, not just extended: it said a sync happens
+  automatically "only when there is nothing trustworthy to show", which T-40 had falsified.
+  The 30-minute rule is now stated as primary, that case as secondary.
+- `src/app-info.ts` was outside the declared list. `APP_VERSION` is asserted equal to
+  `package.json`'s version rather than to a literal, so a future bump cannot desynchronise
+  the two silently.
+- The lockfile refresh moved exactly two lines, both `version` fields; no dependency
+  version changed during the release commit.
+
+## T-42 Notice a new plan instead of reporting the old one's share
+
+T-42 · status: done · size: M · needs: T-27, T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, src/main/sync.ts, src/main/main.ts, src/main/tray.ts, src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, README.md, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts, test/main/main.test.ts, test/main/tray.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Loading a new plan needs no reset control: `anchorFrom` builds a whole new anchor
+on every sync — label, remaining, expiry and both router counters — so a reset
+button would clear nothing a Sync does not already overwrite. What a sync cannot
+refresh is the two values the user typed, and a cap left over from the previous
+plan is a **silent fault**. `readAllowanceNow` computes
+`usedBytes = max(0, cap − remainingBytes)`, so topping up from a 50 Go plan to a
+150 Go one without retyping the cap clamps consumption to zero and the dial reads
+0% indefinitely, with nothing on screen suggesting why.
+
+So the new plan is detected instead, as a pure predicate beside the existing
+staleness one:
+
+```
+isNewPlan(anchor, previous, planLimitBytes) → boolean
+```
+
+True when the anchor's `planLabel` differs from the previous anchor's, when its
+`expiresAt` moves later, or when its `remainingBytes` exceeds the configured cap —
+that last one alone catches a top-up the carrier labelled identically.
+
+Detection sets `planCapConfirmed: false` in the config. While it is false the
+panel keeps T-37's tier 1 reading, which needs no cap and is therefore still true,
+and drops the dial and the band rather than drawing either from a cap the carrier
+has contradicted. Confirming or retyping the cap sets it back to true.
+
+`previous` is the anchor being replaced, so the comparison happens inside the sync
+that writes the new one; a first-ever sync has no previous and is not a new plan.
+
+### Acceptance
+
+- [x] `isNewPlan` is true for a differing `planLabel`, for an `expiresAt` later than the previous one, and for `remainingBytes` above the configured cap
+- [x] it is false when label, expiry and remaining are all unchanged, and false when there is no previous anchor
+- [x] it is false for an `expiresAt` that moved _earlier_, and throws nothing when either `expiresAt` is null
+- [x] it is false when no cap is configured and only the remaining volume grew — with no cap there is nothing to contradict
+- [x] `config.ts` round-trips `planCapConfirmed` as a boolean, defaulting to `true` so an existing config is not flagged on first launch
+- [x] a sync whose new anchor is a new plan writes `planCapConfirmed: false`, and one that is not leaves the flag untouched
+- [x] with the flag false the popover model's `percentUsed` and `pace.tier` 2 and 3 fields are null, while the tier 1 reading is unchanged
+- [x] with the flag false the panel renders the confirmation prompt and no dial, asserted against the stylesheet's selectors
+- [x] submitting the cap through the existing T-27 setter sets the flag true, and the dial returns in the same model build
+- [x] confirming without changing the cap also sets it true, so an unchanged plan size costs one click
+- [x] the tray title follows the same rule as the dial, never showing a share computed from an unconfirmed cap
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, with a fixed clock
+- [x] Implement `isNewPlan` beside `stalenessOf`, exported and pure
+- [x] Add `planCapConfirmed` to `AppConfig`, its default and its validation
+- [x] Call the predicate where the sync writes its anchor, and clear the flag there only
+- [x] Gate `percentUsed` and the tier 2/3 pace fields on the flag in the view-model
+- [x] Render the confirmation prompt and wire its two actions to the existing cap setter
+- [x] Manual: edit `config.json` to a cap below the anchored remaining, open the panel, confirm the prompt appears and the dial does not
+- [x] Manual: confirm the cap and watch the dial and the band return
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- The criterion naming `percentUsed` and null `pace.tier` 2/3 fields was met by a different
+  mechanism than its wording implies: `PopoverModel` has no `percentUsed` field and
+  `PopoverPace`'s fields are strings by T-38's design. The nulls are real one layer down —
+  `readPlanUsage` and `readPace` are both called with a null cap — and surface as
+  `progress.available:false`, `"—"` labels and empty band strings. `popover.ts:545` sets
+  `data-limit="unset"` from that flag and `popover.css:359` removes `.dial-value` and
+  `.caption` from display, so no share derived from an unconfirmed cap reaches the DOM.
+- `confirmedPlanLimit` treats only an explicit `false` as unconfirmed, mirroring the config
+  reader's own fallback, so hand-built `AppConfig` fixtures keep their caps. `recordAnchor`
+  only ever writes `false` and never `true`, so the default cannot mask a real unconfirmed
+  state written by a sync.
+- `README.md` was touched because `readme.test.ts` generates its config table from
+  `AppConfig` and fails on any undocumented field. T-41 edits the same file.
+
+## T-43 State the pace as a daily volume against the plan's daily budget
+
+T-43 · status: done · size: S · needs: T-37 · files: src/domain/pace.ts, test/domain/pace.test.ts
+
+The tier 3 ratio is already the right arithmetic, but it is stated in the wrong
+units. The user reasons in daily volumes — 150 Go over 30 days affords 5 Go a
+day, 6 Go a day is reckless and 3 Go is calm — and `pace: 1.22` makes them do
+that division themselves.
+
+So the reading gains `averagePerDay`, the volume actually spent per elapsed day:
+
+```
+averagePerDay  = usedBytes / elapsedDays          // elapsedDays floored at 1, as today
+affordedPerDay = planLimitBytes / planDays        // already present
+pace           = averagePerDay / affordedPerDay   // identical to usedShare / elapsedShare
+```
+
+It is a **restatement**, not a second calculation: it divides the same cumulative
+used volume by the same floored elapsed days the ratio uses, so the meter T-44
+draws can never contradict the band beside it.
+
+The band boundary is also wrong at exactly one point. `bandFor` returns `warning`
+for `pace <= 1.2`, so the worked example above — 6 Go against 5, a ratio of
+exactly 1.20 — lands in `warning` when it is the case the user calls extreme.
+`over` starts at 1.20 inclusive.
+
+The band names `safe` / `warning` / `over` are unchanged. They are what the
+view-model, the stylesheet and T-38's tests already key on, and renaming a value
+whose meaning is unchanged is churn the colour mapping in T-44 does not need.
+
+### Acceptance
+
+- [x] `PaceReading` carries `averagePerDay: number | null`, null below tier 3 like `affordedPerDay`
+- [x] with a 150 Go cap over 30 days and 10 days elapsed having spent 60 Go, `averagePerDay` is 6 Go and `affordedPerDay` is 5 Go
+- [x] `averagePerDay / affordedPerDay` equals `pace` to within floating-point tolerance in every tier 3 case tested
+- [x] a ratio of exactly 1.20 bands as `over`, not `warning`
+- [x] a ratio just under 1.20 still bands as `warning`, and exactly 1.00 still bands as `safe`
+- [x] inside the first day the elapsed floor still forces `safe`, and `averagePerDay` is the used volume divided by that floor rather than by zero
+- [x] tier 1 and tier 2 readings carry `averagePerDay: null`
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for the worked example, both band boundaries and the tier nulls, with a fixed clock
+- [x] Add `averagePerDay` to `PaceReading` and compute it from `usedBytes` and the floored elapsed days
+- [x] Move the `over` boundary to `pace >= WARNING_PACE` and correct the constant's doc comment
+- [x] Update the tier table in `pace.ts`'s module comment
+
+### Notes
+
+- `elapsedDays` is floored once at `pace.ts:188`; both `pace` (line 190, via `elapsedShare`)
+  and `averagePerDay` (line 201) divide by that same value, so the meter T-44 draws cannot
+  contradict the band beside it. This is the restatement the design requires, not a second
+  accumulation.
+- Of the 6 added tests, 4 genuinely failed at RED. The two boundary guards — "just under
+  1.20 stays warning" and "exactly 1.00 stays safe" — pass under both the old and new
+  operator by design; they exist to prove the moved boundary did not disturb its
+  neighbours, so a failure there would have meant the old bound was wrong in the other
+  direction.
+
+## T-44 Draw the pace as a coloured meter instead of describing it
+
+T-44 · status: done · size: M · needs: T-43, T-38 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+T-38 put the pace on the panel as four lines of prose. A band is a magnitude with
+three named regions, which is exactly what a bar states faster than a sentence,
+and the panel already draws its dial and its sparklines for that reason.
+
+The meter is a horizontal bar whose full width is `affordedPerDay` and whose fill
+is `averagePerDay`, with a tick at the afforded figure so an overshoot reads as
+fill past the mark rather than as a bar that is merely long. Green in `safe`,
+orange in `warning`, red in `over`. `averagePerDay` and `affordedPerDay` stay
+beside it as short numerals — `6.1 / 5.0 Go/j` — because the colour says which
+band and the meter says by how much, but only the numbers say the amounts.
+
+Colour is never the sole carrier of the verdict: the fill crossing the tick states
+the same thing, so the reading survives a greyscale screenshot and a colour-blind
+viewer. The `data-pace-state` attribute stays on the section, so the stylesheet
+holds every colour and the renderer holds none.
+
+Fill is clamped for drawing at twice the afforded width — a pace of 8 would
+otherwise leave the panel — while the numerals stay exact, so a runaway month is
+visibly pinned rather than silently truncated.
+
+Below tier 3 there is no afforded figure to measure against, so there is no meter.
+Tier 1 keeps its single sustainable-per-day line, which is the one prose line that
+earns its space: it answers a question with no range attached.
+
+### Acceptance
+
+- [x] the popover model exposes the meter's fill share, its band and both formatted volumes, and computes no geometry in the renderer beyond the SVG or bar it draws
+- [x] a tier 3 model in each band renders the section with `data-pace-state` set to `safe`, `warning` and `over` respectively
+- [x] the stylesheet maps those three states to the green, orange and red custom properties, asserted against the stylesheet text
+- [x] a pace of 1.0 fills the meter exactly to its tick, a pace of 0.5 to half of it, and a pace of 3 clamps to the drawn maximum while the numerals still read the true figures
+- [x] the numerals read `averagePerDay` and `affordedPerDay` in Go with the app's existing French formatter
+- [x] a tier 1 model renders the sustainable-per-day line and no meter element
+- [x] a tier 2 model renders no meter either — there is still no afforded figure
+- [x] the prose lines T-38 added for the band, the afforded figure and the consumed figure are gone from the page
+- [x] the section stays hidden outright when `readPace` returns null
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing view-model and renderer tests for every criterion above
+- [x] Add the meter fields to the popover model, clamping the fill share and leaving the numerals exact
+- [x] Replace the four `pace-*` paragraphs in `index.html` with the meter, its tick and the numeral pair
+- [x] Render fill and tick from the model in `popover.ts`, setting `data-pace-state` and nothing else
+- [x] Move the three band colours into `popover.css` as custom properties beside the existing accents
+- [x] Manual: with a real anchor, cap and length, confirm the meter matches a hand calculation and the colour matches the band
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- The meter is hidden outright while `planCapConfirmed` is false, not merely blanked —
+  the band would otherwise be drawn from the cap T-42 has flagged as contradicted.
+  Asserted on the element in `popover.test.ts` and on `pace.meter === null` in the model.
+- The clamp applies to `fill` only (`view-model.ts:720`, span of 2× afforded). `average`
+  and `afforded` carry exact unclamped figures, so a pace of 3 pins the bar at its maximum
+  while the numeral still reads `15.00 Go`.
+- `data-state` was renamed `data-pace-state` per the criterion's wording; T-38's two-state
+  colour test was replaced by a three-state one that also asserts `--safe` exists.
+- `PopoverPace.note` and `PACE_NOTE_TEXT` were removed alongside the three prose fields —
+  named by the plan's Tasks line though not by a criterion. `hint` was kept: it is an
+  instruction about missing settings, not a description of the pace.
+- Two T-42 assertions reading `pace.note` / `consumed` / `afforded` were rewritten to
+  `not.toHaveProperty` over all four fields plus `meter === null` — a stronger claim than
+  the empty-string checks they replaced, verified against the pre-merge commit.
+- `PACE_BAND_TEXT` survives as the meter's `aria-label`, so the verdict is carried in
+  words as well as in hue and in the fill crossing the tick.
+
+## T-45 Fit the whole panel on screen without scrolling
+
+T-45 · status: done · size: M · needs: T-44 · files: src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/main/view-model.ts, src/main/popover.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/main/view-model.test.ts
+
+The panel is 320×520 and its content has outgrown it: header, dial, two settings
+forms and their error lines, the pace section, the allowance strip, two rate rows,
+a five-item stats grid, the sync status and the password form. It scrolls, which
+for a popover that closes on blur means the bottom of it is effectively unreachable.
+
+Two cuts and one move fix it.
+
+**Cut the month download and upload totals.** The plan is billed on their sum, and
+the dial and the carrier's remaining already state that sum. The split is a
+question nobody asks of a menu bar app.
+
+**Move the typed settings out of the main view.** The plan cap, the plan length and
+the router password are three input rows and three error lines — roughly a third of
+the panel — serving values typed once a month. A toggle in the header swaps the
+main view for a settings view holding all three; the panel shows one or the other,
+never both. The password form keeps its existing "shown only when nothing is
+stored" behaviour as an attention marker on the toggle, so a missing password is
+still discoverable without the form occupying the panel.
+
+**Tighten what remains.** The stats grid loses two of its five items and the rest
+fold into a single line beside the allowance figures.
+
+The window stays 320×520. The test asserts the fit structurally — the sections a
+view contains and the absence of the removed fields — because a renderer test has
+no layout engine to measure against.
+
+### Acceptance
+
+- [x] the page contains no `monthDownload` and no `monthUpload` field, and the view-model no longer exports them
+- [x] the header carries a settings toggle whose pressed state swaps which of the two views is hidden
+- [x] with settings open, the main view is hidden and the cap, length and password forms are all present
+- [x] with settings closed, all three forms are hidden and the dial, pace meter, allowance and rates are present
+- [x] the toggle carries an attention marker when no router password is stored, and does not when one is
+- [x] the cap and length setters still work from inside the settings view, errors included, through the same IPC channels
+- [x] closing and reopening the panel returns it to the main view rather than restoring settings
+- [x] the stats grid holds only the remaining items, and expiry and days-left read on one line with the allowance
+- [x] `POPOVER_HEIGHT` is unchanged at 520
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing renderer tests for the two views, the toggle, the attention marker and the absent fields
+- [x] Delete the download and upload totals from the page and the popover model
+- [x] Wrap the main view and a new settings view, and drive their `hidden` from the toggle
+- [x] Move the cap, length and password forms into the settings view unchanged, keeping their handlers
+- [x] Reset to the main view whenever the panel is shown
+- [x] Fold the surviving stats into the allowance line and tighten the section spacing
+- [x] Manual: open the panel on the real router and confirm nothing scrolls at 320×520, with and without a stored password
+
+### Notes
+
+- T-42's `[data-plan-cap-prompt]` stays in the **main** view (`index.html:119`) while the cap
+  input moved to the settings view (`index.html:258`). The plan predates T-42 and does not
+  say where the prompt goes; it is an alert about a contradicted figure, not a setting, and
+  behind the toggle a user with no dial would have no reason to look for it. Both halves
+  are tested.
+- The view reset is driven from the main process — `src/main/popover.ts:211` calls
+  `executeJavaScript("window.resetPopoverView?.()")` on `show()`. That is safe under
+  `contextIsolation:true`; the preload still exposes only `popoverBridge`, and the existing
+  isolation assertions pass unchanged. Chosen over `visibilitychange` because it is
+  deterministic, testable without faking jsdom visibility, and fires on every open.
+- `.view[hidden] { display: none }` was needed because both views carry their own `display`.
+  Specificity (0,2,0) beats `.view` at (0,1,0).
+- Five tests were rewritten, none deleted outright: the two month-total assertions were
+  inverted into negative ones, the 5-tile grid assertion became `["Devices"]`, and two
+  stale-reading tests swapped the removed counters for `monthTotal`. A whitespace-ignoring
+  diff of `index.html` is 125/88 against a raw 235/198 — about half the churn was a
+  formatter hook, and every substantive change is accounted for by the task.
+- `CHROME_HEIGHT` stays 350 but its comment was rewritten: the old rationale described a
+  five-tile grid and fields beside the dial that no longer exist, and did not account for
+  the pace section. New budget ≈504 ≤ 520. This is reasoned, not measured — a renderer test
+  has no layout engine, so the manual gate is the only proof the panel fits.
+
+## T-46 Count the carrier's last valid day as a day of the plan
+
+T-46 · status: done · size: S · needs: T-43 · files: src/hilink/ussd-parse.ts, test/hilink/ussd-parse.test.ts, test/hilink/ussd.test.ts, test/domain/allowance.test.ts, test/domain/pace.test.ts
+
+Found by manual testing on 29/07/2026 against a real plan: a 30-day plan bought on
+27/07/2026 and expiring 25/08/2026 showed a pace of **4.47 Go a day against a 5.00 Go
+budget** — green, comfortably safe — when the true figure was **6.13 Go a day**, a pace of
+1.23 and firmly `over`. The meter flattered the user by a full day's worth of allowance.
+
+The fault is one line, upstream of every calculation that uses it. `readExpiry`
+(`ussd-parse.ts:67`) builds the expiry with `new Date(year, month - 1, day)`, which is
+**midnight at the start** of the stated day. The carrier means the plan is valid _through_
+that day, and its own arithmetic proves it: 27/07 plus 30 days lands on 25/08 only if the
+last day is counted. So the parser contradicts the carrier's stated period length.
+
+That single instant feeds three consumers, and every error runs the same direction:
+
+```
+periodStart   = expiresAt − planDays          pace.ts:186     → 26/07, not 27/07
+wholeDaysUntil(expiry, now)                   allowance.ts:135 → 27 days, not 28
+expiresAt.getTime() < now.getTime()           allowance.ts:290 → expires a day early
+```
+
+The third has not bitten yet but is the worst: on 25/08 the app would declare the plan dead
+while the carrier is still serving it, dropping the dial and the whole anchor a day early.
+
+The fix belongs at the source — the expiry instant becomes the midnight that **ends** the
+stated day. Correcting the three consumers instead would be patching one fault in three
+places, and the next consumer would inherit it again.
+
+### Acceptance
+
+- [x] `readExpiry` returns the instant the plan stops being valid: the midnight ending the stated day, not the one starting it
+- [x] a reply stating `25/08/2026` is not expired at any point during 25/08 and is expired on 26/08
+- [x] the same reply with a 30-day plan puts `periodStart` at 27/07, so elapsed plus remaining equals `planDays`
+- [x] `wholeDaysUntil` counts the stated day: on 29/07 against an expiry of 25/08 the answer is 28
+- [x] month and year rollover hold — 31/12 rolls into 01/01 of the next year, 28/02 into 01/03 in a non-leap year
+- [x] the reported case reproduces: cap 150 Go, 30 days, expiry 25/08, 16.49 Go used on 29/07 yields `averagePerDay` ≈ 6.1 Go, a pace ≥ 1.20 and state `over`
+- [x] a malformed or absent expiry still returns null and throws nothing, as before
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, with a fixed clock
+- [x] Correct `readExpiry` to the end of the stated day
+- [x] Check each of the three consumers reads correctly against the new instant, without changing them
+- [x] Manual: confirm the panel now reads ≈6.1 Go a day, red, and 28 days remaining
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- Migration side-effect: a stored anchor holds the old start-of-day instant, so the first
+  re-sync after this lands moves `expiresAt` one day later. T-42's `isNewPlan` reads that as
+  a new plan and asks for a cap confirmation once. Harmless and self-correcting, but it will
+  happen exactly once per existing install and should not be mistaken for a fault.
+
+## T-47 Show the carrier's last valid day, not the midnight after it
+
+T-47 · status: done · size: S · needs: T-46 · files: src/main/view-model.ts, test/main/view-model.test.ts, test/main/main.test.ts, test/renderer/popover.test.ts
+
+T-46 corrected `expiresAt` to the midnight that **ends** the carrier's last valid day, which
+is the right instant for every calculation that measures a span: the period start, the days
+remaining, and the expiry check all read correctly from it.
+
+It is the wrong instant to **print**. `formatDate` (`view-model.ts:493`) is applied to it
+directly at `view-model.ts:542` and again at `:760` inside the "N Go a day until <date>"
+line, so the panel now shows `26/08/2026` where the carrier's own SMS says
+"jusqu'au 25/08/2026". The app contradicting the carrier's wording is exactly the
+unreliability the anchor design exists to remove.
+
+No test caught this, and the reason is worth recording: every view-model and popover test
+hand-builds its `expiresAt` with `new Date(...)`, so none of them exercises the instant the
+parser actually produces. The fix therefore comes with a test that reaches the parser.
+
+A displayed date wants the last valid _moment_, not the exclusive bound — `expiresAt` minus
+one millisecond — so the two readings stay derived from one stored instant rather than the
+anchor carrying two dates that could drift apart.
+
+### Acceptance
+
+- [x] the expiry shown in the allowance strip reads the carrier's stated day, not the day after
+- [x] the tier 1 "N Go a day until <date>" line reads the same day as the allowance strip
+- [x] both are derived from the single stored `expiresAt`, with no second date on the anchor
+- [x] at least one test drives a real carrier reply through `parseAllowance` rather than hand-building the date, so a future parser change cannot pass unnoticed
+- [x] the existing display assertions are corrected, not deleted — `test/main/view-model.test.ts:738` and `test/main/main.test.ts:586` shift from `12/08/2026` to `11/08/2026`, correct under the new semantics since their fixture means "valid through 11/08"
+- [x] a null `expiresAt` still renders the existing absence marker and throws nothing
+- [x] the day count beside the date is unchanged — T-46 settled it and this task must not move it
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for both display sites, one of them parser-driven
+- [x] Format the last valid moment rather than the exclusive bound, at both call sites
+- [x] Correct the two existing display assertions
+- [x] Manual: confirm the panel's expiry matches the carrier's SMS wording exactly
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- Five existing display assertions needed correcting, not the two the finding named:
+  `view-model.test.ts:738` and `:1107`, `main.test.ts:586`, `popover.test.ts:1130` and
+  `:1936`. Each shifts one day earlier and each is semantically correct — a fixture built as
+  `new Date(2026, 7, 12)` now means "valid through 11/08".
+- The gap that let this through was narrower than first described: the renderer layer is not
+  insulated, it goes through the real view-model. What no test anywhere did was feed a
+  _parser-produced_ date into the view-model — every `expiresAt` was a literal `new Date(…)`.
+  `view-model.test.ts:829` now reads `test/fixtures/hilink/ussd-4-allowance.xml` off disk and
+  runs parse → `anchorFrom` → `buildPopoverModel` with nothing hand-built in between.
+- `formatLastValidDay` steps back one millisecond rather than storing a second date, so the
+  two readings cannot drift apart. Residual, not applicable here: in a timezone that springs
+  forward exactly at midnight, local midnight does not exist and the step-back would stay on
+  the same day. Madagascar observes no DST.
+- The day count is guarded against the tempting wrong fix — shifting the stored instant back
+  would correct the display and silently undo T-46. `view-model.test.ts:867` asserts
+  `"30 days"` on the same parser-driven model whose printed date is `25/08/2026`.
+
+## T-48 Say which daily figure is which
+
+T-48 · status: done · size: S · needs: T-47 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Reported from the panel on 29/07/2026: the pace section shows three volumes in Go a day
+with nothing to tell them apart — `4.76 Go a day until 25/08/2026` above a meter reading
+`6.13 Go / 5.00 Go a day`. The arithmetic is right and the reading is not: a user who sees
+4.76 and 6.13 together assumes one of them is wrong, because nothing on screen says they
+measure different things.
+
+They answer three different questions:
+
+```
+sustainablePerDay  remainingBytes / daysUntilExpiry   what is left to spend, per day from now
+averagePerDay      usedBytes / elapsedDays            what has been spent, per day so far
+affordedPerDay     planLimitBytes / planDays          what the plan affords, flat
+```
+
+The relationship is the useful part and is currently invisible: overspending pulls the
+recovery figure _below_ the flat budget, and a quiet few days pulls it back above. That is
+the compensation the band encodes, and it is legible only once the reader knows which
+number is which.
+
+This is a labelling task, not a numbers task. **No figure changes, no arithmetic moves** —
+T-43, T-44 and T-46 settled all three and a test must prove they are untouched. The meter
+already pairs its two numerals against each other; what is missing is that the line above
+is measuring the other direction in time.
+
+### Acceptance
+
+- [x] the recovery line states that its figure is what remains to spend per day, not what has been spent
+- [x] the meter's pair states which numeral is spent and which is the budget, without a legend elsewhere on the panel
+- [x] the three figures stay byte-identical to what the view-model produces today — asserted against the same fixtures, so this task cannot move a number
+- [x] the wording fits the panel at 320×520 with no scrolling and no truncation of the carrier's name
+- [x] tier 1 keeps a single line and gains no meter vocabulary it has no figures for
+- [x] the labels survive the unconfirmed-cap state, where the meter is hidden and only the recovery line remains
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for the labels, and a guard that the three figures are unchanged
+- [x] Word the recovery line and the meter pair so each says what it measures
+- [x] Check the 320×520 fit still holds, T-45's budget included
+- [x] Manual: read the section cold and confirm the three figures no longer look contradictory
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- Wording shipped: `"… Go a day left to spend until …"` for the recovery line, and
+  `"… Go spent / … Go budget a day"` for the meter's pair. The meter's labels are static
+  text in `index.html`; only the figures come from the model.
+- The three unchanged-figure guards deliberately pass at RED as well as GREEN. A guard
+  pinning existing behaviour must pass beforehand — one that failed first would be pinning
+  the new behaviour, not the old. The four _label_ tests were observed failing first.
+- Tier 1's "no meter vocabulary" test rests on `spend` ≠ `spent`, which is deliberate and
+  load-bearing: a reword to "already spent" would correctly trip it.
+- T-49 immediately superseded the tier 3 half of this task — the recovery line is gone
+  where the meter is drawn. The labels still carry tiers 1 and 2, where the line now stands
+  alone with nothing to be read against, so none of this work was wasted.
+
+## T-49 Let the meter speak alone where it speaks
+
+T-49 · status: done · size: S · needs: T-48 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Reported from the panel a second time, after T-48's labels were specified: the recovery
+figure still reads as a contradiction beside the meter, and the meter alone already says
+what the reader needs. So at tier 3 the line goes.
+
+The two face opposite directions in time and only one of them is worth the space when both
+could be shown:
+
+```
+meter          usedBytes / elapsedDays  vs  planLimitBytes / planDays   backward — the diagnosis
+recovery line  remainingBytes / daysUntilExpiry                         forward  — the prescription
+```
+
+The prescription is the thing being given up, knowingly: the panel will say the connection
+is being used too fast without naming the daily figure that would correct it. That is the
+trade accepted for a section that reads at a glance instead of needing to be worked out.
+
+**The line survives wherever the meter does not.** At tier 2 there is no plan length, so
+there is no budget to draw and the recovery figure is the only pace reading there is. At
+tier 1 the same, and T-42's unconfirmed-cap state falls back to tier 1 precisely so a
+contradicted cap draws nothing — the meter is hidden there, so the line must appear. The
+rule is one sentence: **the recovery line and the meter are never both shown, and never both
+absent.**
+
+That mutual exclusion is the invariant to test, rather than testing the two states
+separately and leaving a third where a reader sees neither figure.
+
+T-48's labels are not wasted: `left to spend` is what makes the line legible at tiers 1 and
+2, where it now stands alone with nothing to contrast it against.
+
+### Acceptance
+
+- [x] the recovery line is absent whenever the meter is drawn
+- [x] the recovery line is present at tier 1 and at tier 2, where no meter exists
+- [x] the recovery line is present in T-42's unconfirmed-cap state, where the pace falls back to tier 1 and the meter is hidden
+- [x] no state shows both, and no state shows neither — asserted as one invariant across every tier and the unconfirmed-cap case, not as separate per-state tests
+- [x] the meter reclaims the width the numerals borrowed in T-48, so the bar's track returns to roughly its pre-T-48 length
+- [x] the pace section is shorter at tier 3 by the removed line, and `CHROME_HEIGHT`'s budget comment is corrected to match rather than left stale
+- [x] every figure that still appears is byte-identical to what the view-model produces today
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for the invariant, the reclaimed width and the unchanged figures
+- [x] Gate the recovery line on the meter's absence in the view-model, not in the renderer
+- [x] Let the meter's track take back the freed width
+- [x] Correct `CHROME_HEIGHT`'s budget comment for the shorter tier 3 section
+- [x] Manual: read the section at tier 3 and at tier 1, and confirm exactly one pace figure appears in each
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- The invariant is structural, not merely tested: `buildPace` reads
+  `meter === null ? <line> : ""`, one decision expressed twice, keyed off the meter's
+  presence rather than the tier. `buildPaceMeter` is the only source of that null and
+  `PopoverPace` is constructed nowhere else, so no path can produce both figures or neither.
+  The test collapses all four states to one word each and compares them in a single
+  `toEqual`, so `"both"` and `"neither"` are producible values that fail loudly — at RED it
+  failed with tier 3 reporting `"both"`.
+- The layout went further than reclaiming width: the bar took its own row with the numerals
+  stacked beneath (~292px track, against ~159px before T-48 and ~90px after it). That is the
+  arrangement T-48 rejected as unaffordable in height; removing the recovery line supplied
+  the 21px it needed, of which the stacked numerals spend 12px. Tier 3 nets ~9px shorter.
+- `CHROME_HEIGHT` stays 350 deliberately. Tiers 1 and 2 were already exactly as tall as
+  tier 3 used to be, so the constant still measures the tallest state; lowering it would
+  have loosened the `<=` assertion with no layout justification. The comment was corrected
+  to name which tier the figure now describes.
+- An existing assertion was found weak rather than merely outdated:
+  `expect(unconfirmed.pace?.sustainable).toBe(confirmed.pace?.sustainable)` compared two
+  unknowns and would have passed with both empty. Both sides are now pinned to literals.
+- The prescription is given up knowingly. At tier 3 the panel says the connection is being
+  used too fast without naming the daily figure that would correct it. That was the user's
+  call, made twice while reading the real panel — it should not be "restored" later as
+  though it were dropped by accident.
+
+## T-50 Know which carrier the SIM is on
+
+T-50 · status: done · size: S · needs: T-03 · files: src/domain/carrier.ts, src/hilink/parse.ts, src/hilink/types.ts, test/domain/carrier.test.ts, test/hilink/parse.test.ts, test/main/main.test.ts, test/main/poller.test.ts, test/main/popover.test.ts, test/main/tray.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+The SIM moved from YAS to Orange MG on 2026-08-04 and the router noticed before we did:
+`/api/net/current-plmn` now answers `<FullName>ORANGE MG</FullName>` where it answered `Yas`.
+That endpoint is already parsed and already polled, so the carrier is a fact the app holds
+and has never read.
+
+Everything downstream branches on it — the allowance comes from a USSD dialogue on YAS and
+from a web page on Orange — so the branch needs one named value rather than a string
+comparison repeated at each call site:
+
+```
+'ORANGE MG' | 'Orange MG'  →  'orange'
+'Yas'                      →  'yas'
+anything else              →  'unknown'
+```
+
+Matching is case-insensitive and trimmed, because `FullName` and `ShortName` disagree on
+capitalisation for the same network (`ORANGE MG` against `Orange MG`) and there is no reason
+to believe either spelling is stable.
+
+`unknown` is a first-class result, not a fallback to YAS. An unrecognised carrier means the
+app knows the router but not where the allowance lives, and that is a state to render, the
+same way an unrecognised network-type code is shown as its code rather than guessed.
+
+### Acceptance
+
+- [x] `ORANGE MG`, `Orange MG` and `orange mg` all resolve to `orange`
+- [x] `Yas` and `YAS` resolve to `yas`
+- [x] an unrecognised name resolves to `unknown` and the original string is retained for display
+- [x] an empty or missing `FullName` resolves to `unknown` without throwing
+- [x] the resolved carrier is exposed on the snapshot the view-model already receives
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write `test/domain/carrier.test.ts` covering both spellings, both carriers, unknown and empty
+2. Add `src/domain/carrier.ts` — a pure `carrierFrom(fullName: string)` returning a tagged value
+3. Confirm `src/hilink/parse.ts` already surfaces `FullName`; extend the parsed type if it does not
+4. Carry the carrier onto the snapshot type and through `src/main/view-model.ts`
+5. Run test, lint and build
+
+### Notes
+
+- `src/main/view-model.ts` was declared but needed no edit, and was dropped from `files:`.
+  `CarrierInfo.id` rides on the snapshot the view-model already destructures at
+  `view-model.ts:947`, so the criterion is met by the type and the parse site alone. Putting
+  the carrier on `PopoverModel` would be display work beyond these criteria; it belongs to
+  whichever of T-55..T-57 actually branches on it.
+- The name is resolved at the `src/hilink/` parse boundary, not in the view-model. This
+  differs from the `networkTypeCode` precedent, which stays a bare number and is labelled in
+  the view — justified because the carrier drives control flow (USSD on YAS against a web
+  page on Orange) rather than display, and `src/hilink/ussd.ts` already imports from
+  `src/domain/`, so the direction is not new.
+- `parseCurrentPlmn` is now the only parser with an optional field: it reads `FullName` with
+  `?? ""` instead of `requireText`, so a reply carrying no `<FullName>` resolves to `unknown`
+  rather than throwing. The pre-existing "never returns undefined fields instead of throwing"
+  test does not cover it.
+- Six existing test files gained `id: "yas"` on their snapshot fixtures. QA confirmed the
+  edits are purely additive — no assertion was weakened to keep the suite green.
+
+## T-51 Read Orange's forfaits out of the portal page
+
+T-51 · status: done · size: S · needs: T-01 · files: src/orange/parse.ts, src/orange/types.ts, test/orange/parse.test.ts, test/fixtures/orange/info-conso.html
+
+`http://123.orange.mg/info-conso/` is server-rendered HTML with the figure in the markup —
+there is no JSON API behind it, so the parse _is_ the integration. This task is the pure half:
+HTML string in, typed forfaits out, no network.
+
+The live capture from 2026-08-04 contains one forfait:
+
+```html
+<div class="bundle-item">
+  <span class="item_title title">Wifiber Go+ SSE</span>
+  <span class="title-da-nature title">Internet</span>
+  <p>
+    Vous avez consommé
+    <span class="color-orange text-bolder text-nowrap">7.37Go</span> sur votre
+    forfait
+  </p>
+</div>
+```
+
+Capture the fixture with `curl -s http://123.orange.mg/info-conso/ >
+test/fixtures/orange/info-conso.html` while on the Orange network — it cannot be re-fetched
+from anywhere else, so commit it.
+
+Volumes arrive as French octets with no space (`7.37Go`, and by extension `512Mo`, `1,5Go`),
+which is the display format `src/domain/format.ts` already produces in the other direction.
+Parse to bytes on the 1000³ decimal scale, at this boundary, exactly as XML never escapes
+`src/hilink/`.
+
+A forfait may also carry `data-bundle-type` and `data-bundle-pcvalue` on a `.bundle-circlebar`
+— `full.infoconso.js` uses them to draw a ring for capped bundles. Wifiber Go+ SSE has
+neither. Read them when present and leave them absent otherwise; do not synthesise a
+percentage the page did not state.
+
+Regex against this markup would be a liability across a carrier's redesign, so parse the
+document rather than pattern-matching it. Any dependency added here must survive the
+renderer's `default-src 'none'` policy only if it is used in the renderer — this parse runs
+in the main process, so it is unconstrained.
+
+### Acceptance
+
+- [x] the committed fixture yields exactly one forfait: label `Wifiber Go+ SSE`, nature `Internet`, with the consumed volume the captured page states
+- [x] `7.37Go`, `512Mo`, `1,5Go` and `800Ko` each parse to the right byte count on the 1000³ scale
+- [x] a `.bundle-circlebar` carrying `data-bundle-type` and `data-bundle-pcvalue` is read into the forfait; absent attributes leave the fields undefined rather than zero
+- [x] a page with no `Forfaits en cours de validité` section returns an empty list, not an error
+- [x] markup that matches no known shape returns an empty list and never throws
+- [x] the account-level lines (`WiFiber` offer, `0 Ar` balance) are parsed but kept separate from the forfait list
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Capture the live page into `test/fixtures/orange/info-conso.html`
+2. Write `test/orange/parse.test.ts` against that fixture plus hand-built variants for the capped and empty cases
+3. Add `src/orange/types.ts` — `OrangeForfait`, `OrangeAccount`
+4. Add `src/orange/parse.ts` — document parse, French-octet volume parse, tolerant of missing sections
+5. Run test, lint and build
+
+### Notes
+
+- **The consumed figure is a live counter, so no fixture can be pinned to a number.** The
+  first criterion originally named 7 370 000 000 bytes; across 2026-08-04 the same forfait
+  read 7.37 Go, then 7.96 Go (the committed capture), then 8.45, then 8.68. The criterion now
+  asks for the volume the captured page states, and the 1000³ arithmetic — 7.37 Go included —
+  stays pinned in the `parseOctets` criterion where it cannot drift. The fixture was never
+  hand-edited to match the plan.
+- **No dependency was added.** `src/orange/parse.ts` carries its own tolerant tokeniser rather
+  than promoting the dev-only `jsdom` to a runtime dependency: the app ships
+  `dependencies: {}`, this parse runs in Electron's main process, and jsdom would land a full
+  DOM implementation plus its transitive tree in the asar to read one 38 KB page. The cost is
+  ~527 lines to maintain across an Orange redesign. It builds a real element tree and every
+  read is a tree query, so it survives attribute reordering, re-indentation and added
+  wrappers — QA verified this rather than taking the claim on trust.
+- Robustness is structural, not a blanket `try`/`catch` — there are **zero** catch blocks in
+  the file. `MAX_DEPTH = 512` stops unclosed tags blowing the recursive readers' stack,
+  `String.fromCodePoint` is range-guarded, and stray `<`, mismatched closers and unterminated
+  attributes are absorbed. A real parse bug therefore still surfaces instead of being
+  swallowed into an empty list.
+- The unit scale is declared locally as `OCTET_UNIT_BYTES`. `src/domain/format.ts` exports no
+  scale constants, and the only exported table is `UNIT_BYTES` in `src/hilink/parse.ts`, keyed
+  to the router's English `KB`/`GB` wire spelling that a documented convention keeps inside
+  `src/hilink/`. Each boundary owning its own source's spelling matches that precedent.
+- `percent` is stored exactly as `data-bundle-pcvalue` states it and is deliberately not
+  reinterpreted — the page never says whether it counts consumed or remaining, and Wifiber
+  Go+ SSE carries no ring to check against. `bundleType` stays a `string` rather than a
+  `credit|data|voice|sms` union, so an unknown type reaches the surface instead of being
+  dropped.
+- Verified against the live portal after merge, not only against the fixture: the built
+  parser read `Wifiber Go+ SSE` / `Internet` / 8 680 000 000 bytes off the real page.
+
+## T-52 Fetch the Orange portal without blocking the app
+
+T-52 · status: done · size: S · needs: T-51 · files: src/orange/portal.ts, test/orange/portal.test.ts
+
+The fetch is the easy half and the one place a mistake stalls the menu bar. No session, no
+token, no password: a single `GET` to `http://123.orange.mg/info-conso/`, which the network
+answers because it recognises the subscriber. That is a real simplification over the router
+and should not be dressed up as anything more.
+
+Two rules already in force apply unchanged. Every network call carries an explicit timeout —
+there is no unbounded await — and an unreachable host is a state, not an error: the portal
+only answers on the Orange network, so a laptop on café Wi-Fi gets nothing, and that is
+ordinary. It renders like an unreachable router.
+
+Also treat a `200` that parses to no forfaits as _reached but unreadable_, distinct from
+_unreachable_. The captive-portal interception in front of this page (`X-Header: intercepting
+the request`) is exactly the kind of middlebox that returns someone else's `200`, and
+collapsing the two states would report "no plan" when the truth is "wrong network".
+
+### Acceptance
+
+- [x] a successful fetch returns the parsed account and forfaits from T-51
+- [x] the request carries an explicit timeout and rejects to an unreachable state when it elapses
+- [x] a connection refused or DNS failure yields the unreachable state, never a throw that reaches the poll loop
+- [x] a non-200 status yields the unreachable state, carrying the status code for display
+- [x] a 200 that parses to zero forfaits yields a distinct unreadable state, not the unreachable one
+- [x] the base URL is a module constant, overridable in tests, and no test hits the real network
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write `test/orange/portal.test.ts` with a stubbed fetch: success, timeout, refused, 404, 200-but-empty
+2. Add `src/orange/portal.ts` calling T-51's parse, returning a tagged result
+3. Run test, lint and build
+
+### Notes
+
+- `readInfoConso` returns a four-arm tagged union — `{ state: "read" }`, `{ state: "unreadable" }`,
+  and `{ state: "unreachable", reason: "timeout" | "offline" | "http" }` with `status` present
+  only on the `http` arm. It mirrors `SnapshotResult`'s shape rather than inventing a new one.
+  Default timeout 5 000 ms via `AbortController`, overridable through `options.timeoutMs`.
+- Tests stub at the HTTP layer with throwaway loopback servers, following
+  `test/hilink/client.test.ts`, rather than monkey-patching `fetch` as the task text suggested.
+  One test asserts unused stubs receive zero requests, so nothing can reach the real portal.
+  The DNS case targets `portal.invalid` — a reserved TLD that cannot resolve — under its own
+  2 s timeout.
+- `parseInfoConso` is called deliberately **outside** the try/catch. T-51 documents it as total
+  and QA verified that structurally, so wrapping it would swallow a real parse bug into a false
+  "offline". This is the one place T-52's correctness leans on T-51's totality claim.
+- Nothing calls `readInfoConso` yet — wiring it into the poll loop is T-55's work.
+- Verified against the live portal after merge: `state: read`, one forfait, 9 530 000 000 bytes.
+
+## T-53 Pick the Internet forfait when several are active
+
+T-53 · status: done · size: S · needs: T-51 · files: src/orange/select.ts, src/config/config.ts, src/config/defaults.ts, test/orange/select.test.ts, test/config/config.test.ts, test/readme.test.ts, README.md
+
+The portal lists every live bundle, and `full.infoconso.js` names four kinds — `credit`,
+`data`, `voice`, `sms`. Only one of them is what a menu bar data meter measures; the other
+three answer a question nobody asked of this app.
+
+Selection reads the forfait's nature (`Internet`) and its `data-bundle-type` (`data`) where
+present, rather than its position in the list, because position is a layout detail and a
+promotion could reorder it tomorrow.
+
+Where several data forfaits are live at once — a base plan plus a top-up is the obvious case
+— the app must not silently pick one. Stability matters more than cleverness here: a dial
+that jumps between two plans on alternate polls is worse than one that tracks the wrong plan
+consistently. So the choice is remembered by label in `config.json`, and only when that
+remembered label is absent from the page does the app fall back to the first data forfait
+and say which it chose.
+
+An unrecognised nature is neither selected nor discarded — it is carried through so T-57 can
+name it, for the same reason an unrecognised router error code reaches the surface with its
+number.
+
+### Acceptance
+
+- [x] a single Internet forfait is selected with no configuration present
+- [x] voice, SMS and credit bundles are never selected, even when they are the only ones present
+- [x] with two data forfaits and a remembered label, the remembered one is selected regardless of list order
+- [x] with two data forfaits and no remembered label, the first is selected and the result reports that the choice was not the user's
+- [x] a remembered label that no longer appears on the page falls back to the first data forfait rather than selecting nothing
+- [x] a forfait whose nature is unrecognised is returned in the list of candidates but never auto-selected
+- [x] the remembered label round-trips through `config.json`, and a config file written before this task loads without error
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write `test/orange/select.test.ts` for each case above
+2. Add `src/orange/select.ts` — pure, takes the parsed forfaits plus the remembered label
+3. Add the remembered label to `src/config/config.ts` with the usual tolerant load
+4. Extend `test/config/config.test.ts` for the round-trip and the older-file case
+5. Run test, lint and build
+
+### Notes
+
+- Config key is `orangeForfaitLabel`, namespaced by carrier the way `routerUsername` and
+  `routerPasswordBlob` are namespaced by device — `forfaitLabel` alone would not say whose,
+  and `src/domain/carrier.ts` already anticipates a second carrier.
+- Rather than invent a third config-loading policy, `readCredentialField` was **renamed** to
+  `readOptionalString` and its field union widened. QA verified the rename is
+  behaviour-preserving on the credential path it also guards: absent stays silent,
+  present-but-invalid still raises `ConfigValidationError`, and `loadConfig` still converts
+  that to defaults-plus-`problem` instead of crashing.
+- Three files beyond the declared list, all forced by the repo's own guards rather than chosen:
+  `src/config/defaults.ts` holds `AppConfig`, and `test/readme.test.ts` asserts a two-way
+  correspondence between parsed config keys and README settings rows, so the new key required
+  a README row to keep the suite green. Both edits are one row each.
+- `candidates` holds data forfaits plus unrecognised ones, but **excludes** voice/SMS/credit
+  entirely — stricter than the criterion, which only forbids auto-selecting an unknown. The
+  consequence is that T-56 cannot offer a voice bundle as a selectable alternative, which is
+  deliberate: offering one would be offering a mistake.
+- `remembered: false` whenever the app chose rather than the user, the single-forfait case
+  included, so T-56 can gate a "which plan?" prompt on `candidates.length > 1 && !remembered`.
+- Label matching folds case and accents so a hand-edited `config.json` still matches. `fold` is
+  declared locally in `select.ts` rather than exported from `parse.ts`, which was a sibling
+  task's merged work and could not be modified.
+
+## T-54 Measure a Wifiber plan against the calendar month
+
+T-54 · status: done · size: M · needs: T-53 · files: src/domain/quota.ts, src/domain/pace.ts, test/domain/quota.test.ts, test/domain/pace.test.ts
+
+Every figure the panel draws was built on a carrier that stated a _remaining_ volume and an
+_expiry date_. Orange states neither. It states consumption, and the plan runs from the first
+of the month to its last day. So the arithmetic inverts, and this task is where that lands —
+in `src/domain/`, which imports neither Electron nor the network and can be tested without a
+router or a portal present.
+
+```
+usedNow      = the portal's consumed figure          // stated, not derived
+remainingNow = planLimitBytes − usedNow              // derived, not stated
+periodStart  = first day of the current month
+planDays     = days in the current month             // 28 · 29 · 30 · 31
+elapsedDays  = days elapsed since periodStart
+```
+
+The anchor plays no part. Neither does the router's month counter: it read 51.1 Go against
+the portal's 7.37 Go on the same day, so the two count different traffic and joining them
+would produce a confident wrong number. On Orange the counter's only remaining job is the
+live throughput sparkline, which never touched the allowance anyway.
+
+The tiers collapse. The cap becomes the single gate: with it, the dial, the meter and both
+per-day figures are available at once, because the calendar supplies the length for free.
+Without it there is a consumed volume and nothing else — no dial, no meter, no per-day
+figure, since all three need a total. There is no Orange tier 1, because tier 1's inputs were
+a carrier remaining and a carrier expiry.
+
+Two boundaries deserve pinning rather than assuming. February and the 31-day months must both
+be exercised, since `planDays` is now a calendar fact and off-by-one there shifts every pace
+reading. And the first of the month is a real state: `elapsedDays` is not zero, or the ratio
+divides by zero — day one is one day elapsed, the same inclusive counting T-46 settled for
+the carrier's last valid day.
+
+The band thresholds, the meter and every existing figure keep their current definitions. Only
+their inputs change.
+
+### Acceptance
+
+- [x] `usedBytes` on Orange equals the portal's consumed figure exactly, with no router counter in the expression
+- [x] `remainingBytes` is `planLimitBytes − usedBytes`, clamped at zero
+- [x] `planDays` is 31 in August, 30 in September, 28 in February 2026 and 29 in February 2028
+- [x] on the first of the month `elapsedDays` is 1 and the pace ratio is finite
+- [x] on the last day of a 31-day month `elapsedDays` is 31 and `elapsedShare` is 1
+- [x] with a cap set, the dial share, the meter, `averagePerDay` and `affordedPerDay` are all produced from one portal reading
+- [x] with no cap set, none of those four are produced and the consumed volume still is
+- [x] the YAS path's existing quota and pace tests pass unchanged — this adds a mode, it does not rewrite the old one
+- [x] the band boundaries stay exactly as T-44 left them: `safe` at or under 1.00, `warning` above 1.00 and under 1.20, `over` at 1.20 and above
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/domain/quota.test.ts` with the Orange mode, including both February lengths
+2. Extend `test/domain/pace.test.ts` with the first-of-month and last-day boundaries and the cap-absent case
+3. Add the calendar-month period to `src/domain/quota.ts` without disturbing the anchor path
+4. Route `src/domain/pace.ts` inputs from the calendar period when the carrier is Orange
+5. Confirm every pre-existing YAS test still passes untouched
+6. Run test, lint and build
+
+### Notes
+
+- **A separate `readMonthlyPace` entry point, not a widened `readPace`.** The Orange reading
+  has no tier ladder, no `daysUntilExpiry` and no `sustainablePerDay`; bending an
+  anchor-shaped input around a portal figure was the surest way to regress the YAS path. The
+  two modes share `bandFor` and the `PaceState` type and nothing else, and `bandFor` is reused
+  verbatim rather than reimplemented.
+- Criterion 8 was verified from the diff, not from a report: the **entire** 438-insertion
+  change removes exactly two lines, both `import` statements. No existing assertion,
+  expectation or test body was altered.
+- The router's month counter cannot enter the Orange expression even by accident —
+  `MonthlyPaceInput` carries only `consumedBytes`, `planLimitBytes` and `clock`. This matters
+  because the counter read 51.1 Go against the portal's 7.37 Go on the same day; the two count
+  different traffic.
+- Inclusive day counting matches T-46 rather than inventing a second convention:
+  `elapsedDays = now.getDate()`, so 1 on the first and 31 on the 31st, which is why
+  `elapsedShare` reaches exactly 1 on the last day where a fractional count never could.
+- **The YAS `MINIMUM_ELAPSED_DAYS` floor is deliberately not applied on Orange.** The count is
+  ≥ 1 by construction, so no floor is needed and no `state` is forced to `safe`. This is a real
+  behavioural difference between the two paths, chosen rather than overlooked.
+- Two supporting exports beyond the headline functions: `planCap` (a cap of 0 or non-finite
+  reads as "no cap", not "a limit of nothing" — needed identically by `readPortalUsage` and
+  `readMonthlyPace`) and `CalendarMonthPeriod.periodStart`, which the ARCHITECTURE pseudocode
+  names as the period's definition.
+- Nothing calls `readMonthlyPace` yet; the `carrierFrom(...) === "orange"` branch is T-55's
+  view-model wiring.
+
+## T-55 Feed the panel from whichever carrier the SIM is on
+
+T-55 · status: done · size: M · needs: T-50, T-52, T-54 · files: src/main/poller.ts, src/main/sync.ts, src/main/view-model.ts, src/main/main.ts, test/main/poller.test.ts, test/main/view-model.test.ts, test/main/sync.test.ts
+
+The pieces exist separately after T-50 to T-54; this is where the app actually stops being a
+YAS app. The poll loop learns a second source and chooses between them on the carrier the
+router reports.
+
+```
+carrier = orange   →  fetch the portal each poll; no anchor, no login, no USSD
+carrier = yas      →  the anchor and the staleness-driven USSD dialogue, exactly as today
+carrier = unknown  →  router figures only; no allowance source
+```
+
+On Orange the whole allowance apparatus stands down. No anchor is read or written, no
+Keychain password is needed, no staleness timer runs and no dialogue is ever started —
+the portal is an unauthenticated `GET` that answers on every poll, so there is nothing to
+sync and nothing that could lock an account. The Sync button and its status line have no
+work on Orange and are hidden by T-56.
+
+Two failure modes need to stay distinct all the way to the view-model rather than being
+flattened into "offline", because they call for opposite reactions: the **router** being
+unreachable means the connection itself is down, while the **portal** being unreachable
+usually means the machine is on some other network and the connection is fine. The panel
+must be able to show live throughput from a healthy router while saying the allowance figure
+is stale — those are not the same outage.
+
+The portal answers a page of about 38 KB, so it is not free to fetch at the fast in-panel
+cadence. Poll it on the slow interval regardless of whether the panel is open, and reuse the
+last reading in between: consumption moves in minutes, not in seconds, and the fast cadence
+exists for the throughput sparkline, which comes from the router.
+
+### Acceptance
+
+- [x] with the router reporting `ORANGE MG`, a poll fetches the portal and no USSD, login or anchor code path executes
+- [x] with the router reporting `Yas`, the existing anchor and sync behaviour is byte-for-byte what it is today, asserted by the pre-existing tests passing unchanged
+- [x] with an unknown carrier, router figures are still produced and no allowance source is contacted
+- [x] the portal is fetched on the slow interval only, and opening the panel does not trigger an extra fetch
+- [x] between portal fetches the last successful reading is reused rather than the allowance disappearing
+- [x] a reachable router with an unreachable portal yields live throughput and signal alongside a flagged-stale allowance, not a blanket offline state
+- [x] an unreachable router with a reachable portal yields the allowance and an offline connection state
+- [x] no Keychain access is attempted anywhere on the Orange path
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/poller.test.ts` for the three carriers, the cadence rule and the two independent outages
+2. Add the portal source to `src/main/poller.ts`, gated on the carrier from T-50
+3. Gate the anchor and staleness logic in `src/main/sync.ts` to the YAS carrier
+4. Carry both reachability states separately through `src/main/view-model.ts`
+5. Extend `test/main/view-model.test.ts` for the mixed-outage cases
+6. Run test, lint and build
+
+### Notes
+
+- **The menu bar was left showing a dash on Orange, and no planned task closed it.** The
+  portal reading reaches the panel through `portalHalf()` but never reaches the tray:
+  `buildTrayTitle()` reads only `config.allowanceAnchor`, which Orange never writes, so
+  `readPlanUsage()` returns null and the title renders `NO_TRAY_VALUE`. Feeding the tray was
+  in no T-55 criterion and no declared file, and `src/main/tray.ts` appears in no later task's
+  `files:` either. **T-59 was added to close it**, scheduled ahead of T-56 and T-57 so the
+  menu bar works before the panel polish lands.
+- The YAS path moved verbatim into `anchoredHalf()`, and `carrier()` defaults to `"yas"` in
+  `sync.ts`, so callers written before the branch behave identically. Criterion 2 was verified
+  from the diff as well as the suite: all three test files are pure additions with **zero**
+  deleted lines.
+- The Keychain proof is a counter, not an assurance: `forbiddenStore()` counts `load()` calls
+  and asserts 0 after both `start()` and `startAutomatic()`. The mechanism that prevents the
+  call is `dialable()` returning false for `orange`, so the assertion is not vacuous.
+- The portal runs on its **own** timer at `pollIntervalSeconds`; `setActive` never touches it,
+  so opening the panel cannot trigger a 38 KB fetch. The fast cadence stays the router's, for
+  the throughput sparkline.
+- **`unknown` keeps today's anchored path** rather than taking the Orange branch. Once the
+  poller and sync are gated nothing is contacted either way, and blanking the panel over an
+  unrecognised carrier spelling is worse than showing the last figure the anchor's own rules
+  still vouch for.
+- The staleness timer still ticks on Orange but `startAutomatic` refuses it, so the policy
+  lives in one place instead of being duplicated; nothing beyond a date comparison runs.
+- The Orange allowance row states no expiry and no days-until-expiry — the portal states
+  neither — and its age reads "Read Xm ago" rather than "Synced", since nothing was dialled.
+- `src/main/main.ts` was touched beyond the declared list: unavoidable wiring that passes the
+  real `readInfoConso` as the poller's portal source, injectable via `MenuBarOptions.portal`
+  so no test can reach `123.orange.mg`.
+
+## T-59 Show the Orange figure in the menu bar, not just the panel
+
+T-59 · status: done · size: S · needs: T-55 · files: src/main/tray.ts, src/main/poller.ts, test/main/tray.test.ts
+
+T-55 brought the Orange allowance as far as the panel and stopped there. `buildTrayTitle()`
+reads `config.allowanceAnchor`, Orange never writes an anchor, and so the menu bar — the
+surface this app exists to occupy — shows `NO_TRAY_VALUE` while the real figure sits one
+click away. A menu bar app whose menu bar says nothing is the one outcome the whole plan was
+meant to avoid.
+
+The fix is the same inversion T-54 already made in the domain: the tray's number comes from
+the portal reading on Orange and from the anchor on YAS. Both paths already exist and are
+tested; only the tray's source is missing a branch.
+
+What the tray can say on Orange is bounded by what the portal states. With a cap set there is
+a share and a remaining volume, so the title can read as it does on YAS. With no cap there is
+a consumed volume and nothing to measure it against — a bare consumed figure is honest and
+useful, a percentage would be invented.
+
+### Acceptance
+
+- [x] with an Orange reading and a cap set, the tray title shows the same shape it shows on YAS
+- [x] with an Orange reading and no cap set, the tray shows the consumed volume and no share
+- [x] with an Orange reading unavailable, the tray falls back to `NO_TRAY_VALUE` exactly as today
+- [x] on YAS the tray title is byte-for-byte what it is today, asserted by the pre-existing tray tests passing unchanged
+- [x] with an unknown carrier the tray behaves exactly as it does today
+- [x] the warning states that drive the tray's colour behave on Orange as they do on YAS
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/tray.test.ts` for the Orange capped, Orange uncapped and Orange-unavailable cases
+2. Branch `buildTrayTitle()` on the carrier, reading the portal figure on Orange
+3. Confirm every pre-existing tray test still passes untouched
+4. Run test, lint and build
+
+### Notes
+
+- The menu bar now reads `7.4Go · 37%` capped, `7.4Go` uncapped, `18Go ⚠ 90%` warning, and the
+  unchanged `—` when there is no reading — the same `compactBytes` + separator + `formatPercent`
+  path YAS uses, so the two carriers are indistinguishable in the menu bar.
+- **The wiring was in `src/main/poller.ts`, not `main.ts` or `view-model.ts`.** `buildTrayTitle`
+  is called only from `UsagePoller.#apply`, so the call gained two appended optional parameters
+  (`clock`, `portal`). QA confirmed every existing positional call still compiles and behaves
+  identically, and that `clock` defaulting to `systemClock` shifts nothing.
+- **A real defect was surfaced rather than smoothed over.** On Orange the share can exceed 100%,
+  because the portal states consumption outright where YAS's carrier-remaining stopped at zero.
+  A cap mistyped an order of magnitude too small yields `111Go ⚠ 11100%` — 14 characters, past
+  `MAX_TRAY_TITLE_LENGTH`. The exact share was kept rather than clamped into a plausible-looking
+  lie; the boundary is pinned in a named test and the constant's doc states the exception. QA
+  measured the blast radius: every realistic pair (0 to 2× cap, for caps of 1, 20, 100 and
+  999 Go) stays within the limit, so only a typo can trigger it.
+- The title refreshes on the next router poll rather than being pushed from the portal loop, so
+  it lags at most one idle interval after the first portal read. QA confirmed the lag is bounded
+  and no permanently stale or blank menu bar is reachable. The alternative — keeping a
+  `#lastResult` in the poller — was more state for one call site.
+- A stale portal reading (`live: false`) still shows its figure, matching the panel, which shows
+  it marked. Only a genuinely absent figure yields the dash.
+- **Follow-up, deliberately out of scope:** the poller's `#setState` edge-triggered `onState`
+  callback still derives from `readPlanUsage`, so it stays `"unknown"` on Orange. Nothing
+  consumes it today — no notification, no icon colour — so the tray's visible warning is
+  entirely the `⚠` marker that criterion 6 covers. Worth a task if `onState` ever gets a
+  consumer.
+
+## T-56 Show the forfait's name and hide what Orange cannot answer
+
+T-56 · status: done · size: S · needs: T-55 · files: src/main/view-model.ts, src/main/popover.ts, src/main/main.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, test/main/view-model.test.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/main/main.test.ts
+
+The panel is 320×520 with no room to scroll, and on Orange several of its controls have
+nothing behind them. Leaving a Sync button that syncs nothing, and a plan-length field that
+is overruled by the calendar, is worse than the space they cost — both invite the user to
+operate a control that does not work.
+
+On Orange the panel drops the Sync button and its status line, and drops the plan-length
+input from the settings toggle. What stays is the plan cap, which the portal genuinely never
+states, and the router address. The forfait's own name — `Wifiber Go+ SSE` — takes the place
+the synced plan label held: it is text with no magnitude, which is exactly what the panel
+reserves text for.
+
+The user's request was that the app detect the plan rather than be told it, so the detected
+name being visible is the evidence that detection worked. When T-53 fell back to the first of
+several data forfaits rather than a remembered choice, the panel says so and offers the
+others — a silently chosen plan among several is the one case where the name alone is not
+enough.
+
+On YAS the panel is unchanged. This is a branch, not a redesign.
+
+### Acceptance
+
+- [x] on Orange the Sync button and its status line are absent from the rendered panel
+- [x] on Orange the plan-length input is absent from the settings toggle and the plan cap input remains
+- [x] on YAS every one of those controls is still present and behaves as it does today
+- [x] the detected forfait label is rendered on the Orange panel
+- [x] when several data forfaits are live and none was remembered, the panel names the chosen one and lists the alternatives as selectable
+- [x] choosing an alternative writes the remembered label from T-53 and the dial follows it on the next poll
+- [x] the Orange panel's total height still fits the 520 px budget, asserted the way T-45 asserts it
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/view-model.test.ts` for the per-carrier control visibility and the forfait label
+2. Extend `test/renderer/popover.test.ts` for the rendered panel in both carriers and the height budget
+3. Branch the control set in `src/main/view-model.ts` on the carrier
+4. Add the forfait label and the alternatives list to `src/renderer/index.html` and `src/renderer/popover.ts`
+5. Adjust `src/renderer/popover.css` for the reclaimed space
+6. Run test, lint and build
+
+### Notes
+
+- **The panel is nearly out of vertical room: 514 px of the 520 px budget, 6 px of slack**
+  (YAS sits at 504). Dropping the sync row gave back 38 px; the forfait-choice affordance took
+  48 px. QA confirmed 514 is the **worst case** — it includes the choice block at full height,
+  which appears only when several forfaits are live and none was remembered. Any future panel
+  row has to reclaim space rather than assume it.
+- **A new IPC channel was added**, `popover:choose-forfait`, the only change in this run that
+  crosses a trust boundary. It is validated at runtime (`typeof payload === "string"` in
+  `popover.ts:174`, not erased TypeScript types), scoped to the panel's own webContents
+  (`event.sender === open.webContents` at `popover.ts:138`), and follows the existing
+  `fromThisPanel` pattern rather than a looser one. Malformed payloads — `42`, `null`, objects,
+  wrong sender — are dropped in tests; an empty string is trimmed away by `setForfait`, so a
+  stored choice cannot be silently cleared.
+- Four files beyond the declared list, all needed for criterion 6 to be true **in the app**
+  rather than only in the renderer: `src/renderer/preload.cts` (a fifth send),
+  `src/main/popover.ts` (the channel), `src/main/main.ts` (`setForfait` writes the label into
+  the shared config the poller holds, so the next fetch selects against it), plus the two test
+  files for those. Without them the alternatives list would render and do nothing.
+- Controls are **detached from the DOM** and replaced by a comment marker, not hidden with
+  `display: none` — a hidden control is still focusable and still reachable by keyboard.
+  "Withdrawn" is keyed off `marker.isConnected`, so a wholesale page replacement cannot strand
+  a stale map entry. Re-attachment is exercised by pushing a YAS model after an Orange one.
+- `PopoverModel` gained `controls: { sync, planDays }` and `forfait: PopoverForfait | null`.
+  YAS and the pre-snapshot empty model get every control and a null forfait, so the branch is
+  one carrier fact rather than a redesign.
+
+## T-57 Say when the portal cannot be reached or the forfait is unreadable
+
+T-57 · status: done · size: S · needs: T-55 · files: src/main/view-model.ts, src/main/main.ts, src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Three failures are possible on the Orange path and they have three different remedies, so
+collapsing them into one message would make each of them undiagnosable — the same reason an
+unrecognised router error code is carried to the surface with its number rather than becoming
+a bare "it failed".
+
+```
+unreachable        the machine is not on the Orange network      → connect through the router
+reached, no plan   200 answered but no forfait was parsed        → the page changed, or a middlebox replied
+no data forfait    forfaits exist but none of them is Internet   → the plan expired or is voice-only
+```
+
+The middle case is the one worth being careful about. A captive portal in front of this page
+already announces itself with `X-Header: intercepting the request`, and a middlebox returning
+someone else's `200` is exactly what produces a parse of zero forfaits. Reporting that as "no
+plan" would state something false about the user's account.
+
+Each message names what was actually observed — the HTTP status where there was one, the
+count of forfaits found where the page parsed — and none of them is an error dialog. The app
+runs unattended in the menu bar; every one of these is a line in the panel.
+
+The `unknown` carrier from T-50 gets the same treatment: the panel says which network name
+the router reported and that no allowance source is known for it, rather than showing nothing.
+
+### Acceptance
+
+- [x] an unreachable portal renders a distinct message from a portal that answered but parsed to nothing
+- [x] a non-200 reply names its status code in the message
+- [x] a page parsing to forfaits with no Internet one among them renders a third distinct message naming how many were found
+- [x] an unknown carrier renders the raw `FullName` the router reported
+- [x] none of the four states produces a dialog, a thrown error or an empty panel
+- [x] a stale-but-present allowance is still drawn alongside the message rather than being replaced by it
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/view-model.test.ts` for the four states and the stale-but-drawn case
+2. Map each tagged result from T-52 and T-53 to its own message in `src/main/view-model.ts`
+3. Render the message in `src/renderer/popover.ts` in the position the sync status line occupied
+4. Extend `test/renderer/popover.test.ts` for the rendered output of each state
+5. Run test, lint and build
+
+### Notes
+
+- **KNOWN CONTRADICTION, left unfixed and awaiting a decision.** In the "no Internet plan"
+  state the dial still prompts "Waiting for the Orange portal to answer"
+  (`view-model.ts:1297`) while the notice beneath reads "Orange's page listed 2 plans and none
+  of them is an Internet plan". Both render together. QA rates the visibility **moderate**: the
+  notice carries the correct information, but an attentive reader sees the panel say two
+  different things at once. It was left because fixing it means editing an existing assertion,
+  which every task in this run has been held back from doing. **This wants its own task.**
+- The worst-case panel height did **not** move: still 514 px of 520. The 38 px notice row takes
+  the space T-56 gave back, and the notice can never coincide with the sync row or the 48 px
+  forfait-choice block. Both exclusions are asserted rather than assumed —
+  `popover.test.ts:3050-3072` checks `[data-sync-row] === null` while each notice is visible.
+- On Orange the forfait-choice offer is **withdrawn while a notice stands**: every alternative
+  is a dead control when the page could not be read, and `selectForfait` only ever remembers a
+  data forfait.
+- **Undeclared behaviour change, verified benign:** the Sync button is now absent on an
+  `unknown` carrier (`UNPLACED_CONTROLS`), which is what pays for the notice row there. QA
+  confirmed the premise — `sync.ts:179-181` shows `dialable()` is true only for `yas`, so
+  `start()` and `startAutomatic()` already returned immediately and the button was a silent
+  no-op before this change.
+- `src/main/main.ts` was touched beyond the declared list because `PortalStatus` in the
+  off-limits `poller.ts` publishes only `{reading, live}` and drops the tagged
+  `OrangePortalResult`. `main.ts` wraps the `PortalSource` it already builds, remembers the
+  last non-`read` outcome and passes it as `portal.failure`; `PopoverInput.portal` widened to
+  `PortalStanding = PortalStatus & { failure?: PortalFailure }` so a plain `PortalStatus` still
+  assigns and `poller.ts` stays untouched. QA confirmed `main.ts:473` clears the remembered
+  failure on a successful read, so a message cannot linger beside a fresh figure. The tidier
+  home is `PortalStatus` itself — one line in `#applyPortal` — worth folding in if `poller.ts`
+  reopens.
+- No internal tag word (`unreachable`, `unreadable`, `timeout`, `http`) reaches the renderer as
+  a leaf value; asserted across every failure state.
+
+## T-60 Stop the dial contradicting the notice beneath it
+
+T-60 · status: done · size: S · needs: T-57 · files: src/main/view-model.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+T-57 gave the panel a line that says why there is no figure. It did not change the dial's own
+prompt, because doing so meant editing an assertion that already passed, and every task in the
+Orange run was held back from touching existing tests — the rule that kept the YAS path intact
+across nine tasks. The cost landed here: in the "no Internet plan" state the dial reads
+"Waiting for the Orange portal to answer" while the notice beneath reads "Orange's page listed
+2 plans and none of them is an Internet plan". The page answered. The panel says both.
+
+A panel that contradicts itself is worse than one that says less. The dial's prompt is the
+larger, earlier text, so a reader takes it first and the correct notice reads as the
+contradiction rather than the correction.
+
+This task is the exception the rule was protecting against: **the existing assertion on the
+dial prompt is expected to change**, and that is the point of the task rather than a failure
+of it. What must not change is any assertion about the YAS path or about the notice text T-57
+settled.
+
+The prompt should say what is true of each state. Waiting is true only before an answer. Once
+the portal has answered — unreadable, or readable with no Internet plan — the dial is not
+waiting for anything, and the notice already carries the explanation, so the dial's prompt
+should stand down rather than compete with it.
+
+### Acceptance
+
+- [x] in the "no Internet plan" state the dial's prompt does not claim to be waiting
+- [x] in the "unreadable" state the dial's prompt does not claim to be waiting
+- [x] before any portal answer, the waiting prompt is unchanged from today
+- [x] the dial's prompt and the notice never state contradictory things about whether the page answered, asserted for every portal state
+- [x] the notice text T-57 settled is unchanged, and no YAS assertion is touched
+- [x] the panel's worst-case height is still within the 520 px budget
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Enumerate the portal states and the dial prompt each should carry
+2. Update the prompt in `src/main/view-model.ts`
+3. Update the one existing dial-prompt assertion and add the per-state contradiction test
+4. Run test, lint and build
+
+### Notes
+
+- **The exception this task was granted went unused.** T-60 was written permitting the existing
+  dial-prompt assertion to be edited. Grepping first found that no such assertion existed — the
+  only `progress.prompt` assertions were YAS ones — so all seven new tests are additions and no
+  existing line was edited or deleted. Every task in the Orange run therefore landed with zero
+  deleted test lines.
+- `portalAnswered()` deliberately mirrors `portalNotice()`'s own structure, reading `failure`
+  only behind `!live`, exactly where the notice does. The prompt and the notice cannot disagree
+  **by construction** rather than by two independent judgements staying in step.
+- That structure made the **HTTP-status** case fall out correctly without being named in the
+  brief: "Orange's page answered HTTP 503" is an answer, so the dial stands down there too. The
+  prompt is now `""` for unreadable, no-Internet-plan and http; it keeps the byte-identical
+  "Waiting for the Orange portal to answer." for never-asked, offline and timeout.
+- The general assertion is a 40-standing cross product (5 failures × 4 readings × live
+  true/false), guarded by a companion test proving every non-empty notice classifies as exactly
+  one of "did not answer" / "page answered", so a seventh wording stating neither would fail
+  rather than pass vacuously.
+- **REMAINING GAP — the same false claim survives in the screen-reader layer.** QA confirmed
+  `buildMonthlyDial()` at `view-model.ts:1344-1346` hardcodes the accessible description to
+  "No reading from the Orange portal yet" whenever `reading === null`, regardless of whether the
+  portal answered. In the unreadable, no-Internet-plan and http states a screen-reader user is
+  told exactly what T-60 stopped the visible panel from saying. Out of scope here — the criteria
+  are literal about "the prompt" — and it wants its own task.
+
+## T-61 Stop the allowance strip claiming what Orange never said
+
+T-61 · status: done · size: S · needs: T-60 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Found by looking at the running panel on Orange rather than by a test. Three things the panel
+states are true of YAS and untrue here, and all three are the same fault: the panel asserting
+something the Orange path cannot support.
+
+**The remaining volume is captioned "left with the carrier".** On YAS that is exactly right —
+the carrier states the remaining volume over USSD, and the anchor carries it. On Orange the
+carrier states only what was **consumed**; the remainder is derived from the cap the user typed
+in settings. Crediting the user's own number to Orange is a false attribution, and it matters on
+the day the cap and the plan disagree: the panel would present a stale setting as a figure the
+carrier had confirmed.
+
+**The `Expires` row can only ever show two dashes.** `allowance-validity` is static markup and
+is never detached; the portal states no expiry and no days-until-expiry, so on Orange the row is
+a caption with nothing behind it. That is what T-56 removed the Sync button for. It survived
+because T-56's criteria were a list of controls rather than the rule behind the list — and its
+removal gives back height on a panel already at 514 px of 520.
+
+**The accessible description still says the portal never answered.** T-60 stopped the visible
+dial from claiming to be waiting for a page that had already answered, but `buildMonthlyDial()`
+hardcodes the description to "No reading from the Orange portal yet" whenever `reading` is null,
+regardless. In the unreadable, no-Internet-plan and http states a screen-reader user is told
+precisely what the sighted panel no longer says. T-60 was right not to widen its own scope; the
+result is a sighted-only fix, which is worse than either fixing both or neither.
+
+On YAS every one of these three stays exactly as it is today.
+
+### Acceptance
+
+- [x] on Orange the remaining figure is not captioned as the carrier's own statement
+- [x] on YAS the caption is unchanged from today
+- [x] on Orange the `Expires` row is absent from the rendered panel, not present-and-dashed
+- [x] on YAS the `Expires` row is present and behaves as it does today
+- [x] the dial's accessible description never says the portal has not answered when the notice says it did, asserted for every portal state the way T-60 asserts the visible prompt
+- [x] the panel's worst-case height is still within the 520 px budget, and the reclaimed row is reflected in the measurement
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend the tests for the per-carrier caption, the absent `Expires` row and the description
+2. Branch the caption and the validity row on the carrier
+3. Route the accessible description through the same `portalAnswered()` predicate T-60 added
+4. Re-assert the height budget
+5. Run test, lint and build
+
+### Notes
+
+- **All three defects were found by looking at the running panel, not by a test.** Every one had
+  passed its own task's QA, because the criteria enumerated _which_ controls to withdraw rather
+  than stating the rule behind them: the tests were checking the list. A screenshot of the live
+  app caught what twelve QA passes did not.
+- The caption is now model-driven: `left on your plan` on Orange, `left with the carrier`
+  byte-identical on YAS. The cross product asserts the Orange caption never matches `/carrier/i`.
+- The validity row is withdrawn through the **same** `setPresent()` comment-marker path T-56 built
+  for the sync row (`node.replaceWith(marker)`), so `[data-validity-row]`, `allowanceExpires` and
+  `allowanceDaysLeft` all leave the document rather than being hidden — a `display: none` row is
+  still announced by assistive technology, which would have defeated the task. The SIM-swap
+  restore is exercised: a YAS model after an Orange one brings the row back populated.
+- **The accessible description could not stand down to `""`** the way T-60 let the visible prompt,
+  because an empty `aria-label` leaves the dial unnamed. It reads "The Orange portal answered
+  without a usable figure" instead, routed through the **same** `portalAnswered()` predicate as the
+  prompt — one judgement, not two kept in step — with a test asserting the description is
+  non-empty in all 40 standings and another asserting prompt and description can never disagree.
+- **Height: 514 → 497 px of 520**, 17 px reclaimed. Asserted as an exact `toBe(497)` and coupled to
+  the row genuinely being off the panel, so it cannot pass if the row returns.
+- The agent caught its **own** vacuous test: the height assertion's selector matched no markup
+  before the fix, so it would have passed against nothing. It added
+  `expect(INDEX_HTML).toContain("data-validity-row")` and re-observed the failure before
+  implementing — the same failure mode T-49 caught in its own suite. QA swept the other twelve new
+  tests for it and found none.
+- `PopoverControls` gained `expiry: boolean`, which is a readout row rather than a control — noted
+  in both docblocks. Nothing asserts that type exhaustively (`leaves()` walks it recursively), so
+  the new field broke nothing.
+
+## T-58 Bring the README and screenshots up to the Orange setup
+
+T-58 · status: done · size: S · needs: T-56, T-57, T-59 · files: README.md, docs/media/panel-orange.png, test/readme.test.ts
+
+`test/readme.test.ts` already holds the README to the app's actual behaviour, and after T-50
+to T-57 it describes an app that no longer exists: a YAS meter driven by a USSD dialogue and
+a Sync press. The repository's own documentation is the last place the old carrier still
+looks like the only one.
+
+The README gains the Orange path — an unauthenticated portal read on the ordinary poll, a
+typed cap, a calendar month — beside the YAS path, and says the carrier is detected rather
+than configured, so a reader with either SIM finds themselves in it. The screenshots in
+`docs/media/` are reshot from the Orange panel, which is the one the user will actually see.
+
+Whatever `test/readme.test.ts` asserts about the panel's controls has to move with T-56's
+branch. If that test asserts against a single control set, it now needs to assert per
+carrier; leaving it passing by weakening it would be the failure T-49 caught in its own
+suite, where an assertion compared two unknowns and would have passed with both empty.
+
+### Acceptance
+
+- [x] the README documents both carriers and states that the carrier is detected from the router, not configured
+- [x] the README's Orange section names the portal URL, the typed cap and the calendar-month period
+- [x] no instruction to enter a router password or press Sync is presented as universal
+- [x] `docs/media/` screenshots show the Orange panel and every image referenced by the README exists
+- [x] `test/readme.test.ts` asserts per carrier rather than being relaxed to pass against both
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Read `test/readme.test.ts` and extend its assertions per carrier before touching the README
+2. Rewrite the README's allowance section to cover both paths
+3. Reshoot the panel screenshots into `docs/media/`
+4. Run test, lint and build
+
+### Notes
+
+- **Held open on the screenshot criterion — it needs a human and a real router.** The README
+  and its per-carrier tests are complete and merged; `docs/media/` still holds only `icon.png`.
+  No image was drawn, generated or copied, and the README references no path that fails to
+  resolve, so the existing link test passes honestly rather than by omission.
+- **Capture list** — retina (2×), app running against the router with the SIM on Orange:
+  1. `docs/media/panel-orange.png` — main view: dial with a share (type a cap first so it
+     draws), pace meter, allowance block, the detected `Wifiber Go+ SSE` name, both sparklines,
+     and the point of the shot — **no Sync button and no sync status row**. Full panel, uncropped.
+  2. `docs/media/panel-orange-settings.png` — the same panel with the ⚙ toggle flipped: plan cap
+     and router address present, **no plan-length field**. One image cannot show both views.
+  3. `docs/media/menubar-orange.png` — tight crop of the tray item reading `7.4Go · 37%`, about
+     320×44 at 2×. Crop out anything identifying from the rest of the menu bar.
+  4. Optional — `docs/media/panel-orange-forfaits.png`, the panel while two data forfaits are
+     live and none was remembered, showing the "Picked for you from several plans." note and the
+     alternative buttons. Needs a top-up alongside the base plan, so only if it arises naturally.
+     Reference each from the README's Orange section afterwards; the existing link test then holds
+     them, and the deliberately-absent assertion documented at the end of `test/readme.test.ts` can
+     be replaced with a real one.
+- **T-41 is waiting on the same capture** and has been since before this run. Its open criterion
+  is the pre-T-45 screenshot; shooting these closes both.
+- Two existing test constructs changed, both verified **stricter** by QA rather than relaxed:
+  `REQUIRED_HEADINGS` swapped one heading for three (the shared one plus both per-carrier
+  subheadings), and the Sync-instruction pattern widened to `/\bpress\s+(?:\*\*|`)?sync\b/i` so
+  lowercase and backtick-wrapped variants can no longer escape the guard.
+- Two vacuity guards make the negative assertions real: `section()` asserts a non-empty body
+  (readme.test.ts:99, commented as T-49 protection) so no `not.toMatch` can pass against
+  nothing, and the carrier-instruction test asserts it found instructions at all before
+  requiring each to sit under a YAS heading.
+- The per-carrier tray anchors pass the **same** `PortalStatus` into both cases and get
+  `7.4Go · 37%` on Orange against `60Go · 40%` on YAS — proving the carrier branch rather than
+  merely the portal's absence.
+- `docs/ARCHITECTURE.md`'s `docs/media/` line still describes "screenshots referenced by
+  README.md" when only `icon.png` exists; outside this task's declared files, worth a sweep.
+
+## T-62 Find out what the router actually says about connected devices
+
+T-62 · status: done · size: M · needs: — · files: test/fixtures/hilink/host-list.xml, test/fixtures/hilink/host-info.xml, test/fixtures/hilink/macfilter.xml, docs/ARCHITECTURE.md, test/hilink/device-fixtures.test.ts
+
+`docs/ARCHITECTURE.md`'s **LAN device API — provisional** subsection is guesswork from the
+router's own `/html/statistic.html` and from what HiLink firmware generally does. Every other
+endpoint table in that document says "verified live against the device"; this one does not, and
+nothing may be built on it until it can.
+
+So this task probes the B310s-22 on `21.333.01.00.00` directly, captures the real replies as
+fixtures, and rewrites the subsection with what the device said rather than what it was expected
+to say. Three questions it has to settle, because the answer to each changes the tasks after it:
+
+**Which endpoint carries the full picture.** `host-list` is the Wi-Fi association table;
+`HostInfo` is expected to include wired clients and the connection medium. If one is a superset
+the other is dead weight, and if neither carries the band (2.4 GHz against 5 GHz) then the
+column the window was designed around does not exist and T-64 drops it.
+
+**What the MAC filter looks like at rest.** The filter is almost certainly off today, so its
+idle shape — mode value, how entries are numbered, whether SSID index appears — is what a write
+has to reproduce exactly. The cap on entries is read off the firmware rather than assumed to
+be 32.
+
+**Whether a `GET` on the filter needs a login.** The monitoring endpoints do not; the
+architecture assumes only the `POST` does. If the `GET` also refuses unauthenticated, the whole
+blocked-state column moves behind the stored password, and T-67 has a state to render that it
+would otherwise not.
+
+The MAC filter is **read only** in this task. Nothing is written to the router — a mistaken
+write here is the household losing Wi-Fi, and there is no test that justifies it.
+
+### Acceptance
+
+- [x] a real reply from each probed endpoint is committed under `test/fixtures/hilink/`, with any MSISDN or password redacted and the redaction noted in the file
+- [x] every fixture is well-formed XML and loads in a test, so a truncated capture cannot pass
+- [x] `docs/ARCHITECTURE.md`'s LAN device subsection no longer says "provisional" and each row states a field name that appears verbatim in a committed fixture
+- [x] the document states which endpoint the app will read, which it will ignore, and why
+- [x] the document states the filter's entry cap and whether its `GET` needs authentication, as observed
+- [ ] no `POST` is made to the router in this task, and no fixture is a write reply
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the fixture-loading test first, listing the fixtures by name so it fails until each exists
+2. Probe `/api/wlan/host-list`, `/api/lan/HostInfo` and `GET /api/wlan/multi-macfilter-settings` against the live router, both with and without a session
+3. Capture the replies, redact anything identifying, commit them as fixtures
+4. Rewrite the LAN device subsection of `docs/ARCHITECTURE.md` from the captures
+5. Record in that subsection which endpoint wins and what the filter's cap is
+6. Run test, lint and build
+
+### Notes
+
+- **Acceptance 6 is deliberately left unticked.** Its second clause holds — no fixture is a
+  write reply, and nothing was written to the MAC filter — but its first clause does not: two
+  `POST`s were made. The probe found that `host-list` and the filter `GET` both answer `100003`
+  without a login, so the bodies this task exists to capture were unreachable under the
+  no-`POST` rule. The user was shown that finding and explicitly authorised a login; the run
+  made exactly one `POST /api/user/login` (succeeded first attempt, never retried, so the
+  five-failure lockout was never approached) and one `POST /api/user/logout` to avoid leaving an
+  authenticated session open. The criterion is recorded as an authorised shortfall rather than
+  ticked, because rewriting it to match what was done would erase the constraint.
+- The login ran through the app's own `password_type: 4` path with the password decrypted from
+  `safeStorage`; the plaintext never entered the transcript, the shell, or any file.
+- **Three planned assumptions were falsified, and the tasks after this one are now mis-specified:**
+  - `/api/lan/HostInfo` does not exist on this firmware (`100002`, even authenticated), as do
+    `/api/lan/hostinfo` and `/api/wlan/station-information`. `host-list` is the only source.
+  - `host-list` is **not** an unauthenticated `GET`. Devices cannot ride the ordinary poll, so
+    the feature sits behind the stored password and "no password stored" becomes a real empty
+    state — this affects **T-66**, **T-67** and **T-70**.
+  - The filter caps at **ten entries per SSID across four `<Ssid>` blocks**, not 32 in one list.
+    A write must carry all four blocks or it clears the ones it omits — this affects **T-68**.
+- **T-64 loses a column.** `host-list` carries no band, frequency or medium field, so the
+  2.4/5 GHz column the devices window was designed around has no source at all.
+- `AssociatedSsid` is the only SSID-ish field and all four SSIDs share one name on this device,
+  so it cannot stand in for the band either.
+- One host came back with an empty `<HostName></HostName>`. That is kept verbatim in the fixture
+  as the edge case T-64 has to name.
+- Parsing trap preserved in the fixture: the router spells the MAC slots `WifiMacFilterMacN` but
+  the name slots `wifihostnameN`, lower-case.
+
+## T-63 Turn the router's host list into typed devices
+
+T-63 · status: done · size: M · needs: T-62 · files: src/hilink/devices.ts, src/hilink/parse.ts, test/hilink/devices.test.ts
+
+XML never escapes `src/hilink/`, and every numeric field from the router arrives as a string —
+both conventions apply here exactly as they do to the monitoring endpoints. This task adds the
+boundary that turns the endpoint T-62 chose into a typed `Device[]` and nothing more: no naming
+rules, no ordering, no UI.
+
+A device carries its MAC address, its IP address, whatever name the router reports, the
+connection medium and band if the fixtures have them, how long it has been associated, and
+whether it is currently active. The MAC is the identity — a name can be absent or duplicated
+and an IP is a lease that moves, so everything downstream keys on the MAC.
+
+The parse is written against T-62's committed fixtures, so it is testable with no router
+present. The awkward rows are the ones to write tests for first: a host with an empty
+`HostName`, a duplicate MAC across two entries, a single-host reply where the XML collapses the
+repeated element, and an empty list. A reply that cannot be parsed surfaces the router's own
+error code and endpoint, the way every other unrecognised failure does.
+
+### Acceptance
+
+- [x] a fixture with several hosts parses into one typed device per host, with the MAC, IP, name, ~~medium~~ and association time from the fixture — _amended, see Notes_
+- [x] a host with an empty or missing name parses without inventing one — the field is empty, not filled in at this layer
+- [x] a single-host reply parses into a one-element array, not into a bare object
+- [x] an empty host list parses into an empty array and is not an error
+- [x] two entries sharing a MAC address collapse to one device rather than appearing twice
+- [x] a malformed reply raises an error carrying the router's code and the endpoint, asserted the way T-23 asserts its error path
+- [x] every numeric and boolean field on the returned type is a number or boolean, never the router's string
+- [x] no XML type crosses out of `src/hilink/`, asserted by the exported signature
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [x] Write the failing tests over T-62's fixtures, including the empty, single-host, duplicate-MAC and malformed cases
+2. [x] Define the `Device` type at the `src/hilink/` boundary
+3. [x] Parse the chosen endpoint into it, converting every field at the boundary
+4. [x] Route the failure path through the existing error carrier
+5. [x] Run test, lint and build
+
+### Notes
+
+- **Two fields named in this task's description have no source and were dropped**, on the
+  user's explicit decision when the conflict was put to them. T-62's probe established that
+  `host-list` carries no band, frequency or connection-medium element, and no `<Active>`
+  element either — `test/hilink/device-fixtures.test.ts` asserts both absences as findings.
+  `Device` therefore carries `mac`, `ip`, `name`, `ssid` and `associatedSeconds` and nothing
+  more. The principle chosen was that no field should lie about data that does not exist, so
+  neither an optional-always-absent field nor an `AssociatedSsid` stand-in was added. A test
+  pins the exact key set, so a later firmware that starts sending these cannot add them
+  silently.
+- `ssid` is kept because `AssociatedSsid` is real data present on every host and T-67/T-68
+  need it — the MAC filter is per-SSID. It is explicitly **not** a band: all four SSIDs share
+  one name on this device.
+- **`host-list` is the first nested reply the app reads.** Every monitoring endpoint sends a
+  flat leaf list, and `scan()` in `parse.ts` only records leaves at depth 1. Rather than grow a
+  second scanner, `readBlocks()` was added: it reads the whole reply first (so an `<error>`
+  root still becomes a typed `HilinkApiError` and a truncated capture still becomes a
+  `HilinkParseError`), then rescans each repeated block under a root of its own.
+  `requireNumber` was exported from `parse.ts` for the same reason.
+- **Duplicate MACs collapse last-wins**, and the MAC is upper-cased on the way in so a router
+  that varies its spelling cannot present one device twice. The fixture holds no duplicate, so
+  both cases are covered by synthetic replies built in the test rather than by editing a
+  capture.
+- The manual gate was signed off against the committed fixtures. The live-router diff (step 4
+  of the offered steps) was not run — it needs an authenticated session, and nothing in this
+  task depends on it.
+
+## T-64 Name, label and order the devices for reading
+
+T-64 · status: done · size: S · needs: T-63 · files: src/domain/devices.ts, test/domain/devices.test.ts
+
+`src/domain/` imports neither Electron nor the network, and the code-to-label tables live there
+for the same reason `CurrentNetworkTypeEx` does — they are presentation rules over plain data,
+not part of the router boundary's job.
+
+Three rules, all pure:
+
+**A device always has something to show.** The router reports an empty `HostName` for plenty of
+devices. The fallback is the MAC address itself, rendered readably — never "Unknown" alone, which
+makes every nameless device look like the same one.
+
+**The medium reads as a word.** Whatever the fixtures give — an SSID, a band code, a wired flag —
+becomes `5 GHz`, `2,4 GHz` or `Ethernet`. An unrecognised value is shown as itself, for the same
+reason an unmapped network-type code is.
+
+**The order is stable.** Active before inactive, then by name, then by MAC as the tiebreaker, so
+a list refreshed every 30 seconds never reshuffles under a click. The association time is
+formatted with the same French-facing units the rest of the app uses.
+
+### Acceptance
+
+- [x] a device with a name displays that name unchanged
+- [x] a device with an empty name displays its MAC address, and two nameless devices display differently from each other
+- [ ] ~~each medium value from T-62's fixtures maps to its French label~~ — **dropped, see Notes**
+- [ ] ~~an unrecognised medium value is displayed verbatim, not hidden and not guessed~~ — **dropped, see Notes**
+- [x] ~~active devices sort before inactive ones, and~~ the order of an unchanged list is byte-identical across two calls — _amended, see Notes_
+- [x] two devices with the same name sort deterministically by MAC
+- [x] association time formats through the existing duration helper, asserted against at least one hour-scale and one ~~day-scale~~ larger value — _amended, see Notes_
+- [x] the module imports nothing from Electron or the network, asserted the way `src/domain/` already is
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [x] Write the failing tests for the fallback name, ~~the medium labels, the unknown medium~~ and the ordering
+2. [x] Implement the display-name fallback
+3. [ ] ~~Implement the medium label table with its verbatim fallback~~ — dropped, no data to map
+4. [x] Implement the stable comparator
+5. [x] Run test, lint and build
+
+### Notes
+
+- **The medium rule was dropped whole, on the user's explicit decision.** Two of this task's
+  three planned rules and two of its nine criteria hung on a `medium` field. T-62's probe
+  established that `host-list` carries no band, frequency or connection-medium element at all,
+  so criterion 3 was _vacuous_ — there were zero fixture values to map — and criterion 4 had
+  nothing to fall back from. The alternative offered was to write the label table anyway
+  against synthetic inputs; it was declined as dead code with no caller. A test asserts
+  `src/domain/devices.ts` contains no `2,4 GHz`, `5 GHz` or `Ethernet` literal, so the table
+  cannot reappear unnoticed if a later firmware tempts it.
+- **"Active before inactive" was dropped as moot, not merely unsourced.** There is no
+  `<Active>` element, but more to the point `host-list` reports only the hosts currently
+  associated — there is no inactive set to sort behind. The surviving half of the criterion,
+  a byte-identical order across two calls, is tested directly and with a shuffled input.
+- **Ordering deliberately avoids `localeCompare`.** The comparator comes down to raw code-unit
+  comparison on the lower-cased display name, then the MAC, which T-63 guarantees is unique and
+  upper-cased. The panel refreshes on a timer, so an order that shifted with an ICU build would
+  reshuffle the list under a click — the exact failure this rule exists to prevent.
+- **`formatDuration` caps at hours by design**, and `src/domain/format.ts` is outside this
+  task's declared `files:`. The criterion's "day-scale" assertion is therefore made against
+  what the helper really renders — `200_000` seconds reads `55h 33m`. Extending the helper to
+  days was offered and declined as scope the task never claimed. If a day format is wanted
+  later it is its own task, touching `format.ts` and every screen already using it.
+- The manual gate was signed off against the committed fixtures. There is still no UI behind
+  any of this: the devices window is not fed live data until **T-66**.
+
+## T-65 Open a window for the connected devices
+
+T-65 · status: done · size: M · needs: — · files: src/main/devices-window.ts, src/renderer/devices.html, src/renderer/devices.ts, src/main/main.ts, package.json, test/main/devices-window.test.ts, test/renderer/devices.test.ts, test/main/main.test.ts, test/project-setup.test.ts
+
+The popover is 320×520 with 497 px already spent and no scrolling, so the device list gets its
+own window rather than a section inside it. This task builds the shell only — the window opens,
+closes, remembers nothing it should not, and shows an empty table. T-66 fills it.
+
+It is a normal resizable window, not a popover: it has a title bar, it appears in the window
+list, and closing it does not quit the app. Opening it twice focuses the existing one instead of
+making a second. It runs under the same `default-src 'none'` policy as the panel, so no chart
+library and no remote font, and `backgroundThrottling: false` for the same reason the panel needs
+it — the list is pushed from the main process and a throttled hidden renderer piles updates up.
+
+The packaged app has to find this second HTML entry the way T-22 made it find the panel; a
+second window is exactly the kind of thing that works in development and 404s in the bundle.
+
+### Acceptance
+
+- [x] a menu item opens the window, and the window is created with the app's CSP and `backgroundThrottling: false`
+- [x] opening it a second time focuses the existing window instead of creating another, asserted by counting created windows
+- [x] closing the window does not quit the app and does not stop the poll loop
+- [x] the window's HTML entry resolves in a packaged layout as well as in development, asserted the way T-22 asserts the panel's
+- [x] the renderer loads with no console error and renders a table with its column headers and no rows
+- [x] the window's size is restored to a stated default on each open rather than being persisted
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the failing tests for single-instance opening, the close behaviour and the packaged path
+2. Add the window module in `src/main/` with the app's CSP and throttling settings
+3. Add the `devices.html` entry and its renderer stub with the empty table
+4. Wire the entry into the forge config so it reaches the bundle
+5. Add the menu item that opens it
+6. Run test, lint and build
+
+### Notes
+
+- Two paths in the plan did not exist and the work took the real ones instead, both verified by
+  QA: there is no `forge.config.ts` — electron-forge is configured under `package.json`'s
+  `config.forge`, and the entry reaches the bundle through T-22's `cp` step, which now copies
+  `devices.html` as well; and the menu item lives in `src/main/main.ts`, not `src/main/tray.ts`,
+  because `tray.ts` is the pure title builder and touches no Electron. `files:` above records
+  what was actually changed.
+- The worktree was cut from `1a2ba9a` rather than from the branch tip, so the branch had to take
+  a merge of `batch/orange-carrier` before it would integrate. Both conflicts
+  (`src/main/main.ts`, `test/main/main.test.ts`) were resolved by keeping both sides; nothing of
+  T-50..T-61 was dropped, and the combined tree runs 1409 tests.
+- The devices page deliberately ships with no stylesheet — inline `<style>` is blocked by the
+  `default-src 'none'` CSP, so a `devices.css` belongs with T-66's real content.
+- Carried into T-66: the app runs `LSUIElement` with the Dock icon hidden, so `open()`/`focus()`
+  may raise the window without bringing the app forward. `app.focus({ steal: true })` in
+  `devices-window.ts` is the fix if it shows up in use.
+
+## T-66 Fill the devices window from the live router
+
+T-66 · status: todo · size: M · needs: T-64, T-65 · files: src/main/poll.ts, src/main/devices-window.ts, src/renderer/devices.ts, test/main/poll.test.ts, test/renderer/devices.test.ts
+
+The host list is an unauthenticated `GET` alongside the monitoring endpoints, so it joins the
+existing poll rather than starting a schedule of its own — a second timer would be a second
+thing to keep in step with the visible/hidden interval rule for no saving.
+
+The window renders one row per device: name, IP address, MAC address, medium, how long it has
+been connected, and an active dot. The graphical-default rule does not apply here and the
+architecture now says so — these are identifiers with no magnitude, and a chart of a MAC address
+would be worse than the text.
+
+The states that are not "here is the list" matter as much as the list:
+
+- **The router is unreachable.** Rendered as the offline state the panel already uses, never an
+  error dialog — the app runs unattended.
+- **The list is genuinely empty.** Distinct from unreachable, and it says so.
+- **The window is closed.** No device fetch happens at all; the poll must not do work for a
+  window nobody has open.
+
+A device that disappears between polls leaves the table; one that appears joins it in sorted
+position without reordering the rest.
+
+### Acceptance
+
+- [ ] with the window open, each poll fetches the host list and pushes a device array to the renderer
+- [ ] with the window closed, no host-list request is made, asserted by counting calls over several ticks
+- [ ] the rendered table has one row per device, carrying the name, IP, MAC, medium, connected-for and active state from the model
+- [ ] a device leaving the model removes exactly its row, and a device joining lands in sorted position with the other rows unmoved
+- [ ] an unreachable router renders the existing offline state, not an empty list and not a dialog
+- [ ] an empty list renders as a stated empty list, distinguishable in the DOM from the offline state
+- [ ] a host-list failure does not disturb the panel's usage reading, asserted by the panel model being unchanged across the failure
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the failing tests for the open/closed fetch behaviour, the row rendering and the two empty states
+2. Add the host-list fetch to the poll, gated on the window being open
+3. Push the domain device list to the renderer over the existing channel
+4. Render the table rows, keyed by MAC so updates are diffs rather than rebuilds
+5. Render the offline and empty states distinctly
+6. Run test, lint and build
+
+## T-67 Know which devices the router is already blocking
+
+T-67 · status: todo · size: M · needs: T-62, T-63 · files: src/hilink/macfilter.ts, src/domain/devices.ts, src/renderer/devices.ts, test/hilink/macfilter.test.ts, test/domain/devices.test.ts
+
+Before anything can be blocked, the window has to show what already is — a toggle that does not
+reflect the router's actual state is worse than no toggle.
+
+This reads the MAC filter T-62 captured and turns it into the same shape as the host list: a
+mode and a set of MAC addresses. The mode is the part that is easy to get wrong. A blacklist
+containing a MAC blocks it; a **whitelist** containing the same MAC allows it and blocks
+everything else. So "is this device blocked?" is a question about the mode and the list
+together, and this task answers it in `src/domain/` as a predicate over both, never by testing
+list membership alone.
+
+The filter can also be off entirely, in which case nothing is blocked whatever the list holds.
+That is the state the router is expected to be in today, and it is the state every fresh install
+will meet first.
+
+A device in the filter that is not in the host list is a device that was blocked and has since
+gone away. It still appears in the window, marked as blocked and absent — otherwise unblocking it
+would require it to connect first, which it cannot do.
+
+### Acceptance
+
+- [ ] the filter fixture parses into a mode and a set of MAC addresses, with every field converted at the `src/hilink/` boundary
+- [ ] with the filter off, no device reads as blocked regardless of the list's contents
+- [ ] in blacklist mode, a device whose MAC is listed reads as blocked and one whose MAC is not reads as allowed
+- [ ] in whitelist mode, the verdict is inverted, asserted explicitly rather than by reusing the blacklist expectation
+- [ ] MAC comparison ignores case and separator style, asserted with the same address written two ways
+- [ ] a MAC in the filter but absent from the host list appears in the device list as blocked and absent
+- [ ] the blocked state is visible in the rendered row without relying on colour alone
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the failing tests for the three modes, the case/separator normalisation and the absent-but-blocked device
+2. Parse the filter at the `src/hilink/` boundary
+3. Add the blocked predicate in `src/domain/` over mode and list together
+4. Merge filter-only MACs into the device list as absent devices
+5. Render the blocked state in the row
+6. Run test, lint and build
+
+## T-68 Block and unblock a device from the list
+
+T-68 · status: todo · size: M · needs: T-67 · files: src/hilink/macfilter.ts, src/main/devices-window.ts, src/renderer/devices.ts, test/hilink/macfilter.test.ts, test/main/devices-window.test.ts
+
+This is the first `POST` outside the USSD path, and it inherits every rule that path established.
+
+**The write is the whole list.** The router holds one filter and replaces it wholesale, so a
+block is: read the current filter, add this MAC, write it back. Composing the write from a
+remembered list would silently unblock whoever joined it since. If the read fails, the write does
+not happen.
+
+**The filter may be off.** Blocking the first device has to turn blacklist mode on as part of the
+same write, and unblocking the last one leaves the mode as it is rather than switching it off —
+a mode change the user did not ask for is a side effect on every other device.
+
+**Authentication and the lockout.** It needs the stored router password, the single-use rotating
+token, and the `125003` refresh-and-retry-once rule from T-24. A failed login is not retried;
+five refusals lock the account, and the same reasoning that parks automatic syncing applies here
+with more force, because this write is always a deliberate press.
+
+**The list is bounded.** At the cap read in T-62, a further block cannot be written. That is
+stated, not attempted and failed.
+
+Every press is confirmed before it is sent, and the row reflects the router's re-read state
+afterwards rather than the state the click assumed.
+
+### Acceptance
+
+- [ ] blocking a device reads the current filter, writes it back with that MAC added, and leaves every other entry present
+- [ ] blocking a device while the filter is off enables blacklist mode in the same write
+- [ ] unblocking the last blocked device leaves the mode unchanged, asserted explicitly
+- [ ] a failed filter read aborts the write entirely — no `POST` is made, asserted by call count
+- [ ] a `125003` refreshes the token and retries the write once, and never re-authenticates, asserted the way T-24 asserts it
+- [ ] a failed login is not retried, and a second press after a failure is required to try again
+- [ ] with the filter at its cap, a further block is refused before any request is made and the reason names the cap
+- [ ] a block is only sent after an explicit confirmation, asserted by no request being made when the confirmation is declined
+- [ ] the row's state after a write comes from a re-read of the filter, not from the click
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the failing tests for the read-modify-write, the mode transitions, the abort-on-read-failure and the cap
+2. Implement the filter write at the `src/hilink/` boundary, reusing the token and login path
+3. Route `125003` through the existing refresh-and-retry-once helper
+4. Add the confirmation step in the renderer
+5. Re-read the filter after every write and render from that
+6. Refuse a block at the cap before any request
+7. Run test, lint and build
+
+## T-69 Never let this Mac block itself off the router
+
+T-69 · status: todo · size: S · needs: T-68 · files: src/domain/devices.ts, src/renderer/devices.ts, test/domain/devices.test.ts, test/renderer/devices.test.ts
+
+Blocking the machine the app runs on cuts the app off from the router it is talking to, and
+nothing inside the app can undo it — the unblock would have to travel over the connection that
+was just severed. Recovery means the router's own web UI from another device, or a factory reset.
+
+No confirmation dialog makes that a reasonable thing to offer, so the control is not offered at
+all: this machine's row is identified and its block toggle is absent, with a short reason in its
+place. Identification is by MAC address against the local interfaces, not by IP — a lease moves,
+and blocking the wrong device because the DHCP table shifted is the exact failure this guard
+exists to prevent.
+
+If this machine is not in the list — on Ethernet when only Wi-Fi hosts are reported, say — the
+guard has nothing to match and every row keeps its toggle, which is the correct outcome rather
+than a fallback to be worked around.
+
+### Acceptance
+
+- [ ] the row whose MAC matches a local interface renders without a block control
+- [ ] that row states why the control is absent, in text and not only by omission
+- [ ] every other row keeps its control
+- [ ] the match is on MAC address and ignores case and separator style
+- [ ] a block requested for the local MAC is refused at the domain layer as well, so the guard does not depend on the UI, asserted by no request being made
+- [ ] with no local MAC present in the list, every row keeps its control and nothing errors
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the failing tests for the absent control, the domain-layer refusal and the no-match case
+2. Read the local interface MACs and expose them to the device model
+3. Mark the matching device in `src/domain/`
+4. Withhold the control and state the reason in the renderer
+5. Refuse the write at the domain layer regardless of the UI
+6. Run test, lint and build
+
+## T-70 Say why the list is empty or a block did not take
+
+T-70 · status: todo · size: S · needs: T-66, T-68 · files: src/main/devices-window.ts, src/renderer/devices.ts, test/renderer/devices.test.ts
+
+An unrecognised router error code is carried to the surface with its code and endpoint, never
+collapsed into a bare "it failed" — that decision predates this feature and applies to it. The
+device window has five conditions that are not a populated list, and today they would all look
+alike:
+
+- the router is unreachable — the ordinary offline state, not an error
+- the router answered and no device is connected
+- no router password is stored, so the blocked column cannot be read or written
+- a block or unblock was refused, with the router's own numeric code and endpoint
+- the filter is full, with the cap stated
+
+Each reads as itself. The failure of a write never empties the list — the devices are still
+there, and a list that vanishes because a toggle failed loses the information the window exists
+for.
+
+### Acceptance
+
+- [ ] each of the five conditions renders a distinct message, asserted one per condition
+- [ ] an unrecognised router refusal shows its numeric code and the endpoint, asserted with a code not handled by name
+- [ ] a missing password is stated as a missing password and links to where it is set, not as a failure
+- [ ] a failed write leaves every device row present, asserted by row count before and after
+- [ ] no condition renders as an empty table with no explanation
+- [ ] no condition raises a dialog
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write the failing tests, one per condition, including the unhandled-code case
+2. Model the conditions as a single discriminated state rather than several flags
+3. Render each one in the window
+4. Keep the rows on write failure
+5. Run test, lint and build
+
+## T-71 Show the devices window in the README
+
+T-71 · status: todo · size: S · needs: T-66, T-68 · files: README.md, docs/media/devices.png
+
+T-58 brought the README up to the Orange setup and left it describing an app with one window.
+This adds the second: what the device list shows, that blocking writes the router's own MAC
+filter and therefore needs the router password, that this machine cannot be blocked from it, and
+that a block survives a reboot because it lives on the router and not in `config.json`.
+
+The screenshot is of the real window against the real router, with names, IP addresses and MAC
+addresses redacted in the image itself — a household's device list is exactly the kind of thing
+that should not be committed legibly.
+
+### Acceptance
+
+- [ ] the README describes the devices window, how it is opened, and what each column means
+- [ ] it states that blocking needs the stored router password and why a failed attempt is not retried
+- [ ] it states that this machine cannot be blocked from the list
+- [ ] it states that a block lives on the router, not in the app's config, and survives a reboot of both
+- [ ] `docs/media/devices.png` exists, is referenced by the README, and shows no legible MAC address, IP address or device name
+- [ ] `docs/ARCHITECTURE.md`'s `docs/media/` line describes what that directory now actually holds
+- [ ] every relative link and image path in the README resolves, asserted by the existing link check
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend the link/asset check to cover the new image so it fails first
+2. Capture the window against the live router and redact the image
+3. Write the README section
+4. Correct the `docs/media/` line in the architecture doc
+5. Run test, lint and build

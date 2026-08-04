@@ -28,6 +28,29 @@ export interface AppConfig {
   /** Monthly quota in bytes, or `null` when the user has not set one. */
   planLimitBytes: number | null;
   /**
+   * How many whole days the plan runs for, or `null` when the user has not
+   * said. Unset rather than defaulted to 30: the carrier states an expiry date
+   * and never a duration, so a period nobody stated would be invented, and the
+   * pace band is defined to be absent rather than drawn over a guess.
+   */
+  planDays: number | null;
+  /**
+   * Whether {@link AppConfig.planLimitBytes} still describes the plan the
+   * carrier is reporting. Cleared by a sync whose anchor belongs to a different
+   * plan, and set again by confirming or retyping the cap.
+   *
+   * True by default, so a config written before this existed is not flagged the
+   * first time it is loaded.
+   */
+  planCapConfirmed: boolean;
+  /**
+   * How many minutes a carrier reading may age before the app re-anchors it by
+   * itself. Never below one minute — a window of zero would mean every anchor
+   * is stale the instant it is written, and dialogues cost a login against a
+   * device that locks after five refusals.
+   */
+  syncStaleAfterMinutes: number;
+  /**
    * Router admin username. Absent until a credential has been saved — a router
    * that needs no login never grows either credential field.
    */
@@ -38,6 +61,13 @@ export interface AppConfig {
    * a password, and only on the machine that wrote it.
    */
   routerPasswordBlob?: string;
+  /**
+   * The label of the Orange forfait the user chose to measure, when several
+   * data forfaits are live at once. Absent until they choose — and the reason
+   * the dial tracks the same plan across polls instead of following whichever
+   * one the portal happens to list first.
+   */
+  orangeForfaitLabel?: string;
   /**
    * The last USSD reading, pinned to the router's counter at that instant.
    * Absent until the first sync — and the reason the exact remaining volume
@@ -61,6 +91,13 @@ export const DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS = 2;
 
 /** Warn at 90% of the plan, matching the router's own default threshold. */
 export const DEFAULT_WARN_THRESHOLD_PERCENT = 90;
+
+/**
+ * Half an hour before a carrier figure counts as old. Long enough that a day of
+ * normal use costs a handful of dialogues rather than dozens, short enough that
+ * the panel is never showing a figure from this morning.
+ */
+export const DEFAULT_SYNC_STALE_AFTER_MINUTES = 30;
 
 /** Floor on the poll interval — below this we would hammer the router. */
 export const MIN_POLL_INTERVAL_SECONDS = 5;
@@ -89,6 +126,9 @@ export function defaultConfig(): AppConfig {
     activePollIntervalSeconds: DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
     warnThresholdPercent: DEFAULT_WARN_THRESHOLD_PERCENT,
     planLimitBytes: null,
+    planDays: null,
+    planCapConfirmed: true,
+    syncStaleAfterMinutes: DEFAULT_SYNC_STALE_AFTER_MINUTES,
   };
 }
 

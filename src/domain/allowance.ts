@@ -31,6 +31,7 @@ import {
 import type { Allowance, MonthStatistics } from "../hilink/types.js";
 
 const MILLISECONDS_PER_DAY = 86_400_000;
+const MILLISECONDS_PER_MINUTE = 60_000;
 
 /**
  * One USSD reading pinned to the router's counter at the instant it was taken.
@@ -176,6 +177,80 @@ export function needsAutomaticSync(
   if (anchor === undefined) return true;
 
   return !readAllowanceNow({ anchor, month, clock }).trustworthy;
+}
+
+/**
+ * Whether a usable anchor has simply gone old.
+ *
+ * The second of the two questions asked about an anchor, and deliberately
+ * separate from {@link needsAutomaticSync}'s first one. That asks whether the
+ * anchor can be trusted at all; this asks whether a trustworthy one is recent
+ * enough to keep carrying forward. No anchor is *not* stale — that case belongs
+ * to the usability check, and conflating the two would run the same dialogue
+ * for two different reasons.
+ *
+ * The boundary is exclusive, so an anchor exactly at the window is not yet
+ * stale. A `syncedAt` in the future — a clock moved back, a hand-edited config —
+ * yields a negative age and is likewise not stale.
+ */
+export function isAnchorStale(
+  anchor: AllowanceAnchor | null | undefined,
+  now: Date,
+  staleAfterMinutes: number,
+): boolean {
+  if (anchor === null || anchor === undefined) return false;
+
+  const age = now.getTime() - anchor.syncedAt.getTime();
+
+  return age > staleAfterMinutes * MILLISECONDS_PER_MINUTE;
+}
+
+/**
+ * Whether two dates are both stated and the first falls after the second. A
+ * date the carrier never gave cannot have moved, so a null on either side is
+ * simply "not later" rather than a comparison to guess at.
+ */
+function movedLater(next: Date | null, previous: Date | null): boolean {
+  if (next === null || previous === null) return false;
+
+  return next.getTime() > previous.getTime();
+}
+
+/**
+ * Whether a freshly synced anchor belongs to a different plan from the one it
+ * replaces — the question that decides whether the typed-in cap can still be
+ * believed.
+ *
+ * A sync refreshes everything the carrier states, so nothing it writes needs
+ * resetting. What it cannot refresh is the cap the user typed, and a cap left
+ * over from the previous plan is a *silent* fault: `readAllowanceNow` computes
+ * `usedBytes` as `max(0, cap − remaining)`, so a 50 Go cap against a 150 Go
+ * top-up clamps consumption to zero and the dial reads 0% indefinitely with
+ * nothing on screen suggesting why.
+ *
+ * Three signs, any one of which is enough:
+ *
+ * - the carrier renamed the offer;
+ * - the expiry moved later, which only a new period can do;
+ * - the remaining volume passed the configured cap, which catches a top-up the
+ *   carrier labelled identically and dated the same way.
+ *
+ * The last is gated on a cap being configured at all: with none there is
+ * nothing for a larger remainder to contradict. A first-ever sync replaces no
+ * anchor and so contradicts nothing either.
+ */
+export function isNewPlan(
+  anchor: AllowanceAnchor,
+  previous: AllowanceAnchor | null | undefined,
+  planLimitBytes: number | null,
+): boolean {
+  if (previous === null || previous === undefined) return false;
+
+  return (
+    anchor.planLabel !== previous.planLabel ||
+    movedLater(anchor.expiresAt, previous.expiresAt) ||
+    (planLimitBytes !== null && anchor.remainingBytes > planLimitBytes)
+  );
 }
 
 /** Record one USSD reading against the router's counter at this instant. */

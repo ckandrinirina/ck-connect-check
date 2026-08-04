@@ -14,7 +14,12 @@ import type {
   RouterSnapshot,
 } from "../../src/hilink/types.js";
 import { defaultConfig } from "../../src/config/defaults.js";
+import {
+  DEVICES_MENU_LABEL,
+  type DevicesWindow,
+} from "../../src/main/devices-window.js";
 import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
+import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
 import { trayImageFor } from "../../src/main/tray-icon.js";
@@ -27,6 +32,9 @@ const electron = vi.hoisted(() => ({
   setTitle: vi.fn(),
   setImage: vi.fn(),
   on: vi.fn(),
+  /** `app.on`, kept apart from the tray's own subscriptions above. */
+  appOn: vi.fn(),
+  appQuit: vi.fn(),
   buildFromTemplate: vi.fn((template: unknown) => ({ template })),
   createEmpty: vi.fn(() => ({ empty: true })),
   createFromPath: vi.fn((path: string) => ({
@@ -54,9 +62,9 @@ vi.mock("electron", () => {
   return {
     app: {
       dock: { hide: electron.dockHide },
-      on: vi.fn(),
+      on: electron.appOn,
       whenReady: vi.fn(() => Promise.resolve()),
-      quit: vi.fn(),
+      quit: electron.appQuit,
     },
     Menu: { buildFromTemplate: electron.buildFromTemplate },
     Tray,
@@ -91,7 +99,7 @@ function snapshot(usedBytes: number): RouterSnapshot {
       connectedDevices: 3,
       networkTypeCode: 101,
     },
-    carrier: { carrier: "Yas" },
+    carrier: { carrier: "Yas", id: "yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
   };
 }
@@ -583,7 +591,9 @@ describe("startMenuBarApp — the allowance sync", () => {
     await app.sync();
 
     expect(latest(popover).allowance.remaining).toBe("145.84 Go");
-    expect(latest(popover).allowance.expires).toBe("12/08/2026");
+    // The stored instant is the midnight *ending* the last valid day, so an
+    // allowance expiring at midnight on the 12th is valid through the 11th.
+    expect(latest(popover).allowance.expires).toBe("11/08/2026");
     expect(latest(popover).sync.busy).toBe(false);
 
     app.stop();
@@ -928,6 +938,227 @@ describe("startMenuBarApp — setting the plan limit", () => {
   });
 });
 
+describe("startMenuBarApp — confirming the cap after a new plan", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A config holding a cap, an anchor, and the state of the confirmation flag. */
+  function configUnconfirming(
+    planLimitBytes: number | null,
+    planCapConfirmed: boolean,
+  ): string {
+    const configPath = scratchConfig();
+
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...defaultConfig(),
+        planLimitBytes,
+        planCapConfirmed,
+        allowanceAnchor: HEALTHY_ANCHOR,
+      }),
+    );
+
+    return configPath;
+  }
+
+  /** Whether the file on disk still calls the cap confirmed. */
+  function storedFlag(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as {
+        planCapConfirmed?: unknown;
+      }
+    ).planCapConfirmed;
+  }
+
+  function appOn(
+    configPath: string,
+    popover: ReturnType<typeof recordingPopover>,
+  ): ReturnType<typeof startMenuBarApp> {
+    return startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+  }
+
+  it("puts the dial back the moment the cap is submitted", async () => {
+    const configPath = configUnconfirming(150_000_000_000, false);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).progress.available).toBe(false);
+    expect(latest(popover).planCapPrompt).not.toBeNull();
+
+    app.setPlanLimit("150");
+
+    // The same model build: one click, and the dial and the prompt swap over.
+    expect(latest(popover).progress.available).toBe(true);
+    expect(latest(popover).planCapPrompt).toBeNull();
+    expect(storedFlag(configPath)).toBe(true);
+
+    app.stop();
+  });
+
+  it("counts an unchanged size as a confirmation, so it costs one click", async () => {
+    const configPath = configUnconfirming(150_000_000_000, false);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    // Exactly what the panel's confirm button re-submits: the stored cap.
+    app.setPlanLimit(latest(popover).planLimit.value);
+
+    expect(latest(popover).planCapPrompt).toBeNull();
+    expect(storedFlag(configPath)).toBe(true);
+
+    app.stop();
+  });
+
+  it("clears the flag when a sync brings back a plan the cap cannot describe", async () => {
+    // A 50 Go cap against the 145.8 Go the carrier reports left.
+    const configPath = configUnconfirming(50_000_000_000, true);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(storedFlag(configPath)).toBe(false);
+    expect(latest(popover).planCapPrompt).not.toBeNull();
+
+    app.stop();
+  });
+
+  it("leaves the flag alone when the sync brings back the same plan", async () => {
+    const configPath = configUnconfirming(200_000_000_000, true);
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(storedFlag(configPath)).toBe(true);
+    expect(latest(popover).planCapPrompt).toBeNull();
+
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — setting the plan length", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** What the config file on disk holds now. */
+  function storedDays(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as { planDays?: unknown }
+    ).planDays;
+  }
+
+  /** Launches against `configPath` and lets the first poll settle. */
+  async function launched(configPath: string): Promise<{
+    app: MenuBarApp;
+    popover: RecordingPopover;
+  }> {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { app, popover };
+  }
+
+  it("stores a typed plan length as whole days", async () => {
+    const configPath = configHolding(null);
+    const { app } = await launched(configPath);
+
+    app.setPlanDays("30");
+
+    expect(storedDays(configPath)).toBe(30);
+
+    app.stop();
+  });
+
+  it("writes nothing and says why when the entry cannot be read", async () => {
+    const configPath = configHolding(null);
+    const { app, popover } = await launched(configPath);
+
+    for (const entry of ["", "abc", "0", "-5", "30.5"]) {
+      app.setPlanDays(entry);
+
+      // A blank submission must leave the stored value exactly as it was.
+      expect(storedDays(configPath), entry).toBeNull();
+      expect(latest(popover).planDays.error, entry).not.toBe("");
+    }
+
+    app.stop();
+  });
+
+  it("leaves a stored length untouched when a later entry is refused", async () => {
+    const configPath = configHolding(null);
+    const { app } = await launched(configPath);
+
+    app.setPlanDays("30");
+    app.setPlanDays("");
+
+    expect(storedDays(configPath)).toBe(30);
+
+    app.stop();
+  });
+
+  it("clears the complaint once a good value follows a bad one", async () => {
+    const { app, popover } = await launched(configHolding(null));
+
+    app.setPlanDays("nonsense");
+    app.setPlanDays("30");
+
+    expect(latest(popover).planDays.error).toBe("");
+
+    app.stop();
+  });
+
+  it("keeps the length across a restart", async () => {
+    const configPath = configHolding(null);
+    const first = await launched(configPath);
+
+    first.app.setPlanDays("30");
+    first.app.stop();
+
+    const second = await launched(configPath);
+
+    expect(latest(second.popover).planDays.value).toBe("30");
+
+    second.app.stop();
+  });
+});
+
 describe("startMenuBarApp — syncing by itself", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -1079,5 +1310,521 @@ describe("startMenuBarApp — syncing by itself", () => {
     release();
     await vi.advanceTimersByTimeAsync(0);
     app.stop();
+  });
+});
+
+describe("startMenuBarApp — re-syncing on open and after a long silence", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** An anchor synced `minutesAgo`, whose arithmetic otherwise still holds. */
+  function anchorSynced(minutesAgo: number): Record<string, unknown> {
+    return {
+      ...HEALTHY_ANCHOR,
+      syncedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    };
+  }
+
+  /** Launches against `anchor` and lets the first poll settle. */
+  async function launched(
+    anchor: Record<string, unknown>,
+    options: {
+      credential?: RouterCredential | null;
+      answer?: () => Promise<AllowanceResult>;
+      client?: { snapshot: () => Promise<SnapshotResult> };
+    } = {},
+  ): Promise<{
+    router: AllowanceSource & { dialogues: number };
+    popover: RecordingPopover;
+    app: MenuBarApp;
+  }> {
+    const router = allowanceRouter(
+      options.answer ??
+        (() => Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE })),
+    );
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: configHolding(anchor),
+      client: options.client ?? countingClient(),
+      popover,
+      allowance: router,
+      credentials: storeHolding(
+        options.credential === undefined ? CREDENTIAL : options.credential,
+      ),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { router, popover, app };
+  }
+
+  /** Opens the panel the way a user does, and lets the dialogue settle. */
+  async function openPanel(): Promise<void> {
+    clickTray();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it("dials once when the panel is opened on a stale anchor", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    expect(router.dialogues).toBe(0);
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("dials nothing when the panel is opened on a fresh one", async () => {
+    const { router, app } = await launched(anchorSynced(29));
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("dials once for a stale anchor with the panel never opened", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("dials once in total when the panel is opened twice in one stale window", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    await openPanel();
+    // Closed and opened again: the anchor is fresh now, so nothing follows.
+    await openPanel();
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("never joins a dialogue already in flight", async () => {
+    let release = (): void => undefined;
+    const pending = new Promise<AllowanceResult>((resolve) => {
+      release = () => {
+        resolve({ ok: true, allowance: CARRIER_ALLOWANCE });
+      };
+    });
+    const { router, app } = await launched(anchorSynced(31), {
+      answer: () => pending,
+    });
+
+    await openPanel();
+    await vi.advanceTimersByTimeAsync(60_000 * 3);
+
+    expect(router.dialogues).toBe(1);
+
+    release();
+    app.stop();
+  });
+
+  it("tries once when the automatic dialogue fails, however long it stays stale", async () => {
+    const { router, app } = await launched(anchorSynced(31), {
+      answer: () => Promise.resolve({ ok: false, reason: "busy" }),
+    });
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(60_000 * 10);
+    await openPanel();
+
+    expect(router.dialogues).toBe(1);
+
+    app.stop();
+  });
+
+  it("lets an explicit press through after that failure, and re-arms on success", async () => {
+    let answer: AllowanceResult = { ok: false, reason: "busy" };
+    const { router, app } = await launched(anchorSynced(31), {
+      answer: () => Promise.resolve(answer),
+    });
+
+    await openPanel();
+    expect(router.dialogues).toBe(1);
+
+    answer = { ok: true, allowance: CARRIER_ALLOWANCE };
+    await app.sync();
+
+    expect(router.dialogues).toBe(2);
+
+    app.stop();
+  });
+
+  it("dials nothing with no password stored", async () => {
+    const { router, popover, app } = await launched(anchorSynced(31), {
+      credential: null,
+    });
+
+    await openPanel();
+
+    expect(router.dialogues).toBe(0);
+    // And it does not raise the prompt on its own, either.
+    expect(latest(popover).sync.needsPassword).toBe(false);
+
+    app.stop();
+  });
+
+  it("dials nothing while the router is unreachable", async () => {
+    const { router, app } = await launched(anchorSynced(31), {
+      client: scriptedClient([OFFLINE, OFFLINE, OFFLINE]),
+    });
+
+    await openPanel();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("dials nothing before the first snapshot has landed", async () => {
+    const router = allowanceRouter(() =>
+      Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+    );
+    const app = startMenuBarApp({
+      configPath: configHolding(anchorSynced(31)),
+      client: { snapshot: () => new Promise<SnapshotResult>(() => undefined) },
+      popover: recordingPopover(),
+      allowance: router,
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    clickTray();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("never starts a dialogue on a poll tick alone", async () => {
+    const { router, app } = await launched(anchorSynced(31));
+
+    // The poller runs, the panel stays shut, and no auto-sync timer has come
+    // round yet: a poll on its own is not a reason to dial the carrier.
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(router.dialogues).toBe(0);
+
+    app.stop();
+  });
+
+  it("reports the automatic dialogue in the same status line a press uses", async () => {
+    const { popover, app } = await launched(anchorSynced(31), {
+      answer: () => Promise.resolve({ ok: false, reason: "busy" }),
+    });
+
+    await openPanel();
+
+    expect(latest(popover).sync.status).toMatch(/busy/i);
+    expect(latest(popover).sync.automatic).toBe(true);
+
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — choosing which Orange forfait is measured", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A router on the Orange network, so the poller reads the portal at all. */
+  function orangeClient(): { snapshot: () => Promise<SnapshotResult> } {
+    const taken = snapshot(5_830_718_387);
+
+    return {
+      snapshot: () =>
+        Promise.resolve({
+          online: true,
+          snapshot: {
+            ...taken,
+            carrier: { carrier: "ORANGE MG", id: "orange" },
+          },
+        }),
+    };
+  }
+
+  /** The two data forfaits of the live capture, both valid at once. */
+  const PORTAL_PAGE = {
+    account: { offer: "WiFiber", balanceAr: 0 },
+    forfaits: [
+      {
+        label: "Wifiber Go+ SSE",
+        nature: "Internet",
+        bundleType: "data",
+        consumedBytes: 7_370_000_000,
+      },
+      {
+        label: "Pass Internet 5 Go",
+        nature: "Internet",
+        bundleType: "data",
+        consumedBytes: 1_000_000_000,
+      },
+    ],
+  };
+
+  /** The portal, answering the same page every time it is asked. */
+  function stubPortal(): PortalSource {
+    return {
+      read: () => Promise.resolve({ state: "read", page: PORTAL_PAGE }),
+    };
+  }
+
+  /** What the config file on disk remembers as the chosen forfait. */
+  function storedLabel(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as {
+        orangeForfaitLabel?: unknown;
+      }
+    ).orangeForfaitLabel;
+  }
+
+  function launch(configPath: string) {
+    const popover = recordingPopover();
+
+    return {
+      popover,
+      app: startMenuBarApp({
+        configPath,
+        client: orangeClient(),
+        portal: stubPortal(),
+        popover,
+        credentials: storeHolding(CREDENTIAL),
+      }),
+    };
+  }
+
+  it("offers the alternative while the app is the one that chose", async () => {
+    const { popover, app } = launch(configHolding(null));
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).forfait?.label).toBe("Wifiber Go+ SSE");
+    expect(
+      latest(popover).forfait?.alternatives.map((one) => one.label),
+    ).toEqual(["Pass Internet 5 Go"]);
+
+    app.stop();
+  });
+
+  it("writes the chosen label down, so it survives a restart", async () => {
+    const configPath = configHolding(null);
+    const { app } = launch(configPath);
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setForfait("Pass Internet 5 Go");
+
+    expect(storedLabel(configPath)).toBe("Pass Internet 5 Go");
+
+    app.stop();
+  });
+
+  it("measures the chosen plan on the next poll, and stops offering", async () => {
+    const { popover, app } = launch(configHolding(null));
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setForfait("Pass Internet 5 Go");
+
+    // The next portal fetch is the one that acts on it: the choice is stored,
+    // and the selection is made where every poll makes it.
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(latest(popover).forfait?.label).toBe("Pass Internet 5 Go");
+    expect(latest(popover).allowance.planLabel).toBe("Pass Internet 5 Go");
+    expect(latest(popover).monthTotal).toBe("1.00 Go");
+    expect(latest(popover).forfait?.alternatives).toEqual([]);
+
+    app.stop();
+  });
+
+  it("ignores a blank label rather than clearing the stored choice", async () => {
+    const configPath = configHolding(null);
+    const { app } = launch(configPath);
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setForfait("Pass Internet 5 Go");
+    app.setForfait("   ");
+
+    expect(storedLabel(configPath)).toBe("Pass Internet 5 Go");
+
+    app.stop();
+  });
+});
+
+/** A stand-in for the devices window, so no window is ever created here. */
+function recordingDevices(): DevicesWindow & { opens: number } {
+  let open = false;
+
+  const devices = {
+    opens: 0,
+    open() {
+      devices.opens += 1;
+      open = true;
+    },
+    close() {
+      open = false;
+    },
+    isOpen: () => open,
+    destroy() {
+      open = false;
+    },
+  };
+
+  return devices;
+}
+
+/** The tray's context-menu template, as `main.ts` last built it. */
+function menuTemplate(): { label?: string; click?: () => void }[] {
+  const built = electron.buildFromTemplate.mock.calls.at(-1);
+
+  if (built === undefined) {
+    throw new Error("no context menu was built");
+  }
+
+  return built[0] as { label?: string; click?: () => void }[];
+}
+
+/** Picks the devices entry out of the menu and presses it. */
+function clickDevicesMenuItem(): void {
+  const item = menuTemplate().find(
+    (entry) => entry.label === DEVICES_MENU_LABEL,
+  );
+
+  if (item?.click === undefined) {
+    throw new Error(`the menu has no "${DEVICES_MENU_LABEL}" item`);
+  }
+
+  item.click();
+}
+
+describe("startMenuBarApp — the connected-devices window", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.appOn.mockClear();
+    electron.appQuit.mockClear();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("opens the window from a menu item, not from a second tray click", () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+    });
+
+    clickDevicesMenuItem();
+
+    expect(devices.opens).toBe(1);
+    expect(devices.isOpen()).toBe(true);
+
+    app.stop();
+  });
+
+  it("leaves Quit in the menu beside it", () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices: recordingDevices(),
+    });
+
+    expect(menuTemplate().some((entry) => entry.label === "Quit")).toBe(true);
+
+    app.stop();
+  });
+
+  it("does not quit the app when the devices window is the last one closed", () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+    });
+
+    clickDevicesMenuItem();
+    devices.close();
+
+    // Electron quits when the last window goes and nobody has said otherwise,
+    // and this app's real home is the menu bar, where there is no window at all.
+    const closed = electron.appOn.mock.calls.find(
+      ([event]) => event === "window-all-closed",
+    );
+
+    expect(closed).toBeDefined();
+    (closed?.[1] as () => void)();
+
+    expect(electron.appQuit).not.toHaveBeenCalled();
+
+    app.stop();
+  });
+
+  it("keeps polling after the devices window is closed", async () => {
+    const client = countingClient();
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client,
+      popover: recordingPopover(),
+      devices,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    clickDevicesMenuItem();
+    devices.close();
+
+    const before = client.calls;
+    await vi.advanceTimersByTimeAsync(POLL_MS * 2);
+
+    expect(client.calls).toBeGreaterThan(before);
+
+    app.stop();
+  });
+
+  it("releases the window when the app stops", () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+    });
+
+    clickDevicesMenuItem();
+    app.stop();
+
+    expect(devices.isOpen()).toBe(false);
   });
 });

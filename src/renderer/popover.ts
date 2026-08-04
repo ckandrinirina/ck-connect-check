@@ -38,12 +38,27 @@ export interface PopoverBridge {
    * not read it, convert it or judge it — that is all decided the other side.
    */
   setPlanLimit(value: string): void;
+  /** Hand the plan length over on exactly the same terms. */
+  setPlanDays(value: string): void;
+  /**
+   * Name the forfait the meter should measure from here on. The label is the
+   * carrier's own, passed through untouched: it is what the config stores and
+   * what the next portal read matches against.
+   */
+  chooseForfait(label: string): void;
 }
 
 declare global {
   interface Window {
     /** Called by `src/main/popover.ts` after every poll, and once on load. */
     applyPopoverModel(model: PopoverModel): void;
+    /**
+     * Called by `src/main/popover.ts` on every open, to put the page back on
+     * its main view. The window is hidden rather than destroyed between opens,
+     * so settings left showing would still be showing the next time the tray
+     * item is clicked — and the figures are what the panel is opened for.
+     */
+    resetPopoverView(): void;
     popoverBridge?: PopoverBridge;
   }
 }
@@ -55,22 +70,30 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     networkType: model.networkType,
     freshness: model.freshness.label,
     monthTotal: model.monthTotal,
-    monthDownload: model.monthDownload,
-    monthUpload: model.monthUpload,
     downloadRate: model.downloadRate,
     uploadRate: model.uploadRate,
     connectedDevices: model.connectedDevices,
     planLimitUnit: model.planLimit.unit,
     planLimitError: model.planLimit.error,
+    planDaysUnit: model.planDays.unit,
+    planDaysError: model.planDays.error,
+    planCapMessage: model.planCapPrompt?.message ?? "",
+    paceSustainable: model.pace?.sustainable ?? "",
+    paceAverage: model.pace?.meter?.average ?? "",
+    paceAfforded: model.pace?.meter?.afforded ?? "",
+    paceHint: model.pace?.hint ?? "",
     percent: model.progress.label,
     prompt: model.progress.prompt,
     allowanceRemaining: model.allowance.remaining,
+    allowanceCaption: model.allowance.remainingCaption,
     allowancePlan: model.allowance.planLabel,
     allowanceExpires: model.allowance.expires,
     allowanceDaysLeft: model.allowance.daysUntilExpiry,
     allowanceSynced: model.allowance.syncedAgo,
     allowanceNote: model.allowance.note,
+    forfaitNote: model.forfait?.note ?? "",
     syncStatus: model.sync.status,
+    notice: model.notice,
   };
 }
 
@@ -285,12 +308,77 @@ function fieldValue(selector: string): string {
   return document.querySelector<HTMLInputElement>(selector)?.value ?? "";
 }
 
+/*
+ * Both form lookups name the element type as well as the attribute. The model's
+ * two state flags land on `<html>` as `data-plan-limit` and `data-plan-days`,
+ * so a bare attribute selector matches the root element first and the form
+ * never gets its listener — the submit only arrived at all because it bubbles.
+ */
 function planLimitForm(): HTMLFormElement | null {
-  return document.querySelector<HTMLFormElement>("[data-plan-limit]");
+  return document.querySelector<HTMLFormElement>("form[data-plan-limit]");
 }
 
 function planLimitInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>("[data-plan-limit-input]");
+}
+
+function planDaysForm(): HTMLFormElement | null {
+  return document.querySelector<HTMLFormElement>("form[data-plan-days]");
+}
+
+function planDaysInput(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>("[data-plan-days-input]");
+}
+
+function planCapPrompt(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-plan-cap-prompt]");
+}
+
+function mainView(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-main-view]");
+}
+
+function settingsView(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-settings-view]");
+}
+
+function settingsToggle(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("[data-settings-toggle]");
+}
+
+/**
+ * Shows one of the panel's two views and hides the other.
+ *
+ * The pressed state is on the toggle rather than on a variable here: the button
+ * has to say which view it is offering anyway, so keeping the answer anywhere
+ * else would be a second copy of it that could disagree.
+ */
+function showSettings(open: boolean): void {
+  const toggle = settingsToggle();
+
+  if (toggle !== null) {
+    toggle.setAttribute("aria-pressed", String(open));
+  }
+
+  const main = mainView();
+
+  if (main !== null) {
+    main.hidden = open;
+  }
+
+  const settings = settingsView();
+
+  if (settings !== null) {
+    settings.hidden = !open;
+  }
+}
+
+function settingsAreOpen(): boolean {
+  return settingsToggle()?.getAttribute("aria-pressed") === "true";
+}
+
+function planCapConfirm(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>("[data-plan-cap-confirm]");
 }
 
 /**
@@ -355,6 +443,39 @@ function bindControls(): void {
       window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
     });
   }
+
+  const planDays = planDaysForm();
+
+  if (planDays !== null && planDays.dataset["bound"] !== "true") {
+    planDays.dataset["bound"] = "true";
+    planDays.addEventListener("submit", (event) => {
+      // The page must never navigate: it is the app, not a document.
+      event.preventDefault();
+
+      window.popoverBridge?.setPlanDays(fieldValue("[data-plan-days-input]"));
+    });
+  }
+
+  const settings = settingsToggle();
+
+  if (settings !== null && settings.dataset["bound"] !== "true") {
+    settings.dataset["bound"] = "true";
+    settings.addEventListener("click", () => {
+      showSettings(!settingsAreOpen());
+    });
+  }
+
+  const confirm = planCapConfirm();
+
+  if (confirm !== null && confirm.dataset["bound"] !== "true") {
+    confirm.dataset["bound"] = "true";
+    confirm.addEventListener("click", () => {
+      // Confirming is re-submitting: the field above already holds the stored
+      // cap, and the main process treats any successful entry as a
+      // confirmation. That is why there is no fifth message on the bridge.
+      window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
+    });
+  }
 }
 
 /**
@@ -378,6 +499,253 @@ function applyPlanLimit(model: PopoverModel): void {
     : "set";
 }
 
+/** The same, for the plan-length field beside it. */
+function applyPlanDays(model: PopoverModel): void {
+  const input = planDaysInput();
+
+  if (input === null || document.activeElement === input) {
+    return;
+  }
+
+  input.value = model.planDays.value;
+  input.setAttribute("aria-label", model.planDays.description);
+  document.documentElement.dataset["planDays"] = model.planDays.needsValue
+    ? "unset"
+    : "set";
+}
+
+/**
+ * Shows the new-plan confirmation, or takes it off the panel entirely.
+ *
+ * `hidden` rather than an empty box, for the reason the password prompt uses
+ * it: a bordered panel holding no words reads as something that failed to load.
+ */
+function applyPlanCapPrompt(model: PopoverModel): void {
+  const prompt = planCapPrompt();
+
+  if (prompt !== null) {
+    prompt.hidden = model.planCapPrompt === null;
+  }
+
+  const confirm = planCapConfirm();
+
+  if (confirm !== null && model.planCapPrompt !== null) {
+    confirm.textContent = model.planCapPrompt.confirmLabel;
+    confirm.setAttribute("aria-label", model.planCapPrompt.description);
+  }
+}
+
+/**
+ * Controls taken off the page, each with the comment left where it stood.
+ *
+ * Taken off rather than hidden: a control the carrier has nothing behind is one
+ * the user must not be able to operate, and `hidden` leaves an element in the
+ * document — still focusable by script, still reachable by keyboard in the
+ * cases where a stylesheet is not applied. Removing it is the only answer that
+ * is true whatever the CSS does.
+ *
+ * The comment is what makes it reversible. The SIM decides which controls the
+ * panel offers, and a SIM can be swapped without the app restarting, so a
+ * removed control has to know where to go back.
+ */
+const withdrawn = new Map<string, { node: Element; marker: Comment }>();
+
+/**
+ * Puts a control on the page, or takes it off.
+ *
+ * The marker's own connectedness is the state, rather than the map alone: the
+ * page can be replaced wholesale beneath this module — by a reload, and by
+ * every test that loads the markup afresh — and a map entry pointing at a
+ * document that no longer exists must not be mistaken for a control that is
+ * currently withdrawn.
+ */
+function setPresent(selector: string, wanted: boolean): void {
+  const held = withdrawn.get(selector);
+  const stands = held !== undefined && held.marker.isConnected;
+
+  if (wanted) {
+    if (stands) {
+      held.marker.replaceWith(held.node);
+    }
+
+    withdrawn.delete(selector);
+
+    return;
+  }
+
+  if (stands) {
+    return;
+  }
+
+  const node = document.querySelector(selector);
+
+  if (node === null) {
+    return;
+  }
+
+  const marker = document.createComment(selector);
+
+  node.replaceWith(marker);
+  withdrawn.set(selector, { node, marker });
+}
+
+/**
+ * The controls whose presence the carrier decides, by the flag that decides
+ * each. The plan length is two elements — the field and the line that refuses
+ * it — because a complaint about a field that is not there is not a complaint
+ * about anything.
+ *
+ * The expiry row is not a control at all but it is withdrawn by the same
+ * machinery, and for the same reason: a carrier that states no expiry leaves a
+ * row that reads "— · —" to the eye and reads out in full to a screen reader.
+ */
+const CARRIER_CONTROLS: { flag: keyof PopoverModel["controls"]; of: string }[] =
+  [
+    { flag: "sync", of: "[data-sync]" },
+    { flag: "sync", of: "[data-sync-row]" },
+    { flag: "planDays", of: "form[data-plan-days]" },
+    { flag: "planDays", of: '[data-field="planDaysError"]' },
+    { flag: "expiry", of: "[data-validity-row]" },
+  ];
+
+/** Draws the control set this carrier has anything behind, and no more. */
+function applyControls(model: PopoverModel): void {
+  for (const control of CARRIER_CONTROLS) {
+    setPresent(control.of, model.controls[control.flag]);
+  }
+}
+
+/**
+ * Lists the plans the meter could measure instead, or takes the offer away.
+ *
+ * Rebuilt only when the labels themselves change. A poll pushes a fresh model
+ * every couple of seconds while the panel is open, and replacing the buttons
+ * under a pointer already on one is how a click lands on nothing.
+ */
+function applyForfait(model: PopoverModel): void {
+  const host = document.querySelector<HTMLElement>("[data-forfait-choice]");
+  const list = document.querySelector<HTMLElement>(
+    "[data-forfait-alternatives]",
+  );
+
+  if (host === null || list === null) {
+    return;
+  }
+
+  const alternatives = model.forfait?.alternatives ?? [];
+
+  host.hidden = alternatives.length === 0;
+
+  const labels = alternatives.map((option) => option.label).join("\n");
+
+  if (list.dataset["labels"] === labels) {
+    return;
+  }
+
+  list.dataset["labels"] = labels;
+  list.replaceChildren(
+    ...alternatives.map((option) => {
+      const button = document.createElement("button");
+
+      button.type = "button";
+      button.className = "forfait-alternative";
+      button.dataset["forfaitLabel"] = option.label;
+      button.textContent = option.label;
+      button.setAttribute("aria-label", option.description);
+      button.addEventListener("click", () => {
+        // The label as the carrier spells it. Which plan that names, and
+        // whether it is still on the page, are both decided the other side.
+        window.popoverBridge?.chooseForfait(option.label);
+      });
+
+      return button;
+    }),
+  );
+}
+
+/** A share of the meter's track, 0 to 1, as the CSS length it is drawn at. */
+function trackShare(share: number): string {
+  return `${(share * 100).toFixed(2)}%`;
+}
+
+/**
+ * Draws the meter, or takes it off the row.
+ *
+ * The only arithmetic is turning the model's two shares into percentages of a
+ * track whose width only the stylesheet knows — the same bargain the dial's
+ * sweep makes with the ring's circumference. Where the tick sits is the model's
+ * business, not a number this file happens to agree with.
+ */
+function applyPaceMeter(model: PopoverModel): void {
+  const host = document.querySelector<HTMLElement>("[data-pace-meter]");
+
+  if (host === null) return;
+
+  const meter = model.pace?.meter ?? null;
+
+  host.hidden = meter === null;
+
+  if (meter === null) return;
+
+  // The bar is a picture of the two numerals beside it, so it says in words
+  // what it says in hue: a greyscale screenshot still reads.
+  host.setAttribute("aria-label", meter.description);
+
+  const fill = host.querySelector<HTMLElement>("[data-pace-fill]");
+
+  if (fill !== null) {
+    fill.style.width = trackShare(meter.fill);
+  }
+
+  const tick = host.querySelector<HTMLElement>("[data-pace-tick]");
+
+  if (tick !== null) {
+    tick.style.left = trackShare(meter.tick);
+  }
+}
+
+/**
+ * Shows the pace row, or takes it off the panel entirely.
+ *
+ * `hidden` rather than an empty row: the fields are already blank when there is
+ * no reading, but a section that still holds its space open reads as a figure
+ * the app failed to produce, which is precisely what it is not.
+ *
+ * The band's state goes on the section rather than on the bar, so the
+ * stylesheet decides what `safe`, `warning` and `over` look like — nothing here
+ * knows a colour.
+ */
+function applyPace(model: PopoverModel): void {
+  const row = document.querySelector<HTMLElement>("[data-pace]");
+
+  if (row === null) return;
+
+  row.hidden = model.pace === null;
+
+  if (model.pace === null || model.pace.state === "") {
+    delete row.dataset["paceState"];
+  } else {
+    row.dataset["paceState"] = model.pace.state;
+  }
+
+  applyPaceMeter(model);
+}
+
+/**
+ * Shows the line saying why there is no figure, or takes it off the panel.
+ *
+ * `hidden` rather than an empty row, for the reason the pace section uses it:
+ * the row carries a rule and a margin of its own, and a rule with nothing under
+ * it reads as a sentence that failed to load.
+ */
+function applyNotice(model: PopoverModel): void {
+  const row = document.querySelector<HTMLElement>("[data-notice-row]");
+
+  if (row !== null) {
+    row.hidden = model.notice === "";
+  }
+}
+
 /** Puts the sync state on the button, the prompt and the root element. */
 function applySync(model: PopoverModel): void {
   const { sync, allowance } = model;
@@ -397,6 +765,15 @@ function applySync(model: PopoverModel): void {
     prompt.hidden = !sync.needsPassword;
   }
 
+  // The same flag, worn by the control that now stands between the user and
+  // that form: a password nobody is asked for is a panel that silently cannot
+  // sync. The marker goes as soon as the form has nothing left to ask.
+  const settings = settingsToggle();
+
+  if (settings !== null) {
+    settings.dataset["attention"] = String(sync.needsPassword);
+  }
+
   document.documentElement.dataset["allowance"] = allowance.available
     ? allowance.stale
       ? "stale"
@@ -405,6 +782,9 @@ function applySync(model: PopoverModel): void {
 }
 
 window.applyPopoverModel = (model: PopoverModel): void => {
+  // Before anything is filled in: a control that has just come back has to be
+  // on the page in time for this model's own strings to reach it.
+  applyControls(model);
   bindControls();
 
   const fields = fieldsOf(model);
@@ -445,7 +825,17 @@ window.applyPopoverModel = (model: PopoverModel): void => {
 
   applySignal(model);
   applyPlanLimit(model);
+  applyPlanDays(model);
+  applyPlanCapPrompt(model);
+  applyPace(model);
+  applyForfait(model);
+  applyNotice(model);
   applySync(model);
+};
+
+window.resetPopoverView = (): void => {
+  bindControls();
+  showSettings(false);
 };
 
 // The page is static and the script is deferred, so the controls exist by now.

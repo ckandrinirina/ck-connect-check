@@ -1,6 +1,6 @@
 {
   "name": "ck-connect-check",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "macOS menu bar app showing mobile data usage from a Huawei HiLink router",
   "type": "module",
@@ -11,7 +11,7 @@
   "scripts": {
     "start": "npm run build && electron .",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html src/renderer/popover.css dist/renderer/ && mkdir -p dist/assets/tray && cp assets/tray/*Template*.png dist/assets/tray/",
+    "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html src/renderer/popover.css src/renderer/devices.html dist/renderer/ && mkdir -p dist/assets/tray && cp assets/tray/*Template*.png dist/assets/tray/",
     "lint": "eslint .",
     "icon": "electron --force-device-scale-factor=1 scripts/make-icon.mjs && electron --force-device-scale-factor=1 scripts/make-tray-icons.mjs",
     "package": "npm run build && electron-forge package"

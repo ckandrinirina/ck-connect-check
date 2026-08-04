@@ -20,6 +20,12 @@ import {
 } from "../domain/format.js";
 import { peak, type RateSample } from "../domain/history.js";
 import { networkTypeLabel } from "../domain/network-type.js";
+import { readMonthlyPace, readPace } from "../domain/pace.js";
+import type {
+  MonthlyPaceReading,
+  PaceReading,
+  PaceState,
+} from "../domain/pace.js";
 import {
   systemClock,
   usageState,
@@ -28,13 +34,18 @@ import {
 } from "../domain/quota.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
 import {
+  confirmedPlanLimit,
   planLimitInGigaoctets,
+  type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
+import type { PortalReading, PortalStatus } from "./poller.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { RouterRefusal, SnapshotResult } from "../hilink/client.js";
 import type { RouterSnapshot } from "../hilink/types.js";
+import type { OrangePortalResult } from "../orange/portal.js";
+import type { OrangeForfait } from "../orange/types.js";
 
 /**
  * Shown wherever there is nothing to show — no reading yet, or no plan limit.
@@ -47,6 +58,9 @@ const MILLISECONDS_PER_SECOND = 1_000;
 
 /** The unit the plan-size field is read in, spelled once. */
 const PLAN_LIMIT_UNIT = "Go";
+
+/** The plan-length field's unit, spelled once here rather than in the page. */
+const PLAN_DAYS_UNIT = "days";
 
 /** A reading that succeeded, remembered so an unreachable router still has something to show. */
 export interface UsageReading {
@@ -126,6 +140,14 @@ export interface PopoverAllowance {
   planLabel: string;
   /** Exact volume left, e.g. `"90.00 Go"`, or a dash. */
   remaining: string;
+  /**
+   * What the figure above is, in the words under it. Two carriers state two
+   * different things: one says outright how much is left, the other says only
+   * how much was used and leaves the remainder to be worked out against a cap
+   * the user typed. Captioning the second as the carrier's own statement would
+   * put a sentence in the carrier's mouth that it never said.
+   */
+  remainingCaption: string;
   /** Expiry as a date, e.g. `"12/08/2026"`, or a dash. */
   expires: string;
   /** Time left before the allowance expires, e.g. `"16 days"`, or a dash. */
@@ -164,6 +186,13 @@ export interface PopoverSync {
   buttonDescription: string;
   /** The line under the button: progress, failure, or empty when idle. */
   status: string;
+  /**
+   * True when the dialogue behind {@link PopoverSync.status} started on its
+   * own rather than from a press. The line reads the same either way — the
+   * steps and the failures are the same steps and failures — but a panel that
+   * lights up unbidden should say that it did.
+   */
+  automatic: boolean;
 }
 
 /**
@@ -187,10 +216,250 @@ export interface PopoverPlanLimit {
   description: string;
 }
 
+/**
+ * The plan-length field, in the same shape as {@link PopoverPlanLimit}. The two
+ * sit beside each other on the panel because they are the same kind of thing:
+ * the only two figures the carrier never states, so the user has to.
+ */
+export interface PopoverPlanDays {
+  /** The stored length as bare digits for the input, e.g. `"30"`. Empty when unset. */
+  value: string;
+  /** The unit the field is read in — spelled here, never in the renderer. */
+  unit: string;
+  /** True while no length is stored, so the field can be shown as fillable. */
+  needsValue: boolean;
+  /** Why the last entry was refused, as a sentence. Empty when it was not. */
+  error: string;
+  /** The field's accessible name. */
+  description: string;
+}
+
+/**
+ * The bar the band is drawn as, or absent below tier 3.
+ *
+ * A band is a magnitude with three named regions, which a bar states faster
+ * than a sentence. The two shares are geometry rather than text — the third
+ * exception to the no-numbers rule, alongside {@link PopoverHistory} and the
+ * dial's sweep — because only the renderer knows how wide its own track is.
+ * Everything else here is already spelled the way it appears.
+ */
+export interface PopoverPaceMeter {
+  /**
+   * How much of the drawn track to fill, 0 to 1. Clamped at the full track, so
+   * a runaway month is visibly pinned rather than running off the panel; the
+   * numerals beside it stay exact, which is the part that must not be rounded
+   * away.
+   */
+  fill: number;
+  /**
+   * Where the afforded figure sits on that same track, 0 to 1. Fill past this
+   * mark is what says "over" without relying on hue, so it comes from here
+   * rather than being a number the stylesheet happens to agree with.
+   */
+  tick: number;
+  /** `safe`, `warning` or `over` — the band, for the stylesheet. */
+  state: PaceState;
+  /** `"6.10 Go"` — what is actually being spent a day. */
+  average: string;
+  /** `"5.00 Go"` — what the plan affords a day. */
+  afforded: string;
+  /** The meter's accessible name: the two volumes, and which band they fall in. */
+  description: string;
+}
+
+/**
+ * The pace row, in whatever detail the stored figures allow.
+ *
+ * Every field is a finished string, empty when its tier has not been reached —
+ * so the renderer shows what is there and hides what is not, and never decides
+ * which tier it is looking at by inspecting the arithmetic.
+ */
+export interface PopoverPace {
+  /** How much of the reading is available: 1 the anchor, 2 the cap, 3 the length. */
+  tier: number;
+  /**
+   * `"3.00 Go a day left to spend until 06/08/2026"`, and empty wherever
+   * {@link meter} is drawn.
+   *
+   * The two face opposite directions in time. The meter is a diagnosis — what
+   * has been spent a day against what the plan affords a day, both looking
+   * back — and this is a prescription, what is left to spend a day from now.
+   * Side by side they read as one contradiction rather than two answers, and
+   * where the meter can be drawn it is the reading that says what is needed.
+   * The prescription is given up knowingly: at tier 3 the panel says the
+   * connection is being used too fast without naming the figure that would
+   * correct it.
+   *
+   * Below tier 3 there is no meter, and this line is the whole pace row — so
+   * it says *left to spend* out loud, having nothing beside it to be read
+   * against. That includes T-42's unconfirmed cap, which falls back to tier 1
+   * with the meter off the panel entirely.
+   */
+  sustainable: string;
+  /** Tier 3: `safe`, `warning` or `over`, for the stylesheet. Empty below it. */
+  state: string;
+  /**
+   * Tiers 1 and 2: which setting would sharpen this, so the reason the band is
+   * missing sits next to its absence. Empty at tier 3, where nothing is.
+   */
+  hint: string;
+  /**
+   * Tier 3: the band drawn as a bar. Null below it — there is no afforded
+   * figure to measure against, so there is nothing to draw a track from.
+   */
+  meter: PopoverPaceMeter | null;
+}
+
+/**
+ * The ask that replaces the dial when a sync has brought back a plan the stored
+ * cap cannot describe.
+ *
+ * Present only while the cap is in doubt: with it on screen the panel keeps the
+ * tier 1 pace, which needs no cap, and shows neither a share nor a band rather
+ * than deriving either from a figure the carrier has contradicted.
+ */
+export interface PopoverPlanCapPrompt {
+  /** What happened and what to do about it, in one sentence. */
+  message: string;
+  /** What the confirm control says: `"Confirm"`. */
+  confirmLabel: string;
+  /** That control's accessible name — a sentence, not a word. */
+  description: string;
+}
+
+/**
+ * Which of the panel's controls the carrier has anything behind.
+ *
+ * A control the user can reach but not use is worse than the space it costs: a
+ * Sync button that syncs nothing and a plan length the calendar overrules both
+ * invite an action that does nothing. So the panel does not draw them at all
+ * rather than greying them out — a disabled control still says the app might
+ * have done the thing, and a hidden one is still reachable by keyboard.
+ */
+export interface PopoverControls {
+  /** Whether the Sync button and its status line belong on the panel. */
+  sync: boolean;
+  /** Whether the plan-length field belongs in the settings view. */
+  planDays: boolean;
+  /**
+   * Whether the expiry row belongs on the panel — the carrier states a date
+   * the allowance runs to. A row that can only ever read "— · —" costs a line
+   * of the panel to say nothing, and says it out loud to a screen reader.
+   */
+  expiry: boolean;
+}
+
+/** Every control the panel has — what an anchored carrier offers. */
+const ALL_CONTROLS: PopoverControls = {
+  sync: true,
+  planDays: true,
+  expiry: true,
+};
+
+/**
+ * What a carrier the app cannot place offers. `createAllowanceSync` already
+ * refuses to dial on one — there is no allowance source to dial for — so the
+ * button is a control that does nothing when pressed, and the row it stands in
+ * is exactly the room the line saying so needs.
+ */
+const UNPLACED_CONTROLS: PopoverControls = {
+  sync: false,
+  planDays: true,
+  expiry: true,
+};
+
+/**
+ * What Orange offers. No absence is a limitation of the app: there is no
+ * dialogue to press for, since the portal answers a plain `GET`, the calendar
+ * month states the period any typed length would contradict, and the page
+ * states no expiry at all — so the row that would carry one is not drawn
+ * rather than drawn empty.
+ */
+const PORTAL_CONTROLS: PopoverControls = {
+  sync: false,
+  planDays: false,
+  expiry: false,
+};
+
+/** One forfait the meter could be pointed at instead of the current one. */
+export interface PopoverForfaitOption {
+  /** The label the portal gave it, which is also what the choice is stored as. */
+  label: string;
+  /** The control's accessible name — a sentence, not a bare name. */
+  description: string;
+}
+
+/**
+ * The plan the carrier's own page says it is measuring.
+ *
+ * The user asked for the app to detect the plan rather than be told it, so the
+ * detected name on the panel is the evidence detection worked. The
+ * alternatives are the one case where the name alone is not enough: a plan
+ * silently chosen from several is a guess presented as a decision unless the
+ * panel says so and offers the others.
+ */
+export interface PopoverForfait {
+  /** The plan being measured, as the portal names it. A dash when it named none. */
+  label: string;
+  /** Why a choice is being offered. Empty when none is. */
+  note: string;
+  /** The plans the meter could measure instead. Empty unless the app chose alone. */
+  alternatives: PopoverForfaitOption[];
+}
+
+/**
+ * What the panel says when it picked and the user did not. Short on purpose:
+ * the alternatives beneath it say the rest, and there are 320 px to say it in.
+ */
+const FORFAIT_PICKED_NOTE = "Picked for you from several plans.";
+
+/**
+ * The plan the portal named, and the ones it did not.
+ *
+ * The offer is gated on both halves of {@link ForfaitSelection}: several
+ * candidates, and a selection the app made rather than the user. Either alone
+ * is not worth a control — a single forfait has no alternative to offer, and a
+ * remembered one was already decided.
+ *
+ * `offering` is the third gate, and it is the panel's rather than the page's:
+ * wherever there is a notice to show, every alternative is a dead control.
+ * `selectForfait` only ever remembers a data forfait, so a page that listed
+ * none has nothing a press could point the meter at, and a page that could not
+ * be read cannot show the effect of a choice either.
+ */
+function buildForfait(
+  reading: PortalReading,
+  offering: boolean,
+): PopoverForfait {
+  const { forfait, candidates, remembered } = reading;
+  const label =
+    forfait === null || forfait.label === "" ? NO_VALUE : forfait.label;
+
+  if (!offering || candidates.length <= 1 || remembered) {
+    return { label, note: "", alternatives: [] };
+  }
+
+  return {
+    label,
+    note: FORFAIT_PICKED_NOTE,
+    alternatives: candidates
+      .filter((candidate) => candidate.label !== forfait?.label)
+      .map((candidate) => ({
+        label: candidate.label,
+        description: `Measure ${candidate.label} instead`,
+      })),
+  };
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
-  monthDownload: string;
-  monthUpload: string;
+  /**
+   * The plan consumed this month, as the carrier counts it.
+   *
+   * There is deliberately no download/upload split beside it: the plan is
+   * billed on their sum, which this figure and the carrier's own remaining
+   * already state twice over, and the panel had outgrown its window.
+   */
   monthTotal: string;
   progress: PopoverProgress;
   /** Live throughput, e.g. `"2.4 Ko/s"`. */
@@ -225,8 +494,39 @@ export interface PopoverModel {
   allowance: PopoverAllowance;
   /** The plan-size field, and whatever the last entry has to answer for. */
   planLimit: PopoverPlanLimit;
+  /** The plan-length field, beside it, on the same terms. */
+  planDays: PopoverPlanDays;
+  /**
+   * The new-plan confirmation, or null while the stored cap is believed. Null
+   * is the ordinary state: this appears only after a sync contradicted the cap.
+   */
+  planCapPrompt: PopoverPlanCapPrompt | null;
+  /**
+   * The pace under the dial, or null when there is nothing honest to say — a
+   * rate over a period nobody stated is the same lie the dial refuses to draw
+   * before a sync.
+   */
+  pace: PopoverPace | null;
   /** The Sync button's state, and whatever the last press has to say. */
   sync: PopoverSync;
+  /** Which of those controls the panel should draw at all, on this carrier. */
+  controls: PopoverControls;
+  /**
+   * The plan the carrier's own page named, or null on a carrier with no such
+   * page — where the plan's name arrives with the allowance instead.
+   */
+  forfait: PopoverForfait | null;
+  /**
+   * Why there is no figure, in one sentence. Empty whenever there is one.
+   *
+   * A line rather than a dialog or a thrown error: the app runs unattended in
+   * the menu bar, where there is nobody to dismiss a box and nowhere for an
+   * exception to go. Each cause gets its own wording, and each names what was
+   * actually observed — the HTTP status where there was one, the count of
+   * plans where the page parsed, the network name where the router gave one —
+   * because "it failed" tells the user nothing they can act on.
+   */
+  notice: string;
 }
 
 export interface PopoverInput {
@@ -242,8 +542,18 @@ export interface PopoverInput {
   history?: readonly RateSample[];
   /** Where the Sync button has got to. Idle when the caller has no sync running. */
   sync?: SyncState;
+  /**
+   * Where the Orange portal stands, read only when the SIM is on Orange.
+   *
+   * Deliberately separate from {@link PopoverInput.result}: the router and the
+   * portal are two sources that fail on their own terms, and flattening them
+   * into one "offline" would tell the user to fix the wrong thing.
+   */
+  portal?: PortalStanding;
   /** Why the last typed plan size was refused, if one was. */
   planLimitProblem?: PlanLimitRefusal | undefined;
+  /** Why the last typed plan length was refused, if one was. */
+  planDaysProblem?: PlanDaysRefusal | undefined;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -272,38 +582,83 @@ function signalDescription(bars: number, maxBars: number): string {
     : `Signal ${String(bars)} of ${String(maxBars)}`;
 }
 
+/** What the panel says where the ring used to be, once the cap is in doubt. */
+const PLAN_CAP_PROMPT = "This looks like a new plan — confirm its size.";
+
+/**
+ * The one thing a share always needs, in the words the panel shows. Spelled
+ * once because both carriers reach it: the cap is the figure neither a USSD
+ * reply nor the portal ever states.
+ */
+const SET_LIMIT_PROMPT = "Set a plan limit to see how much of it is left.";
+
+/** The same, for a screen reader. */
+const NO_LIMIT_DESCRIPTION = "No plan limit set, so the share used is unknown";
+
 /**
  * Why there is no dial, in the words the panel shows. Each case names the one
  * thing the user can do about it — an "unavailable" ring with no instruction is
  * just a hole in the panel.
+ *
+ * An unconfirmed cap is checked before a missing one, because a stored cap in
+ * doubt is not a cap nobody typed: telling the user to set one they have
+ * already set names the wrong fix.
  */
 function dialPrompt(
   allowance: AllowanceReading | null,
   limitBytes: number | null,
+  capUnconfirmed: boolean,
 ): string {
   if (allowance === null) {
     return "Sync to read how much of your plan is left.";
   }
+  if (capUnconfirmed) {
+    return PLAN_CAP_PROMPT;
+  }
   if (limitBytes === null) {
-    return "Set a plan limit to see how much of it is left.";
+    return SET_LIMIT_PROMPT;
   }
 
   return "That figure is out of date — sync to refresh the dial.";
 }
 
-/** The same three cases, for a screen reader. */
+/** The same four cases, for a screen reader. */
 function dialDescription(
   allowance: AllowanceReading | null,
   limitBytes: number | null,
+  capUnconfirmed: boolean,
 ): string {
   if (allowance === null) {
     return "No allowance synced from the carrier yet";
   }
+  if (capUnconfirmed) {
+    return "The plan size needs confirming before the share can be shown";
+  }
   if (limitBytes === null) {
-    return "No plan limit set, so the share used is unknown";
+    return NO_LIMIT_DESCRIPTION;
   }
 
   return "The last synced figure can no longer be trusted";
+}
+
+/**
+ * The confirmation, or null while the cap is believed.
+ *
+ * The wording names the cause rather than the symptom: a user who topped up
+ * knows they did, and "confirm its size" is the one action that clears it. The
+ * field beside it already holds the stored cap, so an unchanged plan size is
+ * confirmed with a single press rather than retyped.
+ */
+function buildPlanCapPrompt(
+  capUnconfirmed: boolean,
+): PopoverPlanCapPrompt | null {
+  if (!capUnconfirmed) return null;
+
+  return {
+    message: `${PLAN_CAP_PROMPT} The dial and the pace stay hidden until it is.`,
+    confirmLabel: "Confirm",
+    description: "Confirm the plan size shown in the field beside this",
+  };
 }
 
 function buildFreshness(
@@ -334,6 +689,20 @@ function formatDate(date: Date): string {
   return `${day}/${month}/${date.getFullYear()}`;
 }
 
+/**
+ * The day an expiry runs *through*, which is the day the panel prints.
+ *
+ * `expiresAt` is the midnight that ends the last valid day — an exclusive upper
+ * bound, which is what every span measured against it wants: the period start,
+ * the days remaining, the expiry check. Printed as-is it names the day after
+ * the one the carrier stated, and an app that contradicts the carrier's own SMS
+ * is the unreliability the anchor exists to remove. So the display steps back
+ * to the last valid moment; the stored instant stays the single one it was.
+ */
+function formatLastValidDay(expiresAt: Date): string {
+  return formatDate(new Date(expiresAt.getTime() - 1));
+}
+
 /** Why a marked figure is marked, in the words the panel shows. */
 function staleNote(reading: AllowanceReading): string {
   if (reading.staleReason === "counter-reset") {
@@ -346,12 +715,26 @@ function staleNote(reading: AllowanceReading): string {
   return "";
 }
 
+/**
+ * The caption where the carrier stated the remaining volume itself, over the
+ * dialogue the anchor was taken from.
+ */
+const STATED_REMAINING_CAPTION = "left with the carrier";
+
+/**
+ * The caption where it was worked out rather than stated. Orange's page gives
+ * the consumed volume and nothing else, so what is left is `cap − consumed`
+ * against a cap the user typed — the user's own plan, and their own figure.
+ */
+const DERIVED_REMAINING_CAPTION = "left on your plan";
+
 /** The panel before the first sync: an allowance section with nothing in it. */
-function noAllowance(): PopoverAllowance {
+function noAllowance(remainingCaption: string): PopoverAllowance {
   return {
     available: false,
     planLabel: NO_VALUE,
     remaining: NO_VALUE,
+    remainingCaption,
     expires: NO_VALUE,
     daysUntilExpiry: NO_VALUE,
     stale: false,
@@ -365,7 +748,7 @@ function buildAllowance(
   reading: AllowanceReading | null,
   now: Date,
 ): PopoverAllowance {
-  if (reading === null) return noAllowance();
+  if (reading === null) return noAllowance(STATED_REMAINING_CAPTION);
 
   const age = formatDuration(
     (now.getTime() - reading.syncedAt.getTime()) / MILLISECONDS_PER_SECOND,
@@ -375,8 +758,12 @@ function buildAllowance(
     available: true,
     planLabel: reading.planLabel === "" ? NO_VALUE : reading.planLabel,
     remaining: formatBytes(reading.remainingBytes),
+    // Stated by the carrier over the dialogue, not derived from anything.
+    remainingCaption: STATED_REMAINING_CAPTION,
     expires:
-      reading.expiresAt === null ? NO_VALUE : formatDate(reading.expiresAt),
+      reading.expiresAt === null
+        ? NO_VALUE
+        : formatLastValidDay(reading.expiresAt),
     daysUntilExpiry:
       reading.daysUntilExpiry === null
         ? NO_VALUE
@@ -441,6 +828,9 @@ function buildSync(state: SyncState, attention: boolean): PopoverSync {
   return {
     busy,
     attention,
+    automatic:
+      (state.phase === "running" || state.phase === "failed") &&
+      state.automatic === true,
     needsPassword: state.phase === "needs-password",
     buttonLabel: busy ? "Syncing…" : "Sync",
     buttonDescription: busy
@@ -485,6 +875,138 @@ function buildPlanLimit(
   };
 }
 
+/**
+ * One sentence per refusal, on the same terms as the cap's. A fraction gets its
+ * own line rather than being folded into "not a number": the user typed a
+ * perfectly good number, and the thing to say is which kind is wanted.
+ */
+const PLAN_DAYS_ERROR_TEXT: Record<PlanDaysRefusal, string> = {
+  blank: "Enter how many days your plan runs for.",
+  "not-a-number": "That is not a number — enter the length in days, like 30.",
+  "not-positive": "A plan has to last at least a day.",
+  "not-whole": "Enter whole days, like 30.",
+};
+
+/** The plan-length field for one stored period, and the last entry's complaint. */
+function buildPlanDays(
+  days: number | null,
+  problem: PlanDaysRefusal | undefined,
+): PopoverPlanDays {
+  return {
+    value: days === null ? "" : String(days),
+    unit: PLAN_DAYS_UNIT,
+    needsValue: days === null,
+    error: problem === undefined ? "" : PLAN_DAYS_ERROR_TEXT[problem],
+    description: "How many days your plan runs for",
+  };
+}
+
+/**
+ * The band as the user reads it. A word rather than a colour alone: the colour
+ * is the fast answer, and the word is the one that survives a colourblind eye
+ * and an accessible label.
+ */
+const PACE_BAND_TEXT: Record<PaceState, string> = {
+  safe: "On track",
+  warning: "A little fast",
+  over: "Too fast",
+};
+
+/**
+ * How wide the meter is drawn, in multiples of the afforded figure. Twice, so
+ * the tick sits at the middle and an overshoot has somewhere to go: a pace of 8
+ * on a track exactly one budget wide would be indistinguishable from a pace of
+ * 2, and on an unclamped one it would leave the panel.
+ */
+const PACE_METER_SPAN = 2;
+
+/**
+ * The four figures a meter is drawn from, whichever carrier stated them. YAS
+ * reaches them at tier 3 and Orange from the calendar month, and the bar is the
+ * same bar either way — the bands are the one thing the two readings share.
+ */
+type PaceBands = Pick<
+  PaceReading,
+  "pace" | "averagePerDay" | "affordedPerDay" | "state"
+>;
+
+/**
+ * The band drawn as a bar, or null below tier 3.
+ *
+ * Every tier 3 field is read together rather than trusting {@link
+ * PaceReading.tier}: the four are filled by the same branch, so a null in any
+ * of them is the same absence, and reading them is what convinces the compiler
+ * as well as the reader.
+ */
+function buildPaceMeter(reading: PaceBands): PopoverPaceMeter | null {
+  const { pace, averagePerDay, affordedPerDay, state } = reading;
+
+  if (
+    pace === null ||
+    averagePerDay === null ||
+    affordedPerDay === null ||
+    state === null
+  ) {
+    return null;
+  }
+
+  const average = formatBytes(averagePerDay);
+  const afforded = formatBytes(affordedPerDay);
+
+  return {
+    // Clamped for drawing only. A negative pace cannot arise — both sides of
+    // the ratio are volumes — but a bar drawn from one would run backwards.
+    fill: Math.min(Math.max(pace, 0), PACE_METER_SPAN) / PACE_METER_SPAN,
+    tick: 1 / PACE_METER_SPAN,
+    state,
+    average,
+    afforded,
+    description: `${average} a day against ${afforded} a day budgeted — ${PACE_BAND_TEXT[state]}`,
+  };
+}
+
+/**
+ * What would sharpen a reading that has not reached tier 3, named so the reason
+ * the band is missing sits beside its absence — both settings are fields on
+ * this same panel.
+ */
+const PACE_HINT_TEXT: Record<number, string> = {
+  1: "Set your plan size to see how much of it is gone.",
+  2: "Set how long your plan lasts to see whether that is fast.",
+};
+
+/**
+ * The pace row for one reading, or null when there is no reading.
+ *
+ * `expiresAt` comes from the allowance rather than from the pace: the pace
+ * carries the days left, which is what it divides by, and the row states the
+ * date those days run to. A reading with no date behind it cannot exist —
+ * `readPace` already refuses one — so a null here is null throughout.
+ */
+function buildPace(
+  reading: PaceReading | null,
+  expiresAt: Date | null,
+): PopoverPace | null {
+  if (reading === null || expiresAt === null) return null;
+
+  const meter = buildPaceMeter(reading);
+
+  return {
+    tier: reading.tier,
+    // One decision, read twice: the line is exactly the meter's absence. Both
+    // fields come from `meter` rather than from the tier, because the tier is
+    // not the question — T-42's unconfirmed cap falls back to tier 1 and draws
+    // no meter, and there the line is the only pace reading the panel has.
+    sustainable:
+      meter === null
+        ? `${formatBytes(reading.sustainablePerDay)} a day left to spend until ${formatLastValidDay(expiresAt)}`
+        : "",
+    state: reading.state ?? "",
+    hint: PACE_HINT_TEXT[reading.tier] ?? "",
+    meter,
+  };
+}
+
 function buildHistory(samples: readonly RateSample[]): PopoverHistory {
   return {
     download: samples.map((sample) => sample.downloadBytesPerSecond),
@@ -500,10 +1022,11 @@ function emptyModel(
   history: PopoverHistory,
   sync: PopoverSync,
   planLimit: PopoverPlanLimit,
+  planDays: PopoverPlanDays,
+  pace: PopoverPace | null,
+  planCapPrompt: PopoverPlanCapPrompt | null,
 ): PopoverModel {
   return {
-    monthDownload: NO_VALUE,
-    monthUpload: NO_VALUE,
     monthTotal: NO_VALUE,
     progress: buildDial(null, null, warnThresholdPercent),
     downloadRate: NO_VALUE,
@@ -518,9 +1041,18 @@ function emptyModel(
     networkType: NO_VALUE,
     freshness,
     history,
-    allowance: noAllowance(),
+    allowance: noAllowance(STATED_REMAINING_CAPTION),
     planLimit,
+    planDays,
+    planCapPrompt,
+    pace,
     sync,
+    // No reading has named a carrier, so nothing has stood a control down.
+    controls: ALL_CONTROLS,
+    forfait: null,
+    // Nothing has been read, so nothing has gone wrong: the dial's own prompt
+    // already says the panel is waiting rather than failing.
+    notice: "",
   };
 }
 
@@ -538,6 +1070,7 @@ function buildDial(
   allowance: AllowanceReading | null,
   limitBytes: number | null,
   warnThresholdPercent: number,
+  capUnconfirmed = false,
 ): PopoverProgress {
   const percent = allowance?.percentUsed ?? null;
   const state = usageState(percent, warnThresholdPercent);
@@ -547,8 +1080,8 @@ function buildDial(
       available: false,
       label: NO_VALUE,
       sweep: 0,
-      prompt: dialPrompt(allowance, limitBytes),
-      description: dialDescription(allowance, limitBytes),
+      prompt: dialPrompt(allowance, limitBytes, capUnconfirmed),
+      description: dialDescription(allowance, limitBytes, capUnconfirmed),
       state,
     };
   }
@@ -564,6 +1097,469 @@ function buildDial(
     prompt: "",
     description: `${formatPercent(percent)} of the plan used, ${used} so far`,
     state,
+  };
+}
+
+/**
+ * The half of the panel the carrier decides: what the plan has left, and how
+ * fast it is going. Everything else — throughput, signal, devices, the network
+ * name — comes from the router and reads the same on every network.
+ *
+ * The two carriers fill it from opposite directions. YAS carries a remaining
+ * volume forward from an anchor; Orange is handed a consumed volume on every
+ * fetch and derives the remainder. Naming the shape they share is what keeps
+ * the branch to one line at the bottom of this file.
+ */
+interface AllowanceHalf {
+  monthTotal: string;
+  progress: PopoverProgress;
+  allowance: PopoverAllowance;
+  pace: PopoverPace | null;
+  /** Whether the Sync button should be calling for attention. */
+  syncAttention: boolean;
+  /** Which controls this carrier leaves the panel anything to do with. */
+  controls: PopoverControls;
+  /** The plan the carrier's page named, or null where there is no such page. */
+  forfait: PopoverForfait | null;
+  /** Why this half has no figure, or empty while it has one. */
+  notice: string;
+}
+
+/**
+ * The YAS half: the anchor, carried forward by the router's counter delta.
+ *
+ * Also the half a carrier the app cannot place falls to, which is why the
+ * carrier reaches it. There is no second source to try there — the anchor is
+ * the only one this branch has — so the panel says which network the router
+ * named and that nothing is known about where its allowance lives.
+ */
+function anchoredHalf(
+  config: AppConfig,
+  month: RouterSnapshot["month"],
+  carrier: RouterSnapshot["carrier"],
+  cap: number | null,
+  capUnconfirmed: boolean,
+  clock: Clock,
+  now: Date,
+): AllowanceHalf {
+  // The same derivation the menu bar reads, so the two cannot disagree.
+  const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
+  const placed = carrier.id !== "unknown";
+
+  return {
+    // The plan figure, which is the only month the carrier stands behind. The
+    // router's own download and upload counters are still read — the anchor is
+    // carried forward with them — but they are not shown: they measure a
+    // different month from this one, and the panel has no room to explain that.
+    monthTotal:
+      allowance?.usedBytes === undefined || allowance.usedBytes === null
+        ? NO_VALUE
+        : formatBytes(allowance.usedBytes),
+    progress: buildDial(
+      allowance,
+      cap,
+      config.warnThresholdPercent,
+      capUnconfirmed,
+    ),
+    allowance: buildAllowance(allowance, now),
+    pace: buildPace(
+      readPace({
+        anchor: config.allowanceAnchor,
+        month,
+        planLimitBytes: cap,
+        planDays: config.planDays,
+        clock,
+      }),
+      allowance?.expiresAt ?? null,
+    ),
+    // An anchor that can no longer carry the arithmetic is the one thing the
+    // button has to call out: the figure on screen is the last honest one.
+    syncAttention: allowance !== null && !allowance.trustworthy,
+    controls: placed ? ALL_CONTROLS : UNPLACED_CONTROLS,
+    // The plan's name arrives on the anchor here, and the allowance strip
+    // already carries it — there is no second page to read one off.
+    forfait: null,
+    notice: placed ? "" : unplacedCarrierNotice(carrier.carrier),
+  };
+}
+
+/**
+ * Why the last attempt at the portal produced no page — the tagged result from
+ * `../orange/portal.js` with its one success removed.
+ */
+export type PortalFailure = Exclude<OrangePortalResult, { state: "read" }>;
+
+/**
+ * Where the portal stands, and why its last attempt failed.
+ *
+ * {@link PortalStatus} says whether the page answered; it does not say why it
+ * did not, because the poller republishes it on every settled fetch and the
+ * reason belongs to the attempt rather than to the standing. So the reason is
+ * carried alongside by whoever made the fetch. Absent means a caller that does
+ * not track one — the panel then says the page is out of reach and no more.
+ */
+export type PortalStanding = PortalStatus & {
+  failure?: PortalFailure | undefined;
+};
+
+/** Where the portal stands before anything has ever been fetched from it. */
+const NO_PORTAL: PortalStanding = { reading: null, live: false };
+
+/** Why an Orange figure is marked, in the words the panel shows. */
+const PORTAL_STALE_NOTE =
+  "The Orange portal is out of reach — this is the last figure it gave.";
+
+/**
+ * The page did not answer at all: a refused connection, or a name that does
+ * not resolve. The page only answers on the Orange network, so the remedy is
+ * the connection rather than anything about the plan.
+ */
+const PORTAL_OFFLINE_NOTICE =
+  "Orange's page did not answer — connect through the router to read your plan.";
+
+/** The same page, reached but silent. A different fault with the same remedy. */
+const PORTAL_TIMEOUT_NOTICE =
+  "Orange's page did not answer in time — connect through the router and it will be read again shortly.";
+
+/**
+ * Something answered `200` and it was not the subscriber's page.
+ *
+ * Kept apart from every "no plan" wording on purpose. A captive-portal
+ * middlebox sits in front of this page and is exactly the kind of thing that
+ * hands back someone else's `200`, which parses to no forfait at all — and
+ * reporting that as an expired plan would state something false about the
+ * account.
+ */
+const PORTAL_UNREADABLE_NOTICE =
+  "Orange's page answered with something we could not read — the page has changed, or a middlebox replied for it.";
+
+/** The remedy both unreachable wordings end on, and the one an HTTP code needs. */
+function portalHttpNotice(status: number): string {
+  return `Orange's page answered HTTP ${String(status)} — connect through the router to read your plan.`;
+}
+
+/** One failed attempt, in the words the panel shows. */
+function portalFailureNotice(failure: PortalFailure): string {
+  if (failure.state === "unreadable") {
+    return PORTAL_UNREADABLE_NOTICE;
+  }
+  if (failure.reason === "http") {
+    return portalHttpNotice(failure.status);
+  }
+
+  return failure.reason === "timeout"
+    ? PORTAL_TIMEOUT_NOTICE
+    : PORTAL_OFFLINE_NOTICE;
+}
+
+/**
+ * The page parsed, and none of what it listed is an Internet plan.
+ *
+ * The count is named because it is the one thing that separates this from a
+ * page that could not be read at all: forfaits were found and they were the
+ * wrong kind. Zero is the honest count when the page held nothing but voice,
+ * SMS or credit bundles — `selectForfait` never carries those forward — and it
+ * reads as an absence rather than as a figure.
+ */
+function noDataForfaitNotice(found: number): string {
+  const cause = "the plan may have expired, or the line may be voice-only";
+
+  if (found === 0) {
+    return `Orange's page listed no Internet plan — ${cause}.`;
+  }
+
+  return `Orange's page listed ${String(found)} plan${found === 1 ? "" : "s"} and none of them is an Internet plan — ${cause}.`;
+}
+
+/**
+ * The SIM is on a network no table covers.
+ *
+ * The name is carried to the surface exactly as the router spelled it, for the
+ * reason an unrecognised router error code keeps its number: it is the one
+ * thing the user cannot work out for themselves and the only thing that makes
+ * the gap reportable.
+ */
+function unplacedCarrierNotice(fullName: string): string {
+  const name = fullName.trim();
+
+  if (name === "") {
+    return "The router named no network, and no allowance source is known without one.";
+  }
+
+  return `The router reports ${name} — no allowance source is known for that network.`;
+}
+
+/**
+ * Why there is no figure from the portal, or empty while there is one.
+ *
+ * The reason is read before the standing, and only where the page did not
+ * answer: a stale reason surviving a successful fetch would report a fault
+ * that has already cleared. Where nothing has failed and nothing has been read
+ * there is nothing to say — the dial's own prompt already says the page has
+ * not answered yet, and a second line claiming a failure would be a claim
+ * about a fetch nobody made.
+ */
+function portalNotice(portal: PortalStanding): string {
+  const { reading, live, failure } = portal;
+
+  if (!live) {
+    if (failure !== undefined) {
+      return portalFailureNotice(failure);
+    }
+
+    return reading === null ? "" : PORTAL_OFFLINE_NOTICE;
+  }
+
+  return reading !== null && reading.forfait === null
+    ? noDataForfaitNotice(reading.candidates.length)
+    : "";
+}
+
+/** What the dial says while the page has told it nothing at all. */
+const WAITING_PROMPT = "Waiting for the Orange portal to answer.";
+
+/**
+ * The line under an empty ring on Orange.
+ *
+ * Three absences, and they call for different things: a page that has not
+ * answered will answer by itself, a missing cap will not, and a page that has
+ * answered without a figure is not being waited for at all.
+ *
+ * Silence is a wording too, and it is the right one on that last: the notice
+ * beneath already says what came back and why it was not enough, and the only
+ * thing a second line could add there is the chance of disagreeing with it.
+ */
+function promptWithoutFigure(
+  reading: MonthlyPaceReading | null,
+  answered: boolean,
+): string {
+  if (reading !== null) return SET_LIMIT_PROMPT;
+
+  return answered ? "" : WAITING_PROMPT;
+}
+
+/** What the dial is called while the page has told it nothing at all. */
+const NO_READING_DESCRIPTION = "No reading from the Orange portal yet";
+
+/** The same once the page has answered without a figure the dial can draw. */
+const NO_FIGURE_DESCRIPTION =
+  "The Orange portal answered without a usable figure";
+
+/**
+ * The empty ring's accessible name, off the same reading of the page as the
+ * prompt above it.
+ *
+ * The prompt can fall silent once the page has answered, because the notice
+ * beneath it is on the panel saying why. The name cannot: an `aria-label` is
+ * what the dial *is* to a reader who has no ring to look at, and an empty one
+ * leaves an unnamed control. So it stands down to the shorter true thing
+ * rather than to nothing — and never to the claim the prompt just dropped.
+ */
+function descriptionWithoutFigure(
+  reading: MonthlyPaceReading | null,
+  answered: boolean,
+): string {
+  if (reading !== null) return NO_LIMIT_DESCRIPTION;
+
+  return answered ? NO_FIGURE_DESCRIPTION : NO_READING_DESCRIPTION;
+}
+
+/**
+ * Whether the page has said anything at all, read exactly the way
+ * {@link portalNotice} reads the same standing.
+ *
+ * All three have to agree by construction rather than by care: the notice is
+ * the panel's account of what the page did, and a prompt or an accessible name
+ * that decided the question for itself could end up claiming a silence beneath
+ * a line saying the page had already answered — which is exactly what the name
+ * went on doing after the prompt was fixed, in the layer nobody was looking at.
+ * So the failure is read only where the notice reads it —
+ * behind `live` — and the answered states are the two the wordings name as
+ * answers: a status code came back, or a body did and could not be read.
+ */
+function portalAnswered(portal: PortalStanding): boolean {
+  const { reading, live, failure } = portal;
+
+  if (reading !== null && reading !== undefined) return true;
+  if (live || failure === undefined) return false;
+
+  return failure.state === "unreadable" || failure.reason === "http";
+}
+
+/**
+ * The dial on Orange. The share comes from the portal's consumed volume against
+ * the typed cap, and there is no anchor anywhere in it: the portal states
+ * consumption outright on every fetch, so nothing is carried forward and
+ * nothing can go untrustworthy.
+ *
+ * `answered` decides only what the dial says in place of a figure, and it says
+ * it twice — once on the panel and once to a screen reader. Waiting is true
+ * before an answer and false after one, and after one the notice beneath
+ * already carries the reason, so the visible prompt stands down rather than
+ * compete with it from the larger, earlier line. The accessible name cannot
+ * stand down to nothing, so it says the shorter true thing instead; both come
+ * off the one flag, which is what keeps them from drifting apart again.
+ */
+function buildMonthlyDial(
+  reading: MonthlyPaceReading | null,
+  warnThresholdPercent: number,
+  answered: boolean,
+): PopoverProgress {
+  const usedShare = reading?.usedShare ?? null;
+  const percent = usedShare === null ? null : usedShare * 100;
+  const state = usageState(percent, warnThresholdPercent);
+
+  if (percent === null || reading === null) {
+    return {
+      available: false,
+      label: NO_VALUE,
+      sweep: 0,
+      prompt: promptWithoutFigure(reading, answered),
+      description: descriptionWithoutFigure(reading, answered),
+      state,
+    };
+  }
+
+  const used = formatBytes(reading.usedBytes);
+
+  return {
+    available: true,
+    label: formatPercent(percent),
+    sweep: Math.min(Math.max(percent, 0), 100) / 100,
+    prompt: "",
+    description: `${formatPercent(percent)} of the plan used, ${used} so far`,
+    state,
+  };
+}
+
+/**
+ * The allowance row on Orange.
+ *
+ * `stale` is the portal's own reachability and nothing else — never the
+ * router's. A laptop on some other Wi-Fi cannot reach the page while the
+ * connection it is measuring is perfectly healthy, and the panel has to be able
+ * to say exactly that.
+ */
+function buildPortalAllowance(
+  forfait: OrangeForfait,
+  reading: MonthlyPaceReading,
+  portal: PortalStatus,
+  now: Date,
+): PopoverAllowance {
+  const at = portal.reading?.at;
+
+  return {
+    available: true,
+    planLabel: forfait.label === "" ? NO_VALUE : forfait.label,
+    remaining:
+      reading.remainingBytes === null
+        ? NO_VALUE
+        : formatBytes(reading.remainingBytes),
+    // The page stated the consumed volume and only that. What is left of it is
+    // the user's typed cap minus that figure, so the caption says whose plan
+    // it is a remainder of rather than crediting Orange with saying it.
+    remainingCaption: DERIVED_REMAINING_CAPTION,
+    // The page carries neither for this plan, and inventing one from the
+    // calendar would be stating a carrier fact the carrier never stated.
+    expires: NO_VALUE,
+    daysUntilExpiry: NO_VALUE,
+    stale: !portal.live,
+    note: portal.live ? "" : PORTAL_STALE_NOTE,
+    exhausted: reading.remainingBytes === 0,
+    // Read, not synced: nothing was dialled and nothing was anchored.
+    syncedAgo:
+      at === undefined
+        ? NO_VALUE
+        : `Read ${formatDuration(
+            (now.getTime() - at.getTime()) / MILLISECONDS_PER_SECOND,
+          )} ago`,
+  };
+}
+
+/**
+ * The pace on Orange, or null with no cap.
+ *
+ * The tiers collapse here. Tier 1 existed because a carrier-stated remaining
+ * and expiry arrived together, and the portal supplies neither; the calendar
+ * supplies the period for free. So the cap is the single gate — with it the
+ * whole reading, without it no meter, no per-day figure and therefore no row.
+ */
+function buildMonthlyPace(reading: MonthlyPaceReading): PopoverPace | null {
+  const meter = buildPaceMeter(reading);
+
+  if (meter === null) return null;
+
+  return {
+    tier: 3,
+    // The prescription needs a date to run to, and the portal states none.
+    sustainable: "",
+    state: reading.state ?? "",
+    hint: "",
+    meter,
+  };
+}
+
+/** The Orange half: one portal figure, measured against the calendar month. */
+function portalHalf(
+  portal: PortalStanding,
+  cap: number | null,
+  warnThresholdPercent: number,
+  clock: Clock,
+  now: Date,
+): AllowanceHalf {
+  const read = portal.reading;
+  const forfait = read?.forfait ?? null;
+  const consumedBytes = forfait?.consumedBytes ?? null;
+  const notice = portalNotice(portal);
+  // Built from the whole reading rather than from the measured figure: a page
+  // that listed several plans is worth saying so about even when none of them
+  // carried a volume the dial could use. The offer stands down wherever a
+  // notice does, which is the same row of the panel and the same 48px.
+  const chosen =
+    read === null || read === undefined
+      ? null
+      : buildForfait(read, notice === "");
+
+  // Nothing has been read, or the page listed no data forfait at all: the panel
+  // shows the router's figures and says the allowance is not known yet.
+  if (forfait === null || consumedBytes === null) {
+    return {
+      monthTotal: NO_VALUE,
+      progress: buildMonthlyDial(
+        null,
+        warnThresholdPercent,
+        portalAnswered(portal),
+      ),
+      allowance: noAllowance(DERIVED_REMAINING_CAPTION),
+      pace: null,
+      syncAttention: false,
+      controls: PORTAL_CONTROLS,
+      forfait: chosen,
+      notice,
+    };
+  }
+
+  const reading = readMonthlyPace({
+    consumedBytes,
+    planLimitBytes: cap,
+    clock,
+  });
+
+  return {
+    // Stated by the carrier rather than derived, and available with no cap —
+    // which is the one thing Orange can always answer.
+    monthTotal: formatBytes(reading.usedBytes),
+    // A figure is itself an answer, and the dial draws it rather than say
+    // anything at all.
+    progress: buildMonthlyDial(reading, warnThresholdPercent, true),
+    allowance: buildPortalAllowance(forfait, reading, portal, now),
+    pace: buildMonthlyPace(reading),
+    // There is no dialogue to press for and no anchor to re-take: the Sync
+    // button has no work on Orange, and `controls` takes it off the panel.
+    syncAttention: false,
+    controls: PORTAL_CONTROLS,
+    forfait: chosen,
+    notice,
   };
 }
 
@@ -591,6 +1587,16 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     config.planLimitBytes,
     input.planLimitProblem,
   );
+  const planDays = buildPlanDays(config.planDays, input.planDaysProblem);
+  // One flag drives all three of the panel's responses — the confirmation, the
+  // dial's wording, and which cap the arithmetic may use. Only an explicit
+  // `false` withdraws the cap, the same test {@link confirmedPlanLimit} makes.
+  const capUnconfirmed = config.planCapConfirmed === false;
+  const planCapPrompt = buildPlanCapPrompt(capUnconfirmed);
+  // The cap the panel may actually measure against. A sync that brought back a
+  // different plan leaves the stored one unbelievable, and an unbelievable cap
+  // reads as no cap: the dial and the share go, the tier 1 pace stays.
+  const cap = confirmedPlanLimit(config);
 
   if (snapshot === undefined) {
     return emptyModel(
@@ -600,34 +1606,32 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       // Nothing has been read, so nothing can be stale: no attention to call.
       buildSync(syncState, false),
       planLimit,
+      planDays,
+      // No snapshot means no router counter to carry the anchor forward with,
+      // and the pace is measured on what is left *now*.
+      null,
+      planCapPrompt,
     );
   }
 
   const { month, traffic, status, carrier } = snapshot;
-  // The same derivation the menu bar reads, so the two cannot disagree.
-  const allowance = readPlanUsage(
-    config.allowanceAnchor,
-    month,
-    config.planLimitBytes,
-    clock,
-  );
+  // The one branch in the file, and it is a fact about the SIM rather than a
+  // display decision: on Orange the figure comes from a page fetched on the
+  // poll, and everywhere else from the anchor a dialogue left behind.
+  const half =
+    carrier.id === "orange"
+      ? portalHalf(
+          input.portal ?? NO_PORTAL,
+          cap,
+          config.warnThresholdPercent,
+          clock,
+          now,
+        )
+      : anchoredHalf(config, month, carrier, cap, capUnconfirmed, clock, now);
 
   return {
-    // Download and upload stay the router's own counters: they are the evidence
-    // behind the delta, and the user can see them move. The total is the plan
-    // figure — a different month from the two lines above it, and the only one
-    // the carrier stands behind.
-    monthDownload: formatBytes(month.monthDownloadBytes),
-    monthUpload: formatBytes(month.monthUploadBytes),
-    monthTotal:
-      allowance?.usedBytes === undefined || allowance.usedBytes === null
-        ? NO_VALUE
-        : formatBytes(allowance.usedBytes),
-    progress: buildDial(
-      allowance,
-      config.planLimitBytes,
-      config.warnThresholdPercent,
-    ),
+    monthTotal: half.monthTotal,
+    progress: half.progress,
     downloadRate: formatRate(traffic.downloadRateBps),
     uploadRate: formatRate(traffic.uploadRateBps),
     connectedDevices: String(status.connectedDevices),
@@ -641,10 +1645,14 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     networkType: networkTypeLabel(status.networkTypeCode),
     freshness,
     history,
-    allowance: buildAllowance(allowance, now),
+    allowance: half.allowance,
     planLimit,
-    // An anchor that can no longer carry the arithmetic is the one thing the
-    // button has to call out: the figure on screen is the last honest one.
-    sync: buildSync(syncState, allowance !== null && !allowance.trustworthy),
+    planDays,
+    planCapPrompt,
+    pace: half.pace,
+    sync: buildSync(syncState, half.syncAttention),
+    controls: half.controls,
+    forfait: half.forfait,
+    notice: half.notice,
   };
 }
