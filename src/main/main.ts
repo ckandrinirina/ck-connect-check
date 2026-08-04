@@ -42,7 +42,11 @@ import {
   type CredentialStore,
   type SyncState,
 } from "./sync.js";
-import { buildPopoverModel, type UsageReading } from "./view-model.js";
+import {
+  buildPopoverModel,
+  type PortalFailure,
+  type UsageReading,
+} from "./view-model.js";
 
 /**
  * How often the staleness of the anchor is looked at, with the panel shut.
@@ -170,6 +174,22 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   /** The same, for the plan length typed beside it. */
   let planDaysProblem: PlanDaysRefusal | undefined;
 
+  /**
+   * Why the last portal fetch produced no page, when it produced none.
+   *
+   * Read off the fetch on its way past rather than asked of the poller: the
+   * poller publishes whether the page answered, which is what it needs to age a
+   * figure, and the reason belongs to the attempt rather than to that standing.
+   * Held here for the reason the sync state is — a poll landing afterwards must
+   * rebuild the model with the line still on it.
+   */
+  let portalFailure: PortalFailure | undefined;
+
+  /** The page fetch itself, wrapped so the reason for a failure is not lost. */
+  const portalSource: PortalSource = options.portal ?? {
+    read: () => readInfoConso(),
+  };
+
   function refreshPopover(): void {
     popover.setModel(
       buildPopoverModel({
@@ -178,7 +198,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         config,
         history: history.samples(),
         sync: syncState,
-        portal: poller.portal,
+        portal: { ...poller.portal, failure: portalFailure },
         planLimitProblem,
         planDaysProblem,
       }),
@@ -444,7 +464,17 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     config,
     // Only ever read on Orange, and only on the idle interval — the poller
     // decides both, from the carrier the router reports.
-    portal: options.portal ?? { read: () => readInfoConso() },
+    portal: {
+      read: async () => {
+        const outcome = await portalSource.read();
+
+        // Cleared by the page that arrived, so a fault that has since gone
+        // cannot go on being reported beside a figure it did not stop.
+        portalFailure = outcome.state === "read" ? undefined : outcome;
+
+        return outcome;
+      },
+    },
     onPortal: () => {
       refreshPopover();
     },

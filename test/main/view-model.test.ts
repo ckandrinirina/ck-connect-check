@@ -30,6 +30,7 @@ import type {
 import {
   buildPopoverModel,
   type PopoverModel,
+  type PortalFailure,
   type UsageReading,
 } from "../../src/main/view-model.js";
 
@@ -1981,6 +1982,343 @@ describe("buildPopoverModel — the forfait the Orange panel names", () => {
   it("hands the renderer plain flags for the control set", () => {
     for (const leaf of leaves(orangeModel(portal(true)).controls)) {
       expect(typeof leaf).toBe("boolean");
+    }
+  });
+});
+
+/**
+ * The four states where no figure can be produced, and what the panel says
+ * instead of nothing.
+ *
+ * Three of them belong to the Orange page and the fourth to the SIM, and they
+ * have three different remedies — connect through the router, wait for a page
+ * that has changed back, or accept that the plan is not a data plan — so
+ * collapsing them into one line would make each of them undiagnosable.
+ *
+ * None of them is an error. An app that lives in the menu bar has nobody to
+ * show a dialog to, so every one of these is a line on the panel instead.
+ */
+
+/** Two bundles whose kind the app cannot place, so both reach the candidates. */
+const UNPLACED: OrangeForfait = {
+  label: "Pass Mystère",
+  nature: "Autre",
+};
+
+const UNPLACED_TOO: OrangeForfait = {
+  label: "Pass Inconnu",
+  nature: "Autre",
+};
+
+/** The Orange panel with the portal's last attempt having failed for `failure`. */
+function orangeFailing(
+  failure: PortalFailure,
+  reading: PortalStatus["reading"] = portal(true).reading,
+): PopoverModel {
+  return buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    portal: { reading, live: false, failure },
+    clock,
+  });
+}
+
+/** The panel for a SIM on a network the carrier table does not cover. */
+function unplacedCarrierModel(fullName: string): PopoverModel {
+  return buildPopoverModel({
+    result: online({ carrier: { carrier: fullName, id: "unknown" } }),
+    lastReading: null,
+    config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
+    clock,
+  });
+}
+
+describe("buildPopoverModel — the portal could not be reached", () => {
+  it("says the page did not answer, and what to do about it", () => {
+    const { notice } = orangeFailing({
+      state: "unreachable",
+      reason: "offline",
+    });
+
+    expect(notice).not.toBe("");
+    expect(notice).toMatch(/router/i);
+  });
+
+  it("says a reply that never came is not a refused connection", () => {
+    const { notice } = orangeFailing({
+      state: "unreachable",
+      reason: "timeout",
+    });
+
+    expect(notice).not.toBe("");
+    expect(notice).not.toBe(
+      orangeFailing({ state: "unreachable", reason: "offline" }).notice,
+    );
+  });
+
+  it("names the status code when the reply was not a 200", () => {
+    expect(
+      orangeFailing({ state: "unreachable", reason: "http", status: 503 })
+        .notice,
+    ).toContain("503");
+  });
+
+  it("names whichever status code it actually got", () => {
+    expect(
+      orangeFailing({ state: "unreachable", reason: "http", status: 407 })
+        .notice,
+    ).toContain("407");
+  });
+
+  it("keeps the last figure the portal gave, beside the line saying why", () => {
+    // The remedy and the figure answer different questions, and dropping the
+    // figure to report the remedy would throw away the only answer there is.
+    const model = orangeFailing({ state: "unreachable", reason: "offline" });
+
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.remaining).toBe("12.63 Go");
+    expect(model.allowance.stale).toBe(true);
+    expect(model.notice).not.toBe("");
+  });
+
+  it("still shows every figure the router itself produced", () => {
+    const model = orangeFailing({ state: "unreachable", reason: "timeout" });
+
+    expect(model.downloadRate).toBe("2.4 Ko/s");
+    expect(model.connectedDevices).toBe("3");
+    expect(model.carrier).toBe("ORANGE MG");
+  });
+
+  it("still says something when the portal has never answered at all", () => {
+    const model = orangeFailing(
+      { state: "unreachable", reason: "offline" },
+      null,
+    );
+
+    expect(model.notice).not.toBe("");
+    expect(model.allowance.available).toBe(false);
+  });
+});
+
+describe("buildPopoverModel — the portal answered but could not be read", () => {
+  const model = orangeFailing({ state: "unreadable" });
+
+  it("reads differently from a portal that never answered", () => {
+    expect(model.notice).not.toBe("");
+    expect(model.notice).not.toBe(
+      orangeFailing({ state: "unreachable", reason: "offline" }).notice,
+    );
+  });
+
+  it("blames the page rather than the account", () => {
+    // A middlebox handing back someone else's 200 is exactly what parses to
+    // no forfait, so reporting it as "no plan" would state something false
+    // about the subscription.
+    expect(model.notice).toMatch(/page/i);
+    expect(model.notice).not.toMatch(/expired|voice/i);
+  });
+
+  it("keeps the last figure the portal gave, exactly as an unreachable one does", () => {
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.remaining).toBe("12.63 Go");
+  });
+});
+
+describe("buildPopoverModel — the page listed no Internet plan", () => {
+  it("names how many plans were found, and reads unlike the other two", () => {
+    const model = orangeModel(portalOver([UNPLACED, UNPLACED_TOO]));
+
+    expect(model.notice).toContain("2");
+    expect(model.notice).not.toBe(
+      orangeFailing({ state: "unreadable" }).notice,
+    );
+    expect(model.notice).not.toBe(
+      orangeFailing({ state: "unreachable", reason: "offline" }).notice,
+    );
+  });
+
+  it("names one plan as one rather than as a plural", () => {
+    const model = orangeModel(portalOver([UNPLACED]));
+
+    expect(model.notice).toContain("1 plan");
+    expect(model.notice).not.toContain("1 plans");
+  });
+
+  it("says the plan may have expired or the line may be voice-only", () => {
+    expect(orangeModel(portalOver([UNPLACED, UNPLACED_TOO])).notice).toMatch(
+      /expired|voice/i,
+    );
+  });
+
+  it("still says so when every plan on the page was a voice bundle", () => {
+    // `selectForfait` never carries a voice bundle into the candidates, so
+    // there is no count to name — but there is still a reason to give.
+    const model = orangeModel(portalOver([VOICE]));
+
+    expect(model.notice).not.toBe("");
+    expect(model.notice).toMatch(/expired|voice/i);
+  });
+
+  it("draws no dial and no allowance, having no figure behind either", () => {
+    const model = orangeModel(portalOver([UNPLACED, UNPLACED_TOO]));
+
+    expect(model.progress.available).toBe(false);
+    expect(model.allowance.available).toBe(false);
+    expect(model.monthTotal).toBe("—");
+  });
+
+  it("still shows every figure the router itself produced", () => {
+    const model = orangeModel(portalOver([UNPLACED, UNPLACED_TOO]));
+
+    expect(model.downloadRate).toBe("2.4 Ko/s");
+    expect(model.connectedDevices).toBe("3");
+    expect(model.carrier).toBe("ORANGE MG");
+  });
+});
+
+describe("buildPopoverModel — the carrier the app cannot place", () => {
+  const model = unplacedCarrierModel("AIRTEL MG");
+
+  it("names the network the router actually reported", () => {
+    expect(model.notice).toContain("AIRTEL MG");
+  });
+
+  it("says no allowance source is known for it", () => {
+    expect(model.notice).toMatch(/allowance/i);
+  });
+
+  it("takes the Sync button away, there being no dialogue behind it", () => {
+    // `createAllowanceSync` already refuses to dial on a carrier it cannot
+    // place, so the button is a control that does nothing when pressed.
+    expect(model.controls.sync).toBe(false);
+  });
+
+  it("says something even when the router named no network at all", () => {
+    const unnamed = unplacedCarrierModel("");
+
+    expect(unnamed.notice).not.toBe("");
+    expect(unnamed.notice).toMatch(/allowance/i);
+  });
+
+  it("still shows every figure the router itself produced", () => {
+    expect(model.downloadRate).toBe("2.4 Ko/s");
+    expect(model.connectedDevices).toBe("3");
+    expect(model.signalBars).toBe(4);
+  });
+});
+
+describe("buildPopoverModel — where the notice stays silent", () => {
+  it("says nothing on Yas, where nothing has gone wrong", () => {
+    expect(yasModel().notice).toBe("");
+  });
+
+  it("says nothing on a portal that is answering", () => {
+    expect(orangeModel(portal(true)).notice).toBe("");
+  });
+
+  it("says nothing before the portal has been asked once", () => {
+    // The dial's own prompt already says the page has not answered yet, and a
+    // second line saying it failed would be a claim about a fetch nobody made.
+    const model = buildPopoverModel({
+      result: ORANGE_ONLINE,
+      lastReading: null,
+      config: configWith(20_000_000_000),
+      portal: { reading: null, live: false },
+      clock,
+    });
+
+    expect(model.notice).toBe("");
+  });
+
+  it("says nothing before any reading has named a carrier", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: configWith(20_000_000_000),
+      clock,
+    });
+
+    expect(model.notice).toBe("");
+  });
+});
+
+describe("buildPopoverModel — what a notice never does", () => {
+  const failures: PortalFailure[] = [
+    { state: "unreachable", reason: "offline" },
+    { state: "unreachable", reason: "timeout" },
+    { state: "unreachable", reason: "http", status: 503 },
+    { state: "unreadable" },
+  ];
+
+  it("never leaks a tag word to the renderer as a leaf of its own", () => {
+    const models = [
+      ...failures.map((failure) => orangeFailing(failure)),
+      orangeModel(portalOver([UNPLACED, UNPLACED_TOO])),
+      unplacedCarrierModel("AIRTEL MG"),
+    ];
+
+    for (const model of models) {
+      for (const leaf of leaves(model)) {
+        expect(leaf).not.toBe("unreachable");
+        expect(leaf).not.toBe("unreadable");
+        expect(leaf).not.toBe("timeout");
+        expect(leaf).not.toBe("http");
+      }
+    }
+  });
+
+  it("hands the renderer a string it need not format, never an object", () => {
+    for (const failure of failures) {
+      expect(typeof orangeFailing(failure).notice).toBe("string");
+    }
+  });
+
+  it("never leaves the panel with nothing on it at all", () => {
+    for (const failure of failures) {
+      const model = orangeFailing(failure, null);
+
+      expect(model.notice).not.toBe("");
+      expect(model.carrier).toBe("ORANGE MG");
+      expect(model.downloadRate).not.toBe("");
+    }
+  });
+
+  it("withdraws the plans it would otherwise offer to choose between", () => {
+    // Every alternative is a dead control here: `selectForfait` only ever
+    // remembers a data forfait, and a page that cannot be read cannot show
+    // the effect of a choice either. The row carries the reason instead.
+    const model = orangeFailing(
+      { state: "unreachable", reason: "offline" },
+      portalOver([WIFIBER, TOP_UP]).reading,
+    );
+
+    expect(model.notice).not.toBe("");
+    expect(model.forfait?.alternatives).toEqual([]);
+    expect(model.forfait?.note).toBe("");
+  });
+
+  it("offers them again as soon as the portal answers", () => {
+    const model = orangeModel(portalOver([WIFIBER, TOP_UP]));
+
+    expect(model.notice).toBe("");
+    expect(model.forfait?.alternatives).not.toEqual([]);
+  });
+
+  it("never stands beside the sync row it takes the place of", () => {
+    // The panel has 320×520 and does not scroll, so the line has to be paid
+    // for out of a row that is already off the panel wherever it appears.
+    // Asserted rather than assumed: the height budget in the renderer suite
+    // is only true while these two are mutually exclusive.
+    const models = [
+      ...failures.map((failure) => orangeFailing(failure)),
+      orangeModel(portalOver([UNPLACED, UNPLACED_TOO])),
+      unplacedCarrierModel("AIRTEL MG"),
+    ];
+
+    for (const model of models) {
+      expect(model.notice).not.toBe("");
+      expect(model.controls.sync).toBe(false);
     }
   });
 });

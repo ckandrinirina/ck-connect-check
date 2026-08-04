@@ -92,6 +92,7 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     allowanceNote: model.allowance.note,
     forfaitNote: model.forfait?.note ?? "",
     syncStatus: model.sync.status,
+    notice: model.notice,
   };
 }
 
@@ -724,6 +725,21 @@ function applyPace(model: PopoverModel): void {
   applyPaceMeter(model);
 }
 
+/**
+ * Shows the line saying why there is no figure, or takes it off the panel.
+ *
+ * `hidden` rather than an empty row, for the reason the pace section uses it:
+ * the row carries a rule and a margin of its own, and a rule with nothing under
+ * it reads as a sentence that failed to load.
+ */
+function applyNotice(model: PopoverModel): void {
+  const row = document.querySelector<HTMLElement>("[data-notice-row]");
+
+  if (row !== null) {
+    row.hidden = model.notice === "";
+  }
+}
+
 /** Puts the sync state on the button, the prompt and the root element. */
 function applySync(model: PopoverModel): void {
   const { sync, allowance } = model;
@@ -807,6 +823,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPlanCapPrompt(model);
   applyPace(model);
   applyForfait(model);
+  applyNotice(model);
   applySync(model);
 };
 

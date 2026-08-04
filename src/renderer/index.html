@@ -267,6 +267,24 @@
       <footer class="sync" data-sync-row>
         <p class="sync-status" data-field="syncStatus" role="status"></p>
       </footer>
+
+      <!--
+        Why there is no figure, when there is none. It stands in the row the
+        sync status line holds, and takes that row's place on the carriers
+        where the line is not on the panel at all — which is every carrier
+        that can produce a notice, so the two are never both here.
+
+        A line rather than a dialog: the app runs unattended in the menu bar,
+        where there is nobody to dismiss a box. A live region for the same
+        reason the sync status is one — the sentence arrives after the panel
+        has already been read.
+
+        Hidden through the `hidden` attribute, so it costs no height at all
+        while every figure is present.
+      -->
+      <footer class="notice" data-notice-row hidden>
+        <p class="notice-message" data-field="notice" role="status"></p>
+      </footer>
     </div>
 
     <!--

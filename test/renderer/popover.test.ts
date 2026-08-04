@@ -32,6 +32,7 @@ import type { OrangeForfait } from "../../src/orange/types.js";
 import {
   buildPopoverModel,
   type PopoverModel,
+  type PortalFailure,
 } from "../../src/main/view-model.js";
 
 /**
@@ -2776,5 +2777,297 @@ describe("the Orange panel — the height it has to fit", () => {
         SPARK_GAP +
         ORANGE_CHROME_HEIGHT,
     ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+
+  it("fits it still when the panel has to say why there is no figure", () => {
+    // The notice takes the sync row's place rather than a row of its own, and
+    // is built the same way: 12px of margin, 10px of padding, a 1px rule and
+    // one 15px line — the ~38px the sync footer cost before T-56 gave it back.
+    //
+    // It is never on the panel beside the forfait choice: every alternative is
+    // a dead control wherever a notice stands, so the model withdraws them.
+    // The taller of the two is therefore the worst case, and that is still the
+    // 48px choice block T-56 measured — the panel does not grow at all.
+    const ORANGE_NOTICE_HEIGHT = 38;
+    const ORANGE_CHOICE_HEIGHT = 48;
+    const ORANGE_CHROME_HEIGHT =
+      350 - 38 + Math.max(ORANGE_NOTICE_HEIGHT, ORANGE_CHOICE_HEIGHT);
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+    expect(
+      Number(dialSize) +
+        Number(sparkSize) * SPARK_ROWS +
+        SPARK_GAP +
+        ORANGE_CHROME_HEIGHT,
+    ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+
+  it("fits it on a carrier the app cannot place either", () => {
+    // That panel keeps the anchored half's chrome and gives back the same
+    // ~38px sync row, there being no dialogue to press for on a network with
+    // no known allowance source — which is exactly what the notice spends.
+    const UNPLACED_CHROME_HEIGHT = 350 - 38 + 38;
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+    expect(
+      Number(dialSize) +
+        Number(sparkSize) * SPARK_ROWS +
+        SPARK_GAP +
+        UNPLACED_CHROME_HEIGHT,
+    ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+});
+
+/**
+ * The line the panel says instead of a figure, in the position the sync status
+ * line held before Orange gave that row back.
+ *
+ * Every assertion below is against the rendered document rather than a class:
+ * the point of the row is that the user reads it, and an element that is
+ * present but collapsed says nothing at all.
+ */
+const UNPLACED: OrangeForfait = {
+  label: "Pass Mystère",
+  nature: "Autre",
+};
+
+/** The Orange panel whose last portal attempt failed for `failure`. */
+function orangeFailingModel(
+  failure: PortalFailure,
+  forfaits: readonly OrangeForfait[] = [WIFIBER],
+): PopoverModel {
+  const selection = selectForfait(forfaits);
+
+  return buildPopoverModel({
+    result: { online: true, snapshot: ORANGE_SNAPSHOT },
+    lastReading: null,
+    config: configWithLimit(20 * GB),
+    portal: {
+      reading: {
+        forfait: selection.selected,
+        candidates: selection.candidates,
+        remembered: selection.remembered,
+        at: NOW,
+      },
+      live: false,
+      failure,
+    },
+    clock,
+  });
+}
+
+/** The panel for a SIM whose network the carrier table does not cover. */
+function unplacedCarrierModel(): PopoverModel {
+  return buildPopoverModel({
+    result: {
+      online: true,
+      snapshot: {
+        ...snapshot(10 * GB),
+        carrier: { carrier: "AIRTEL MG", id: "unknown" },
+      },
+    },
+    lastReading: null,
+    config: configWithLimit(20 * GB),
+    clock,
+  });
+}
+
+describe("the panel's notice row", () => {
+  function noticeRow(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-notice-row]");
+
+    if (element === null) {
+      throw new Error("the panel has no notice row");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("says nothing, and shows nothing, on an ordinary panel", () => {
+    apply(modelUsing(10 * GB));
+
+    expect(noticeRow().hidden).toBe(true);
+    expect(textOf("notice")).toBe("");
+  });
+
+  it("costs no height at all while it is hidden", () => {
+    // `hidden` alone would leave the box open: the row carries a rule and a
+    // margin of its own, and the UA rule loses to a `display` of its own —
+    // the same bargain `.pace-meter` and `.forfait-choice` already make.
+    expect(POPOVER_CSS).toMatch(/\.notice\[hidden\]\s*\{[^}]*display:\s*none/);
+  });
+
+  it("shows the model's own sentence when the portal cannot be reached", () => {
+    const model = orangeFailingModel({
+      state: "unreachable",
+      reason: "offline",
+    });
+
+    apply(model);
+
+    expect(noticeRow().hidden).toBe(false);
+    expect(textOf("notice")).toBe(model.notice);
+    expect(textOf("notice")).not.toBe("");
+  });
+
+  it("names the status code on the panel, not only in the model", () => {
+    apply(
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+    );
+
+    expect(textOf("notice")).toContain("503");
+  });
+
+  it("reads differently for a page that answered but could not be read", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    const unreachable = textOf("notice");
+
+    apply(orangeFailingModel({ state: "unreadable" }));
+
+    expect(textOf("notice")).not.toBe("");
+    expect(textOf("notice")).not.toBe(unreachable);
+  });
+
+  it("reads differently again for a page with no Internet plan on it", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    const unreachable = textOf("notice");
+
+    apply(orangeModel([UNPLACED]));
+
+    expect(textOf("notice")).not.toBe("");
+    expect(textOf("notice")).not.toBe(unreachable);
+  });
+
+  it("names the network the router reported on a carrier it cannot place", () => {
+    apply(unplacedCarrierModel());
+
+    expect(noticeRow().hidden).toBe(false);
+    expect(textOf("notice")).toContain("AIRTEL MG");
+  });
+
+  it("stands where the sync status line stood, at the foot of the main view", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    expect(noticeRow().closest("[data-main-view]")).toBe(mainView());
+    expect(noticeRow().closest("[data-settings-view]")).toBeNull();
+    expect(mainView().lastElementChild).toBe(noticeRow());
+  });
+
+  it("draws the last figure the portal gave beside the line, not instead of it", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+
+    expect(textOf("allowanceRemaining")).toBe("12.63 Go");
+    expect(textOf("notice")).not.toBe("");
+    expect(document.documentElement.dataset["allowance"]).toBe("stale");
+  });
+
+  it("puts no plan choice on the panel while the line is standing", () => {
+    const choice = (): HTMLElement => {
+      const element = document.querySelector<HTMLElement>(
+        "[data-forfait-choice]",
+      );
+
+      if (element === null) {
+        throw new Error("the panel has no forfait choice block");
+      }
+
+      return element;
+    };
+
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    expect(choice().hidden).toBe(false);
+
+    apply(
+      orangeFailingModel({ state: "unreachable", reason: "offline" }, [
+        WIFIBER,
+        TOP_UP,
+      ]),
+    );
+
+    expect(textOf("notice")).not.toBe("");
+    expect(choice().hidden).toBe(true);
+    expect(document.querySelectorAll("[data-forfait-label]")).toHaveLength(0);
+  });
+
+  it("takes the line away again as soon as the portal answers", () => {
+    apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
+    apply(orangeModel());
+
+    expect(noticeRow().hidden).toBe(true);
+    expect(textOf("notice")).toBe("");
+  });
+
+  it("leaves the panel with its router figures on it in every state", () => {
+    const models = [
+      orangeFailingModel({ state: "unreachable", reason: "offline" }),
+      orangeFailingModel({ state: "unreachable", reason: "timeout" }),
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+      orangeFailingModel({ state: "unreadable" }),
+      orangeModel([UNPLACED]),
+      unplacedCarrierModel(),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(textOf("notice")).not.toBe("");
+      expect(textOf("downloadRate")).not.toBe("");
+      expect(textOf("connectedDevices")).toBe("3");
+      expect(mainView().hidden).toBe(false);
+    }
+  });
+
+  it("is a live region, the panel having nobody to show a dialog to", () => {
+    expect(INDEX_HTML).toMatch(
+      /data-field="notice"[^>]*role="status"|role="status"[^>]*data-field="notice"/,
+    );
+  });
+
+  it("has no Sync button beside it on a carrier the app cannot place", () => {
+    apply(unplacedCarrierModel());
+
+    expect(document.querySelector("[data-sync]")).toBeNull();
+    expect(document.querySelector("[data-sync-row]")).toBeNull();
+  });
+
+  it("never stands on the page beside the row it takes the place of", () => {
+    // The panel is 320×520 and does not scroll, so the row the line spends is
+    // the row the sync status line gave back. Asserted rather than assumed:
+    // the height budget above is only true while the two never coincide.
+    const models = [
+      orangeFailingModel({ state: "unreachable", reason: "offline" }),
+      orangeFailingModel({ state: "unreachable", reason: "timeout" }),
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+      orangeFailingModel({ state: "unreadable" }),
+      orangeModel([UNPLACED]),
+      unplacedCarrierModel(),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(noticeRow().hidden).toBe(false);
+      expect(document.querySelector("[data-sync-row]")).toBeNull();
+      expect(document.querySelector("[data-forfait-choice]")?.hidden).toBe(
+        true,
+      );
+    }
   });
 });
