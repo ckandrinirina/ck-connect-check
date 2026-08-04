@@ -53,7 +53,7 @@ Responses are XML. A stale or missing session returns `<error><code>125002</code
 | `/api/monitoring/month_statistics`   | `CurrentMonthDownload`, `CurrentMonthUpload`, `MonthDuration`, `MonthLastClearTime`      |
 | `/api/monitoring/traffic-statistics` | `CurrentDownloadRate`, `CurrentUploadRate`, `CurrentConnectTime`                         |
 | `/api/monitoring/status`             | `ConnectionStatus`, `SignalIcon`, `maxsignal`, `CurrentNetworkTypeEx`, `CurrentWifiUser` |
-| `/api/net/current-plmn`              | `FullName` (carrier — reads `Yas` on this device)                                        |
+| `/api/net/current-plmn`              | `FullName` (carrier — read `Yas` until 2026-08, reads `ORANGE MG` since)                 |
 | `/api/monitoring/start_date`         | `StartDay` (billing cycle start), `DataLimit`, `MonthThreshold`                          |
 
 Two findings that shape the design:
@@ -115,7 +115,54 @@ The `#359#` path to the exact allowance, as captured from the device:
 The final line is the ground truth the app is after: an exact remaining volume and an
 exact expiry date, neither of which any `/api/monitoring/` endpoint knows.
 
-## Syncing the real allowance
+## Orange portal
+
+Verified live on 2026-08-04, from a machine behind the same router. The SIM moved to
+Orange MG on that date; the device is unchanged, and every `/api/monitoring/` endpoint above
+still answers exactly as documented. Only the source of the carrier's own figure has moved.
+
+```
+GET http://123.orange.mg/info-conso/   →  200, server-rendered HTML, ~38 KB
+```
+
+**No authentication of any kind.** The network identifies the subscriber — the reply carries
+`X-Header: intercepting the request` and sets `PROFILE=wifiber`, and the page greets the
+MSISDN without a login. There is no session, no token, no password and therefore no lockout
+to protect against. It is a plain `GET` that can be polled on the same footing as the router.
+
+The figure lives in the `Forfaits en cours de validité` section, one `.bundle-item` per
+active forfait:
+
+```html
+<span class="item_title title">Wifiber Go+ SSE</span>
+<span class="title-da-nature title">Internet</span>
+<p>
+  Vous avez consommé
+  <span class="color-orange text-bolder text-nowrap">7.37Go</span> sur votre
+  forfait
+</p>
+```
+
+Three findings that shape the design, each the reverse of the YAS situation:
+
+- The portal states **consumed**, not remaining, and states it directly. There is no
+  remaining volume and no expiry date anywhere on the page for this forfait.
+- A forfait's shape varies. `assets/js/full.infoconso.js` initialises a
+  `.bundle-circlebar` from `data-bundle-type` (`credit` | `data` | `voice` | `sms`) and
+  `data-bundle-pcvalue`, so a _capped_ bundle renders a percentage — Wifiber Go+ SSE renders
+  none. The parser must read the forfaits it finds rather than assume one layout.
+- The router's month counter and the portal's figure count different things: 51.1 Go since
+  `2026-7-27` against the portal's 7.37 Go on the same day. The counter is therefore not an
+  accumulator for this plan at all.
+
+The portal is unreachable off the Orange network, which is a normal state rendered like a
+missing router, never an error.
+
+## Syncing the real allowance — YAS only
+
+Everything in this section describes the **YAS** path and is unreachable on Orange, where the
+portal already states consumption on every poll. It stays because the carrier is detected at
+runtime, not chosen at build time.
 
 The router is a reliable **accumulator** and an unreliable **absolute** — it counts bytes
 faithfully but has no idea what the plan is. USSD is the reverse: exact absolutes, but far
@@ -220,6 +267,30 @@ pace = averagePerDay / affordedPerDay          // identical to usedShare / elaps
 `averagePerDay` is a restatement, not a second calculation — it is derived from the same
 cumulative figures, so it can never disagree with the band beside it.
 
+### On Orange, the period is the calendar month
+
+Wifiber runs from the first of the month to its last day, so on Orange the period is not
+derived from a carrier expiry date and `planDays` is not typed — both come from the
+calendar:
+
+```
+periodStart = first day of the current month
+planDays    = days in the current month        // 28 · 29 · 30 · 31
+elapsedDays = days elapsed since periodStart
+usedNow     = the portal's consumed figure     // stated, not derived
+remainingNow = planLimitBytes − usedNow
+```
+
+The tiers therefore collapse on Orange. The portal states consumption but never a cap, and
+the calendar supplies the length for free, so **the cap is the only input that gates
+anything**: with it, every reading including the meter is available; without it, the panel
+can state the consumed volume and nothing else — no dial, no meter, no per-day figure,
+because all three need a total. There is no Orange equivalent of tier 1, since tier 1's
+inputs were a carrier-supplied remaining and expiry, and the portal supplies neither.
+
+`planDays` being derived also means the setting disappears from the panel on Orange rather
+than being asked for and ignored.
+
 ### Drawing the pace
 
 The band is drawn, not narrated: a horizontal meter whose fill is `averagePerDay` against a
@@ -254,6 +325,7 @@ contradicted cap, and asks for the cap and length to be confirmed.
 ```
 src/
   hilink/       router client — session handshake, login, XML parsing, USSD dialogue
+  orange/       Orange selfcare portal — fetch 123.orange.mg, parse forfaits from HTML
   domain/       quota math, allowance anchor, formatting — pure, no I/O, no Electron
   config/       read and write the plan limit, router address and allowance anchor
   main/         Electron main process — tray, poll loop, popover window, login item,
@@ -330,6 +402,15 @@ Append-only. One line each, always with the reason.
 - The download and upload month totals are gone from the panel — the plan is billed on their sum, the dial and the carrier's remaining already state that sum, and the split answers a question nobody asked of a menu bar app
 - The plan cap, the plan length and the router password move behind a settings toggle — three input rows and their error lines are a third of the panel's height serving a value typed once a month, and the panel is 320×520 with no room to scroll
 - The panel's default is graphical: any figure with a range, a share or a threshold is drawn, and text is reserved for what has no magnitude — names, dates and error reasons; new panel work starts from a shape, not a sentence
+- The carrier is detected at runtime from the router's `FullName`, not chosen at build time or typed in — the SIM can be swapped without touching the app, and the router already reports the answer on an endpoint the poll loop calls anyway
+- The YAS USSD path stays in the tree beside the Orange one rather than being deleted — carrier detection means both are live code, and a SIM swap back must not need a release
+- On Orange the allowance is read from the selfcare portal on the ordinary poll, with no anchor and no delta — the portal needs no authentication and states consumption directly, so every reason the anchor existed (an expensive, stateful, lockout-prone dialogue) is absent
+- The Orange portal is scraped from server-rendered HTML, not from a JSON API — the page ships the figure in its markup and there is no API behind it to call, so the parse is the integration
+- The Orange parse reads whatever forfaits the page lists rather than assuming one shape — `full.infoconso.js` renders a percentage ring for capped bundles and none for Wifiber Go+ SSE, so a single hard-coded layout would break on the next plan the user buys
+- The Internet forfait is auto-selected and voice, SMS and credit bundles are ignored — the app measures a data allowance, and the other three answer a question the menu bar was never asked
+- On Orange the plan period is the calendar month, derived, and only the cap is typed — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly
+- The router's month counter has no role at all on Orange — it read 51.1 Go against the portal's 7.37 Go on the same day, so the two count different traffic and joining them would produce a confident wrong number
+- An unreachable portal is rendered like an unreachable router, as a state and not an error — the portal only answers on the Orange network, so a laptop on any other Wi-Fi is an ordinary condition
 
 ## Conventions
 

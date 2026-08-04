@@ -1,52 +1,65 @@
 # PLAN — ck-connect-check
 
-| ID   | Title                                                                   | Status | Size | Needs                  |
-| ---- | ----------------------------------------------------------------------- | ------ | ---- | ---------------------- |
-| T-01 | Set the project up so tests can run                                     | done   | S    | —                      |
-| T-02 | Turn the router's XML replies into typed data                           | done   | S    | T-01                   |
-| T-03 | Fetch a live usage snapshot from the router                             | done   | M    | T-02                   |
-| T-04 | Work out how much of the plan is used and when it resets                | done   | S    | T-01                   |
-| T-05 | Remember the plan limit and router address                              | done   | S    | T-01                   |
-| T-06 | Show usage in the macOS menu bar                                        | done   | M    | T-03, T-04, T-05       |
-| T-07 | Show the details when the menu bar item is clicked                      | done   | M    | T-06                   |
-| T-08 | Warn when usage approaches or passes the limit                          | done   | S    | T-04, T-06             |
-| T-09 | Launch the app on login without a Dock icon                             | done   | S    | T-06                   |
-| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | done   | S    | T-07                   |
-| T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10                   |
-| T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03                   |
-| T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10                   |
-| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13             |
-| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14                   |
-| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02                   |
-| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03                   |
-| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17             |
-| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17                   |
-| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05             |
-| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20             |
-| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21                   |
-| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21                   |
-| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23                   |
-| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21                   |
-| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25                   |
-| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25                   |
-| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21                   |
-| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25                   |
-| T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07                   |
-| T-31 | Say which network the router is actually on                             | done   | S    | T-30                   |
-| T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21                   |
-| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                      |
-| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30             |
-| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34             |
-| T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27                   |
-| T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36                   |
-| T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37                   |
-| T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28                   |
-| T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39                   |
-| T-41 | Release the pace and the automatic sync as 0.2.0                        | todo   | S    | T-38, T-40, T-42, T-45 |
-| T-42 | Notice a new plan instead of reporting the old one's share              | todo   | M    | T-27, T-28             |
-| T-43 | State the pace as a daily volume against the plan's daily budget        | todo   | S    | T-37                   |
-| T-44 | Draw the pace as a coloured meter instead of describing it              | todo   | M    | T-43, T-38             |
-| T-45 | Fit the whole panel on screen without scrolling                         | todo   | M    | T-44                   |
+| ID   | Title                                                                   | Status | Size | Needs                        |
+| ---- | ----------------------------------------------------------------------- | ------ | ---- | ---------------------------- |
+| T-01 | Set the project up so tests can run                                     | done   | S    | —                            |
+| T-02 | Turn the router's XML replies into typed data                           | done   | S    | T-01                         |
+| T-03 | Fetch a live usage snapshot from the router                             | done   | M    | T-02                         |
+| T-04 | Work out how much of the plan is used and when it resets                | done   | S    | T-01                         |
+| T-05 | Remember the plan limit and router address                              | done   | S    | T-01                         |
+| T-06 | Show usage in the macOS menu bar                                        | done   | M    | T-03, T-04, T-05             |
+| T-07 | Show the details when the menu bar item is clicked                      | done   | M    | T-06                         |
+| T-08 | Warn when usage approaches or passes the limit                          | done   | S    | T-04, T-06                   |
+| T-09 | Launch the app on login without a Dock icon                             | done   | S    | T-06                         |
+| T-10 | Keep the open panel refreshing instead of freezing until it is reopened | done   | S    | T-07                         |
+| T-11 | Refresh quickly while the panel is open and slowly while it is shut     | done   | S    | T-10                         |
+| T-12 | Remember the last few minutes of throughput                             | done   | S    | T-03                         |
+| T-13 | Show the month's usage as a dial instead of a bar                       | done   | M    | T-10                         |
+| T-14 | Show download and upload rates as live sparklines                       | done   | M    | T-12, T-13                   |
+| T-15 | Show sizes in French octets (Go) instead of English bytes (GB)          | done   | S    | T-14                         |
+| T-16 | Read the carrier's USSD replies as data instead of text                 | done   | S    | T-02                         |
+| T-17 | Sign in to the router so its protected endpoints can be used            | done   | M    | T-03                         |
+| T-18 | Ask the carrier for the exact remaining allowance over USSD             | done   | M    | T-16, T-17                   |
+| T-19 | Keep the router password in the macOS Keychain                          | done   | S    | T-17                         |
+| T-20 | Carry the real allowance forward with the router's own counter          | done   | M    | T-18, T-05                   |
+| T-21 | Sync the real figures from the panel with one button                    | done   | M    | T-19, T-20                   |
+| T-22 | Make the packaged app find its own panel                                | done   | S    | T-21                         |
+| T-23 | Say which error the router actually returned when a sync fails          | done   | S    | T-21                         |
+| T-24 | Give every POST a token the router has not already spent                | done   | M    | T-23                         |
+| T-25 | Measure the dial against the plan the user actually bought              | done   | M    | T-21                         |
+| T-26 | Make the menu bar agree with the panel                                  | done   | S    | T-25                         |
+| T-27 | Let the plan cap be typed into the panel                                | done   | M    | T-25                         |
+| T-28 | Sync by itself when there is nothing trustworthy to show                | done   | S    | T-21                         |
+| T-29 | Drop the reset countdown the carrier never agreed with                  | done   | S    | T-25                         |
+| T-30 | Draw the signal as real bars instead of a coloured square               | done   | S    | T-07                         |
+| T-31 | Say which network the router is actually on                             | done   | S    | T-30                         |
+| T-32 | Put Sync where the panel is looked at first                             | done   | S    | T-21                         |
+| T-33 | Give the app a mark of its own in Finder and the Dock                   | done   | M    | —                            |
+| T-34 | Put the signal glyph next to the number in the menu bar                 | done   | M    | T-33, T-30                   |
+| T-35 | Introduce the app to someone arriving from GitHub                       | done   | M    | T-33, T-34                   |
+| T-36 | Ask how long the plan lasts so the pace has a period                    | done   | M    | T-27                         |
+| T-37 | Work out whether the connection is being used moderately                | done   | M    | T-36                         |
+| T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37                         |
+| T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28                         |
+| T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39                         |
+| T-41 | Release the pace and the automatic sync as 0.2.0                        | doing  | S    | T-38, T-40, T-42, T-45, T-46 |
+| T-42 | Notice a new plan instead of reporting the old one's share              | done   | M    | T-27, T-28                   |
+| T-43 | State the pace as a daily volume against the plan's daily budget        | done   | S    | T-37                         |
+| T-44 | Draw the pace as a coloured meter instead of describing it              | done   | M    | T-43, T-38                   |
+| T-45 | Fit the whole panel on screen without scrolling                         | done   | M    | T-44                         |
+| T-46 | Count the carrier's last valid day as a day of the plan                 | done   | S    | T-43                         |
+| T-47 | Show the carrier's last valid day, not the midnight after it            | done   | S    | T-46                         |
+| T-48 | Say which daily figure is which                                         | done   | S    | T-47                         |
+| T-49 | Let the meter speak alone where it speaks                               | done   | S    | T-48                         |
+| T-50 | Know which carrier the SIM is on                                        | todo   | S    | T-03                         |
+| T-51 | Read Orange's forfaits out of the portal page                           | todo   | S    | T-01                         |
+| T-52 | Fetch the Orange portal without blocking the app                        | todo   | S    | T-51                         |
+| T-53 | Pick the Internet forfait when several are active                       | todo   | S    | T-51                         |
+| T-54 | Measure a Wifiber plan against the calendar month                       | todo   | M    | T-53                         |
+| T-55 | Feed the panel from whichever carrier the SIM is on                     | todo   | M    | T-50, T-52, T-54             |
+| T-56 | Show the forfait's name and hide what Orange cannot answer              | todo   | S    | T-55                         |
+| T-57 | Say when the portal cannot be reached or the forfait is unreadable      | todo   | S    | T-55                         |
+| T-58 | Bring the README and screenshots up to the Orange setup                 | todo   | S    | T-56, T-57                   |
 
 ## T-01 Set the project up so tests can run
 
@@ -2014,7 +2027,7 @@ comes round every couple of seconds and a dialogue takes tens of them.
 
 ## T-41 Release the pace and the automatic sync as 0.2.0
 
-T-41 · status: todo · size: S · needs: T-38, T-40, T-42, T-45 · files: package.json, package-lock.json, README.md, test/readme.test.ts, test/project-setup.test.ts
+T-41 · status: doing · size: S · needs: T-38, T-40, T-42, T-45, T-46 · files: package.json, package-lock.json, README.md, src/app-info.ts, test/readme.test.ts, test/project-setup.test.ts
 
 Version 0.2.0, and a README that describes the app as it now behaves: a tiered
 pace reading under the dial, a plan length to enter beside the cap, a sync that
@@ -2024,27 +2037,51 @@ so this extends that test rather than trusting prose.
 
 ### Acceptance
 
-- [ ] `package.json` reads `0.2.0` and `package-lock.json` agrees
-- [ ] `app-info.ts`'s version, or whatever the app reports as its version, reads 0.2.0
-- [ ] the README documents the plan-length setting, the three pace tiers and their bands, the 30-minute automatic sync, and the top-up flow
-- [ ] the README states that loading a new plan needs a Sync and a cap confirmation, and no reset
-- [ ] the README test asserts each of those claims against the source that implements it
-- [ ] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
-- [ ] the README describes the pace as a coloured meter and states the three bands with the 5 Go/day worked example
+- [x] `package.json` reads `0.2.0` and `package-lock.json` agrees
+- [x] `app-info.ts`'s version, or whatever the app reports as its version, reads 0.2.0
+- [x] the README documents the plan-length setting, the three pace tiers and their bands, the 30-minute automatic sync, and the top-up flow
+- [x] the README states that loading a new plan needs a Sync and a cap confirmation, and no reset
+- [x] the README test asserts each of those claims against the source that implements it
+- [x] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
+- [x] the README describes the pace as a coloured meter and states the three bands with the 5 Go/day worked example
 - [ ] the README's screenshot shows the compacted panel with the settings toggle, not the pre-T-45 layout
-- [ ] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
+- [x] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
 
 ### Tasks
 
-- [ ] Failing README and project-setup tests for the claims above
-- [ ] Bump the version in `package.json` and refresh the lockfile
-- [ ] Write the four README sections
-- [ ] Manual: package the app and confirm it reports 0.2.0
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing README and project-setup tests for the claims above
+- [x] Bump the version in `package.json` and refresh the lockfile
+- [x] Write the four README sections
+- [x] Manual: package the app and confirm it reports 0.2.0
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- **Held open on one criterion.** The screenshot needs a human capture of the running app
+  against a real router: `docs/media/panel.png`, main view at 320×520, showing the dial,
+  pace meter, allowance strip and the settings toggle in the header. No stale or fabricated
+  image was left in place, and the README references no path that fails to resolve. Once
+  the file exists, add an `![…](docs/media/panel.png)` reference and the existing
+  link-existence test covers it. Capture it **after T-46**, so the meter shown is correct.
+- `needs` gained T-46 after the fact: manual testing of the merged wave found the pace
+  under-reporting by a full day, and releasing 0.2.0 with its headline feature wrong was
+  not worth the earlier ship date.
+- The README test anchors every documented claim to the source implementing it rather than
+  grepping for prose: band boundaries against `SAFE_PACE`/`WARNING_PACE`, the 5 Go/day
+  example recomputed through the real `readPace`, the window against
+  `DEFAULT_SYNC_STALE_AFTER_MINUTES`, the three colours against `popover.css`'s own rules.
+- A pre-existing README claim was corrected, not just extended: it said a sync happens
+  automatically "only when there is nothing trustworthy to show", which T-40 had falsified.
+  The 30-minute rule is now stated as primary, that case as secondary.
+- `src/app-info.ts` was outside the declared list. `APP_VERSION` is asserted equal to
+  `package.json`'s version rather than to a literal, so a future bump cannot desynchronise
+  the two silently.
+- The lockfile refresh moved exactly two lines, both `version` fields; no dependency
+  version changed during the release commit.
 
 ## T-42 Notice a new plan instead of reporting the old one's share
 
-T-42 · status: todo · size: M · needs: T-27, T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-42 · status: done · size: M · needs: T-27, T-28 · files: src/domain/allowance.ts, src/config/config.ts, src/config/defaults.ts, src/main/sync.ts, src/main/main.ts, src/main/tray.ts, src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, README.md, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts, test/main/main.test.ts, test/main/tray.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 Loading a new plan needs no reset control: `anchorFrom` builds a whole new anchor
 on every sync — label, remaining, expiry and both router counters — so a reset
@@ -2076,34 +2113,50 @@ that writes the new one; a first-ever sync has no previous and is not a new plan
 
 ### Acceptance
 
-- [ ] `isNewPlan` is true for a differing `planLabel`, for an `expiresAt` later than the previous one, and for `remainingBytes` above the configured cap
-- [ ] it is false when label, expiry and remaining are all unchanged, and false when there is no previous anchor
-- [ ] it is false for an `expiresAt` that moved _earlier_, and throws nothing when either `expiresAt` is null
-- [ ] it is false when no cap is configured and only the remaining volume grew — with no cap there is nothing to contradict
-- [ ] `config.ts` round-trips `planCapConfirmed` as a boolean, defaulting to `true` so an existing config is not flagged on first launch
-- [ ] a sync whose new anchor is a new plan writes `planCapConfirmed: false`, and one that is not leaves the flag untouched
-- [ ] with the flag false the popover model's `percentUsed` and `pace.tier` 2 and 3 fields are null, while the tier 1 reading is unchanged
-- [ ] with the flag false the panel renders the confirmation prompt and no dial, asserted against the stylesheet's selectors
-- [ ] submitting the cap through the existing T-27 setter sets the flag true, and the dial returns in the same model build
-- [ ] confirming without changing the cap also sets it true, so an unchanged plan size costs one click
-- [ ] the tray title follows the same rule as the dial, never showing a share computed from an unconfirmed cap
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `isNewPlan` is true for a differing `planLabel`, for an `expiresAt` later than the previous one, and for `remainingBytes` above the configured cap
+- [x] it is false when label, expiry and remaining are all unchanged, and false when there is no previous anchor
+- [x] it is false for an `expiresAt` that moved _earlier_, and throws nothing when either `expiresAt` is null
+- [x] it is false when no cap is configured and only the remaining volume grew — with no cap there is nothing to contradict
+- [x] `config.ts` round-trips `planCapConfirmed` as a boolean, defaulting to `true` so an existing config is not flagged on first launch
+- [x] a sync whose new anchor is a new plan writes `planCapConfirmed: false`, and one that is not leaves the flag untouched
+- [x] with the flag false the popover model's `percentUsed` and `pace.tier` 2 and 3 fields are null, while the tier 1 reading is unchanged
+- [x] with the flag false the panel renders the confirmation prompt and no dial, asserted against the stylesheet's selectors
+- [x] submitting the cap through the existing T-27 setter sets the flag true, and the dial returns in the same model build
+- [x] confirming without changing the cap also sets it true, so an unchanged plan size costs one click
+- [x] the tray title follows the same rule as the dial, never showing a share computed from an unconfirmed cap
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for every criterion above, with a fixed clock
-- [ ] Implement `isNewPlan` beside `stalenessOf`, exported and pure
-- [ ] Add `planCapConfirmed` to `AppConfig`, its default and its validation
-- [ ] Call the predicate where the sync writes its anchor, and clear the flag there only
-- [ ] Gate `percentUsed` and the tier 2/3 pace fields on the flag in the view-model
-- [ ] Render the confirmation prompt and wire its two actions to the existing cap setter
-- [ ] Manual: edit `config.json` to a cap below the anchored remaining, open the panel, confirm the prompt appears and the dial does not
-- [ ] Manual: confirm the cap and watch the dial and the band return
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing tests for every criterion above, with a fixed clock
+- [x] Implement `isNewPlan` beside `stalenessOf`, exported and pure
+- [x] Add `planCapConfirmed` to `AppConfig`, its default and its validation
+- [x] Call the predicate where the sync writes its anchor, and clear the flag there only
+- [x] Gate `percentUsed` and the tier 2/3 pace fields on the flag in the view-model
+- [x] Render the confirmation prompt and wire its two actions to the existing cap setter
+- [x] Manual: edit `config.json` to a cap below the anchored remaining, open the panel, confirm the prompt appears and the dial does not
+- [x] Manual: confirm the cap and watch the dial and the band return
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- The criterion naming `percentUsed` and null `pace.tier` 2/3 fields was met by a different
+  mechanism than its wording implies: `PopoverModel` has no `percentUsed` field and
+  `PopoverPace`'s fields are strings by T-38's design. The nulls are real one layer down —
+  `readPlanUsage` and `readPace` are both called with a null cap — and surface as
+  `progress.available:false`, `"—"` labels and empty band strings. `popover.ts:545` sets
+  `data-limit="unset"` from that flag and `popover.css:359` removes `.dial-value` and
+  `.caption` from display, so no share derived from an unconfirmed cap reaches the DOM.
+- `confirmedPlanLimit` treats only an explicit `false` as unconfirmed, mirroring the config
+  reader's own fallback, so hand-built `AppConfig` fixtures keep their caps. `recordAnchor`
+  only ever writes `false` and never `true`, so the default cannot mask a real unconfirmed
+  state written by a sync.
+- `README.md` was touched because `readme.test.ts` generates its config table from
+  `AppConfig` and fails on any undocumented field. T-41 edits the same file.
 
 ## T-43 State the pace as a daily volume against the plan's daily budget
 
-T-43 · status: todo · size: S · needs: T-37 · files: src/domain/pace.ts, test/domain/pace.test.ts
+T-43 · status: done · size: S · needs: T-37 · files: src/domain/pace.ts, test/domain/pace.test.ts
 
 The tier 3 ratio is already the right arithmetic, but it is stated in the wrong
 units. The user reasons in daily volumes — 150 Go over 30 days affords 5 Go a
@@ -2133,25 +2186,37 @@ whose meaning is unchanged is churn the colour mapping in T-44 does not need.
 
 ### Acceptance
 
-- [ ] `PaceReading` carries `averagePerDay: number | null`, null below tier 3 like `affordedPerDay`
-- [ ] with a 150 Go cap over 30 days and 10 days elapsed having spent 60 Go, `averagePerDay` is 6 Go and `affordedPerDay` is 5 Go
-- [ ] `averagePerDay / affordedPerDay` equals `pace` to within floating-point tolerance in every tier 3 case tested
-- [ ] a ratio of exactly 1.20 bands as `over`, not `warning`
-- [ ] a ratio just under 1.20 still bands as `warning`, and exactly 1.00 still bands as `safe`
-- [ ] inside the first day the elapsed floor still forces `safe`, and `averagePerDay` is the used volume divided by that floor rather than by zero
-- [ ] tier 1 and tier 2 readings carry `averagePerDay: null`
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `PaceReading` carries `averagePerDay: number | null`, null below tier 3 like `affordedPerDay`
+- [x] with a 150 Go cap over 30 days and 10 days elapsed having spent 60 Go, `averagePerDay` is 6 Go and `affordedPerDay` is 5 Go
+- [x] `averagePerDay / affordedPerDay` equals `pace` to within floating-point tolerance in every tier 3 case tested
+- [x] a ratio of exactly 1.20 bands as `over`, not `warning`
+- [x] a ratio just under 1.20 still bands as `warning`, and exactly 1.00 still bands as `safe`
+- [x] inside the first day the elapsed floor still forces `safe`, and `averagePerDay` is the used volume divided by that floor rather than by zero
+- [x] tier 1 and tier 2 readings carry `averagePerDay: null`
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing tests for the worked example, both band boundaries and the tier nulls, with a fixed clock
-- [ ] Add `averagePerDay` to `PaceReading` and compute it from `usedBytes` and the floored elapsed days
-- [ ] Move the `over` boundary to `pace >= WARNING_PACE` and correct the constant's doc comment
-- [ ] Update the tier table in `pace.ts`'s module comment
+- [x] Failing tests for the worked example, both band boundaries and the tier nulls, with a fixed clock
+- [x] Add `averagePerDay` to `PaceReading` and compute it from `usedBytes` and the floored elapsed days
+- [x] Move the `over` boundary to `pace >= WARNING_PACE` and correct the constant's doc comment
+- [x] Update the tier table in `pace.ts`'s module comment
+
+### Notes
+
+- `elapsedDays` is floored once at `pace.ts:188`; both `pace` (line 190, via `elapsedShare`)
+  and `averagePerDay` (line 201) divide by that same value, so the meter T-44 draws cannot
+  contradict the band beside it. This is the restatement the design requires, not a second
+  accumulation.
+- Of the 6 added tests, 4 genuinely failed at RED. The two boundary guards — "just under
+  1.20 stays warning" and "exactly 1.00 stays safe" — pass under both the old and new
+  operator by design; they exist to prove the moved boundary did not disturb its
+  neighbours, so a failure there would have meant the old bound was wrong in the other
+  direction.
 
 ## T-44 Draw the pace as a coloured meter instead of describing it
 
-T-44 · status: todo · size: M · needs: T-43, T-38 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-44 · status: done · size: M · needs: T-43, T-38 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 T-38 put the pace on the panel as four lines of prose. A band is a magnitude with
 three named regions, which is exactly what a bar states faster than a sentence,
@@ -2179,30 +2244,49 @@ earns its space: it answers a question with no range attached.
 
 ### Acceptance
 
-- [ ] the popover model exposes the meter's fill share, its band and both formatted volumes, and computes no geometry in the renderer beyond the SVG or bar it draws
-- [ ] a tier 3 model in each band renders the section with `data-pace-state` set to `safe`, `warning` and `over` respectively
-- [ ] the stylesheet maps those three states to the green, orange and red custom properties, asserted against the stylesheet text
-- [ ] a pace of 1.0 fills the meter exactly to its tick, a pace of 0.5 to half of it, and a pace of 3 clamps to the drawn maximum while the numerals still read the true figures
-- [ ] the numerals read `averagePerDay` and `affordedPerDay` in Go with the app's existing French formatter
-- [ ] a tier 1 model renders the sustainable-per-day line and no meter element
-- [ ] a tier 2 model renders no meter either — there is still no afforded figure
-- [ ] the prose lines T-38 added for the band, the afforded figure and the consumed figure are gone from the page
-- [ ] the section stays hidden outright when `readPace` returns null
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the popover model exposes the meter's fill share, its band and both formatted volumes, and computes no geometry in the renderer beyond the SVG or bar it draws
+- [x] a tier 3 model in each band renders the section with `data-pace-state` set to `safe`, `warning` and `over` respectively
+- [x] the stylesheet maps those three states to the green, orange and red custom properties, asserted against the stylesheet text
+- [x] a pace of 1.0 fills the meter exactly to its tick, a pace of 0.5 to half of it, and a pace of 3 clamps to the drawn maximum while the numerals still read the true figures
+- [x] the numerals read `averagePerDay` and `affordedPerDay` in Go with the app's existing French formatter
+- [x] a tier 1 model renders the sustainable-per-day line and no meter element
+- [x] a tier 2 model renders no meter either — there is still no afforded figure
+- [x] the prose lines T-38 added for the band, the afforded figure and the consumed figure are gone from the page
+- [x] the section stays hidden outright when `readPace` returns null
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing view-model and renderer tests for every criterion above
-- [ ] Add the meter fields to the popover model, clamping the fill share and leaving the numerals exact
-- [ ] Replace the four `pace-*` paragraphs in `index.html` with the meter, its tick and the numeral pair
-- [ ] Render fill and tick from the model in `popover.ts`, setting `data-pace-state` and nothing else
-- [ ] Move the three band colours into `popover.css` as custom properties beside the existing accents
-- [ ] Manual: with a real anchor, cap and length, confirm the meter matches a hand calculation and the colour matches the band
-- [ ] Update the `files:` line above to reflect everything actually touched
+- [x] Failing view-model and renderer tests for every criterion above
+- [x] Add the meter fields to the popover model, clamping the fill share and leaving the numerals exact
+- [x] Replace the four `pace-*` paragraphs in `index.html` with the meter, its tick and the numeral pair
+- [x] Render fill and tick from the model in `popover.ts`, setting `data-pace-state` and nothing else
+- [x] Move the three band colours into `popover.css` as custom properties beside the existing accents
+- [x] Manual: with a real anchor, cap and length, confirm the meter matches a hand calculation and the colour matches the band
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- The meter is hidden outright while `planCapConfirmed` is false, not merely blanked —
+  the band would otherwise be drawn from the cap T-42 has flagged as contradicted.
+  Asserted on the element in `popover.test.ts` and on `pace.meter === null` in the model.
+- The clamp applies to `fill` only (`view-model.ts:720`, span of 2× afforded). `average`
+  and `afforded` carry exact unclamped figures, so a pace of 3 pins the bar at its maximum
+  while the numeral still reads `15.00 Go`.
+- `data-state` was renamed `data-pace-state` per the criterion's wording; T-38's two-state
+  colour test was replaced by a three-state one that also asserts `--safe` exists.
+- `PopoverPace.note` and `PACE_NOTE_TEXT` were removed alongside the three prose fields —
+  named by the plan's Tasks line though not by a criterion. `hint` was kept: it is an
+  instruction about missing settings, not a description of the pace.
+- Two T-42 assertions reading `pace.note` / `consumed` / `afforded` were rewritten to
+  `not.toHaveProperty` over all four fields plus `meter === null` — a stronger claim than
+  the empty-string checks they replaced, verified against the pre-merge commit.
+- `PACE_BAND_TEXT` survives as the meter's `aria-label`, so the verdict is carried in
+  words as well as in hue and in the fill crossing the tick.
 
 ## T-45 Fit the whole panel on screen without scrolling
 
-T-45 · status: todo · size: M · needs: T-44 · files: src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/renderer/popover.test.ts
+T-45 · status: done · size: M · needs: T-44 · files: src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/main/view-model.ts, src/main/popover.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/main/view-model.test.ts
 
 The panel is 320×520 and its content has outgrown it: header, dial, two settings
 forms and their error lines, the pace section, the allowance strip, two rate rows,
@@ -2232,24 +2316,713 @@ no layout engine to measure against.
 
 ### Acceptance
 
-- [ ] the page contains no `monthDownload` and no `monthUpload` field, and the view-model no longer exports them
-- [ ] the header carries a settings toggle whose pressed state swaps which of the two views is hidden
-- [ ] with settings open, the main view is hidden and the cap, length and password forms are all present
-- [ ] with settings closed, all three forms are hidden and the dial, pace meter, allowance and rates are present
-- [ ] the toggle carries an attention marker when no router password is stored, and does not when one is
-- [ ] the cap and length setters still work from inside the settings view, errors included, through the same IPC channels
-- [ ] closing and reopening the panel returns it to the main view rather than restoring settings
-- [ ] the stats grid holds only the remaining items, and expiry and days-left read on one line with the allowance
-- [ ] `POPOVER_HEIGHT` is unchanged at 520
+- [x] the page contains no `monthDownload` and no `monthUpload` field, and the view-model no longer exports them
+- [x] the header carries a settings toggle whose pressed state swaps which of the two views is hidden
+- [x] with settings open, the main view is hidden and the cap, length and password forms are all present
+- [x] with settings closed, all three forms are hidden and the dial, pace meter, allowance and rates are present
+- [x] the toggle carries an attention marker when no router password is stored, and does not when one is
+- [x] the cap and length setters still work from inside the settings view, errors included, through the same IPC channels
+- [x] closing and reopening the panel returns it to the main view rather than restoring settings
+- [x] the stats grid holds only the remaining items, and expiry and days-left read on one line with the allowance
+- [x] `POPOVER_HEIGHT` is unchanged at 520
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing renderer tests for the two views, the toggle, the attention marker and the absent fields
+- [x] Delete the download and upload totals from the page and the popover model
+- [x] Wrap the main view and a new settings view, and drive their `hidden` from the toggle
+- [x] Move the cap, length and password forms into the settings view unchanged, keeping their handlers
+- [x] Reset to the main view whenever the panel is shown
+- [x] Fold the surviving stats into the allowance line and tighten the section spacing
+- [x] Manual: open the panel on the real router and confirm nothing scrolls at 320×520, with and without a stored password
+
+### Notes
+
+- T-42's `[data-plan-cap-prompt]` stays in the **main** view (`index.html:119`) while the cap
+  input moved to the settings view (`index.html:258`). The plan predates T-42 and does not
+  say where the prompt goes; it is an alert about a contradicted figure, not a setting, and
+  behind the toggle a user with no dial would have no reason to look for it. Both halves
+  are tested.
+- The view reset is driven from the main process — `src/main/popover.ts:211` calls
+  `executeJavaScript("window.resetPopoverView?.()")` on `show()`. That is safe under
+  `contextIsolation:true`; the preload still exposes only `popoverBridge`, and the existing
+  isolation assertions pass unchanged. Chosen over `visibilitychange` because it is
+  deterministic, testable without faking jsdom visibility, and fires on every open.
+- `.view[hidden] { display: none }` was needed because both views carry their own `display`.
+  Specificity (0,2,0) beats `.view` at (0,1,0).
+- Five tests were rewritten, none deleted outright: the two month-total assertions were
+  inverted into negative ones, the 5-tile grid assertion became `["Devices"]`, and two
+  stale-reading tests swapped the removed counters for `monthTotal`. A whitespace-ignoring
+  diff of `index.html` is 125/88 against a raw 235/198 — about half the churn was a
+  formatter hook, and every substantive change is accounted for by the task.
+- `CHROME_HEIGHT` stays 350 but its comment was rewritten: the old rationale described a
+  five-tile grid and fields beside the dial that no longer exist, and did not account for
+  the pace section. New budget ≈504 ≤ 520. This is reasoned, not measured — a renderer test
+  has no layout engine, so the manual gate is the only proof the panel fits.
+
+## T-46 Count the carrier's last valid day as a day of the plan
+
+T-46 · status: done · size: S · needs: T-43 · files: src/hilink/ussd-parse.ts, test/hilink/ussd-parse.test.ts, test/hilink/ussd.test.ts, test/domain/allowance.test.ts, test/domain/pace.test.ts
+
+Found by manual testing on 29/07/2026 against a real plan: a 30-day plan bought on
+27/07/2026 and expiring 25/08/2026 showed a pace of **4.47 Go a day against a 5.00 Go
+budget** — green, comfortably safe — when the true figure was **6.13 Go a day**, a pace of
+1.23 and firmly `over`. The meter flattered the user by a full day's worth of allowance.
+
+The fault is one line, upstream of every calculation that uses it. `readExpiry`
+(`ussd-parse.ts:67`) builds the expiry with `new Date(year, month - 1, day)`, which is
+**midnight at the start** of the stated day. The carrier means the plan is valid _through_
+that day, and its own arithmetic proves it: 27/07 plus 30 days lands on 25/08 only if the
+last day is counted. So the parser contradicts the carrier's stated period length.
+
+That single instant feeds three consumers, and every error runs the same direction:
+
+```
+periodStart   = expiresAt − planDays          pace.ts:186     → 26/07, not 27/07
+wholeDaysUntil(expiry, now)                   allowance.ts:135 → 27 days, not 28
+expiresAt.getTime() < now.getTime()           allowance.ts:290 → expires a day early
+```
+
+The third has not bitten yet but is the worst: on 25/08 the app would declare the plan dead
+while the carrier is still serving it, dropping the dial and the whole anchor a day early.
+
+The fix belongs at the source — the expiry instant becomes the midnight that **ends** the
+stated day. Correcting the three consumers instead would be patching one fault in three
+places, and the next consumer would inherit it again.
+
+### Acceptance
+
+- [x] `readExpiry` returns the instant the plan stops being valid: the midnight ending the stated day, not the one starting it
+- [x] a reply stating `25/08/2026` is not expired at any point during 25/08 and is expired on 26/08
+- [x] the same reply with a 30-day plan puts `periodStart` at 27/07, so elapsed plus remaining equals `planDays`
+- [x] `wholeDaysUntil` counts the stated day: on 29/07 against an expiry of 25/08 the answer is 28
+- [x] month and year rollover hold — 31/12 rolls into 01/01 of the next year, 28/02 into 01/03 in a non-leap year
+- [x] the reported case reproduces: cap 150 Go, 30 days, expiry 25/08, 16.49 Go used on 29/07 yields `averagePerDay` ≈ 6.1 Go, a pace ≥ 1.20 and state `over`
+- [x] a malformed or absent expiry still returns null and throws nothing, as before
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for every criterion above, with a fixed clock
+- [x] Correct `readExpiry` to the end of the stated day
+- [x] Check each of the three consumers reads correctly against the new instant, without changing them
+- [x] Manual: confirm the panel now reads ≈6.1 Go a day, red, and 28 days remaining
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- Migration side-effect: a stored anchor holds the old start-of-day instant, so the first
+  re-sync after this lands moves `expiresAt` one day later. T-42's `isNewPlan` reads that as
+  a new plan and asks for a cap confirmation once. Harmless and self-correcting, but it will
+  happen exactly once per existing install and should not be mistaken for a fault.
+
+## T-47 Show the carrier's last valid day, not the midnight after it
+
+T-47 · status: done · size: S · needs: T-46 · files: src/main/view-model.ts, test/main/view-model.test.ts, test/main/main.test.ts, test/renderer/popover.test.ts
+
+T-46 corrected `expiresAt` to the midnight that **ends** the carrier's last valid day, which
+is the right instant for every calculation that measures a span: the period start, the days
+remaining, and the expiry check all read correctly from it.
+
+It is the wrong instant to **print**. `formatDate` (`view-model.ts:493`) is applied to it
+directly at `view-model.ts:542` and again at `:760` inside the "N Go a day until <date>"
+line, so the panel now shows `26/08/2026` where the carrier's own SMS says
+"jusqu'au 25/08/2026". The app contradicting the carrier's wording is exactly the
+unreliability the anchor design exists to remove.
+
+No test caught this, and the reason is worth recording: every view-model and popover test
+hand-builds its `expiresAt` with `new Date(...)`, so none of them exercises the instant the
+parser actually produces. The fix therefore comes with a test that reaches the parser.
+
+A displayed date wants the last valid _moment_, not the exclusive bound — `expiresAt` minus
+one millisecond — so the two readings stay derived from one stored instant rather than the
+anchor carrying two dates that could drift apart.
+
+### Acceptance
+
+- [x] the expiry shown in the allowance strip reads the carrier's stated day, not the day after
+- [x] the tier 1 "N Go a day until <date>" line reads the same day as the allowance strip
+- [x] both are derived from the single stored `expiresAt`, with no second date on the anchor
+- [x] at least one test drives a real carrier reply through `parseAllowance` rather than hand-building the date, so a future parser change cannot pass unnoticed
+- [x] the existing display assertions are corrected, not deleted — `test/main/view-model.test.ts:738` and `test/main/main.test.ts:586` shift from `12/08/2026` to `11/08/2026`, correct under the new semantics since their fixture means "valid through 11/08"
+- [x] a null `expiresAt` still renders the existing absence marker and throws nothing
+- [x] the day count beside the date is unchanged — T-46 settled it and this task must not move it
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for both display sites, one of them parser-driven
+- [x] Format the last valid moment rather than the exclusive bound, at both call sites
+- [x] Correct the two existing display assertions
+- [x] Manual: confirm the panel's expiry matches the carrier's SMS wording exactly
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- Five existing display assertions needed correcting, not the two the finding named:
+  `view-model.test.ts:738` and `:1107`, `main.test.ts:586`, `popover.test.ts:1130` and
+  `:1936`. Each shifts one day earlier and each is semantically correct — a fixture built as
+  `new Date(2026, 7, 12)` now means "valid through 11/08".
+- The gap that let this through was narrower than first described: the renderer layer is not
+  insulated, it goes through the real view-model. What no test anywhere did was feed a
+  _parser-produced_ date into the view-model — every `expiresAt` was a literal `new Date(…)`.
+  `view-model.test.ts:829` now reads `test/fixtures/hilink/ussd-4-allowance.xml` off disk and
+  runs parse → `anchorFrom` → `buildPopoverModel` with nothing hand-built in between.
+- `formatLastValidDay` steps back one millisecond rather than storing a second date, so the
+  two readings cannot drift apart. Residual, not applicable here: in a timezone that springs
+  forward exactly at midnight, local midnight does not exist and the step-back would stay on
+  the same day. Madagascar observes no DST.
+- The day count is guarded against the tempting wrong fix — shifting the stored instant back
+  would correct the display and silently undo T-46. `view-model.test.ts:867` asserts
+  `"30 days"` on the same parser-driven model whose printed date is `25/08/2026`.
+
+## T-48 Say which daily figure is which
+
+T-48 · status: done · size: S · needs: T-47 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Reported from the panel on 29/07/2026: the pace section shows three volumes in Go a day
+with nothing to tell them apart — `4.76 Go a day until 25/08/2026` above a meter reading
+`6.13 Go / 5.00 Go a day`. The arithmetic is right and the reading is not: a user who sees
+4.76 and 6.13 together assumes one of them is wrong, because nothing on screen says they
+measure different things.
+
+They answer three different questions:
+
+```
+sustainablePerDay  remainingBytes / daysUntilExpiry   what is left to spend, per day from now
+averagePerDay      usedBytes / elapsedDays            what has been spent, per day so far
+affordedPerDay     planLimitBytes / planDays          what the plan affords, flat
+```
+
+The relationship is the useful part and is currently invisible: overspending pulls the
+recovery figure _below_ the flat budget, and a quiet few days pulls it back above. That is
+the compensation the band encodes, and it is legible only once the reader knows which
+number is which.
+
+This is a labelling task, not a numbers task. **No figure changes, no arithmetic moves** —
+T-43, T-44 and T-46 settled all three and a test must prove they are untouched. The meter
+already pairs its two numerals against each other; what is missing is that the line above
+is measuring the other direction in time.
+
+### Acceptance
+
+- [x] the recovery line states that its figure is what remains to spend per day, not what has been spent
+- [x] the meter's pair states which numeral is spent and which is the budget, without a legend elsewhere on the panel
+- [x] the three figures stay byte-identical to what the view-model produces today — asserted against the same fixtures, so this task cannot move a number
+- [x] the wording fits the panel at 320×520 with no scrolling and no truncation of the carrier's name
+- [x] tier 1 keeps a single line and gains no meter vocabulary it has no figures for
+- [x] the labels survive the unconfirmed-cap state, where the meter is hidden and only the recovery line remains
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for the labels, and a guard that the three figures are unchanged
+- [x] Word the recovery line and the meter pair so each says what it measures
+- [x] Check the 320×520 fit still holds, T-45's budget included
+- [x] Manual: read the section cold and confirm the three figures no longer look contradictory
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- Wording shipped: `"… Go a day left to spend until …"` for the recovery line, and
+  `"… Go spent / … Go budget a day"` for the meter's pair. The meter's labels are static
+  text in `index.html`; only the figures come from the model.
+- The three unchanged-figure guards deliberately pass at RED as well as GREEN. A guard
+  pinning existing behaviour must pass beforehand — one that failed first would be pinning
+  the new behaviour, not the old. The four _label_ tests were observed failing first.
+- Tier 1's "no meter vocabulary" test rests on `spend` ≠ `spent`, which is deliberate and
+  load-bearing: a reword to "already spent" would correctly trip it.
+- T-49 immediately superseded the tier 3 half of this task — the recovery line is gone
+  where the meter is drawn. The labels still carry tiers 1 and 2, where the line now stands
+  alone with nothing to be read against, so none of this work was wasted.
+
+## T-49 Let the meter speak alone where it speaks
+
+T-49 · status: done · size: S · needs: T-48 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Reported from the panel a second time, after T-48's labels were specified: the recovery
+figure still reads as a contradiction beside the meter, and the meter alone already says
+what the reader needs. So at tier 3 the line goes.
+
+The two face opposite directions in time and only one of them is worth the space when both
+could be shown:
+
+```
+meter          usedBytes / elapsedDays  vs  planLimitBytes / planDays   backward — the diagnosis
+recovery line  remainingBytes / daysUntilExpiry                         forward  — the prescription
+```
+
+The prescription is the thing being given up, knowingly: the panel will say the connection
+is being used too fast without naming the daily figure that would correct it. That is the
+trade accepted for a section that reads at a glance instead of needing to be worked out.
+
+**The line survives wherever the meter does not.** At tier 2 there is no plan length, so
+there is no budget to draw and the recovery figure is the only pace reading there is. At
+tier 1 the same, and T-42's unconfirmed-cap state falls back to tier 1 precisely so a
+contradicted cap draws nothing — the meter is hidden there, so the line must appear. The
+rule is one sentence: **the recovery line and the meter are never both shown, and never both
+absent.**
+
+That mutual exclusion is the invariant to test, rather than testing the two states
+separately and leaving a third where a reader sees neither figure.
+
+T-48's labels are not wasted: `left to spend` is what makes the line legible at tiers 1 and
+2, where it now stands alone with nothing to contrast it against.
+
+### Acceptance
+
+- [x] the recovery line is absent whenever the meter is drawn
+- [x] the recovery line is present at tier 1 and at tier 2, where no meter exists
+- [x] the recovery line is present in T-42's unconfirmed-cap state, where the pace falls back to tier 1 and the meter is hidden
+- [x] no state shows both, and no state shows neither — asserted as one invariant across every tier and the unconfirmed-cap case, not as separate per-state tests
+- [x] the meter reclaims the width the numerals borrowed in T-48, so the bar's track returns to roughly its pre-T-48 length
+- [x] the pace section is shorter at tier 3 by the removed line, and `CHROME_HEIGHT`'s budget comment is corrected to match rather than left stale
+- [x] every figure that still appears is byte-identical to what the view-model produces today
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+- [x] Failing tests for the invariant, the reclaimed width and the unchanged figures
+- [x] Gate the recovery line on the meter's absence in the view-model, not in the renderer
+- [x] Let the meter's track take back the freed width
+- [x] Correct `CHROME_HEIGHT`'s budget comment for the shorter tier 3 section
+- [x] Manual: read the section at tier 3 and at tier 1, and confirm exactly one pace figure appears in each
+- [x] Update the `files:` line above to reflect everything actually touched
+
+### Notes
+
+- The invariant is structural, not merely tested: `buildPace` reads
+  `meter === null ? <line> : ""`, one decision expressed twice, keyed off the meter's
+  presence rather than the tier. `buildPaceMeter` is the only source of that null and
+  `PopoverPace` is constructed nowhere else, so no path can produce both figures or neither.
+  The test collapses all four states to one word each and compares them in a single
+  `toEqual`, so `"both"` and `"neither"` are producible values that fail loudly — at RED it
+  failed with tier 3 reporting `"both"`.
+- The layout went further than reclaiming width: the bar took its own row with the numerals
+  stacked beneath (~292px track, against ~159px before T-48 and ~90px after it). That is the
+  arrangement T-48 rejected as unaffordable in height; removing the recovery line supplied
+  the 21px it needed, of which the stacked numerals spend 12px. Tier 3 nets ~9px shorter.
+- `CHROME_HEIGHT` stays 350 deliberately. Tiers 1 and 2 were already exactly as tall as
+  tier 3 used to be, so the constant still measures the tallest state; lowering it would
+  have loosened the `<=` assertion with no layout justification. The comment was corrected
+  to name which tier the figure now describes.
+- An existing assertion was found weak rather than merely outdated:
+  `expect(unconfirmed.pace?.sustainable).toBe(confirmed.pace?.sustainable)` compared two
+  unknowns and would have passed with both empty. Both sides are now pinned to literals.
+- The prescription is given up knowingly. At tier 3 the panel says the connection is being
+  used too fast without naming the daily figure that would correct it. That was the user's
+  call, made twice while reading the real panel — it should not be "restored" later as
+  though it were dropped by accident.
+
+## T-50 Know which carrier the SIM is on
+
+T-50 · status: todo · size: S · needs: T-03 · files: src/domain/carrier.ts, src/hilink/parse.ts, src/main/view-model.ts, test/domain/carrier.test.ts, test/hilink/parse.test.ts
+
+The SIM moved from YAS to Orange MG on 2026-08-04 and the router noticed before we did:
+`/api/net/current-plmn` now answers `<FullName>ORANGE MG</FullName>` where it answered `Yas`.
+That endpoint is already parsed and already polled, so the carrier is a fact the app holds
+and has never read.
+
+Everything downstream branches on it — the allowance comes from a USSD dialogue on YAS and
+from a web page on Orange — so the branch needs one named value rather than a string
+comparison repeated at each call site:
+
+```
+'ORANGE MG' | 'Orange MG'  →  'orange'
+'Yas'                      →  'yas'
+anything else              →  'unknown'
+```
+
+Matching is case-insensitive and trimmed, because `FullName` and `ShortName` disagree on
+capitalisation for the same network (`ORANGE MG` against `Orange MG`) and there is no reason
+to believe either spelling is stable.
+
+`unknown` is a first-class result, not a fallback to YAS. An unrecognised carrier means the
+app knows the router but not where the allowance lives, and that is a state to render, the
+same way an unrecognised network-type code is shown as its code rather than guessed.
+
+### Acceptance
+
+- [ ] `ORANGE MG`, `Orange MG` and ` orange mg ` all resolve to `orange`
+- [ ] `Yas` and `YAS` resolve to `yas`
+- [ ] an unrecognised name resolves to `unknown` and the original string is retained for display
+- [ ] an empty or missing `FullName` resolves to `unknown` without throwing
+- [ ] the resolved carrier is exposed on the snapshot the view-model already receives
 - [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-- [ ] Failing renderer tests for the two views, the toggle, the attention marker and the absent fields
-- [ ] Delete the download and upload totals from the page and the popover model
-- [ ] Wrap the main view and a new settings view, and drive their `hidden` from the toggle
-- [ ] Move the cap, length and password forms into the settings view unchanged, keeping their handlers
-- [ ] Reset to the main view whenever the panel is shown
-- [ ] Fold the surviving stats into the allowance line and tighten the section spacing
-- [ ] Manual: open the panel on the real router and confirm nothing scrolls at 320×520, with and without a stored password
-- [ ] Update the `files:` line above to reflect everything actually touched
+1. Write `test/domain/carrier.test.ts` covering both spellings, both carriers, unknown and empty
+2. Add `src/domain/carrier.ts` — a pure `carrierFrom(fullName: string)` returning a tagged value
+3. Confirm `src/hilink/parse.ts` already surfaces `FullName`; extend the parsed type if it does not
+4. Carry the carrier onto the snapshot type and through `src/main/view-model.ts`
+5. Run test, lint and build
+
+## T-51 Read Orange's forfaits out of the portal page
+
+T-51 · status: todo · size: S · needs: T-01 · files: src/orange/parse.ts, src/orange/types.ts, test/orange/parse.test.ts, test/fixtures/orange/info-conso.html
+
+`http://123.orange.mg/info-conso/` is server-rendered HTML with the figure in the markup —
+there is no JSON API behind it, so the parse *is* the integration. This task is the pure half:
+HTML string in, typed forfaits out, no network.
+
+The live capture from 2026-08-04 contains one forfait:
+
+```html
+<div class="bundle-item">
+  <span class="item_title title">Wifiber Go+ SSE</span>
+  <span class="title-da-nature title">Internet</span>
+  <p>Vous avez consommé <span class="color-orange text-bolder text-nowrap">7.37Go</span> sur votre forfait</p>
+</div>
+```
+
+Capture the fixture with `curl -s http://123.orange.mg/info-conso/ >
+test/fixtures/orange/info-conso.html` while on the Orange network — it cannot be re-fetched
+from anywhere else, so commit it.
+
+Volumes arrive as French octets with no space (`7.37Go`, and by extension `512Mo`, `1,5Go`),
+which is the display format `src/domain/format.ts` already produces in the other direction.
+Parse to bytes on the 1000³ decimal scale, at this boundary, exactly as XML never escapes
+`src/hilink/`.
+
+A forfait may also carry `data-bundle-type` and `data-bundle-pcvalue` on a `.bundle-circlebar`
+— `full.infoconso.js` uses them to draw a ring for capped bundles. Wifiber Go+ SSE has
+neither. Read them when present and leave them absent otherwise; do not synthesise a
+percentage the page did not state.
+
+Regex against this markup would be a liability across a carrier's redesign, so parse the
+document rather than pattern-matching it. Any dependency added here must survive the
+renderer's `default-src 'none'` policy only if it is used in the renderer — this parse runs
+in the main process, so it is unconstrained.
+
+### Acceptance
+
+- [ ] the committed fixture yields exactly one forfait: label `Wifiber Go+ SSE`, nature `Internet`, consumed 7 370 000 000 bytes
+- [ ] `7.37Go`, `512Mo`, `1,5Go` and `800Ko` each parse to the right byte count on the 1000³ scale
+- [ ] a `.bundle-circlebar` carrying `data-bundle-type` and `data-bundle-pcvalue` is read into the forfait; absent attributes leave the fields undefined rather than zero
+- [ ] a page with no `Forfaits en cours de validité` section returns an empty list, not an error
+- [ ] markup that matches no known shape returns an empty list and never throws
+- [ ] the account-level lines (`WiFiber` offer, `0 Ar` balance) are parsed but kept separate from the forfait list
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Capture the live page into `test/fixtures/orange/info-conso.html`
+2. Write `test/orange/parse.test.ts` against that fixture plus hand-built variants for the capped and empty cases
+3. Add `src/orange/types.ts` — `OrangeForfait`, `OrangeAccount`
+4. Add `src/orange/parse.ts` — document parse, French-octet volume parse, tolerant of missing sections
+5. Run test, lint and build
+
+## T-52 Fetch the Orange portal without blocking the app
+
+T-52 · status: todo · size: S · needs: T-51 · files: src/orange/portal.ts, test/orange/portal.test.ts
+
+The fetch is the easy half and the one place a mistake stalls the menu bar. No session, no
+token, no password: a single `GET` to `http://123.orange.mg/info-conso/`, which the network
+answers because it recognises the subscriber. That is a real simplification over the router
+and should not be dressed up as anything more.
+
+Two rules already in force apply unchanged. Every network call carries an explicit timeout —
+there is no unbounded await — and an unreachable host is a state, not an error: the portal
+only answers on the Orange network, so a laptop on café Wi-Fi gets nothing, and that is
+ordinary. It renders like an unreachable router.
+
+Also treat a `200` that parses to no forfaits as *reached but unreadable*, distinct from
+*unreachable*. The captive-portal interception in front of this page (`X-Header: intercepting
+the request`) is exactly the kind of middlebox that returns someone else's `200`, and
+collapsing the two states would report "no plan" when the truth is "wrong network".
+
+### Acceptance
+
+- [ ] a successful fetch returns the parsed account and forfaits from T-51
+- [ ] the request carries an explicit timeout and rejects to an unreachable state when it elapses
+- [ ] a connection refused or DNS failure yields the unreachable state, never a throw that reaches the poll loop
+- [ ] a non-200 status yields the unreachable state, carrying the status code for display
+- [ ] a 200 that parses to zero forfaits yields a distinct unreadable state, not the unreachable one
+- [ ] the base URL is a module constant, overridable in tests, and no test hits the real network
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write `test/orange/portal.test.ts` with a stubbed fetch: success, timeout, refused, 404, 200-but-empty
+2. Add `src/orange/portal.ts` calling T-51's parse, returning a tagged result
+3. Run test, lint and build
+
+## T-53 Pick the Internet forfait when several are active
+
+T-53 · status: todo · size: S · needs: T-51 · files: src/orange/select.ts, src/config/config.ts, test/orange/select.test.ts, test/config/config.test.ts
+
+The portal lists every live bundle, and `full.infoconso.js` names four kinds — `credit`,
+`data`, `voice`, `sms`. Only one of them is what a menu bar data meter measures; the other
+three answer a question nobody asked of this app.
+
+Selection reads the forfait's nature (`Internet`) and its `data-bundle-type` (`data`) where
+present, rather than its position in the list, because position is a layout detail and a
+promotion could reorder it tomorrow.
+
+Where several data forfaits are live at once — a base plan plus a top-up is the obvious case
+— the app must not silently pick one. Stability matters more than cleverness here: a dial
+that jumps between two plans on alternate polls is worse than one that tracks the wrong plan
+consistently. So the choice is remembered by label in `config.json`, and only when that
+remembered label is absent from the page does the app fall back to the first data forfait
+and say which it chose.
+
+An unrecognised nature is neither selected nor discarded — it is carried through so T-57 can
+name it, for the same reason an unrecognised router error code reaches the surface with its
+number.
+
+### Acceptance
+
+- [ ] a single Internet forfait is selected with no configuration present
+- [ ] voice, SMS and credit bundles are never selected, even when they are the only ones present
+- [ ] with two data forfaits and a remembered label, the remembered one is selected regardless of list order
+- [ ] with two data forfaits and no remembered label, the first is selected and the result reports that the choice was not the user's
+- [ ] a remembered label that no longer appears on the page falls back to the first data forfait rather than selecting nothing
+- [ ] a forfait whose nature is unrecognised is returned in the list of candidates but never auto-selected
+- [ ] the remembered label round-trips through `config.json`, and a config file written before this task loads without error
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Write `test/orange/select.test.ts` for each case above
+2. Add `src/orange/select.ts` — pure, takes the parsed forfaits plus the remembered label
+3. Add the remembered label to `src/config/config.ts` with the usual tolerant load
+4. Extend `test/config/config.test.ts` for the round-trip and the older-file case
+5. Run test, lint and build
+
+## T-54 Measure a Wifiber plan against the calendar month
+
+T-54 · status: todo · size: M · needs: T-53 · files: src/domain/quota.ts, src/domain/pace.ts, test/domain/quota.test.ts, test/domain/pace.test.ts
+
+Every figure the panel draws was built on a carrier that stated a *remaining* volume and an
+*expiry date*. Orange states neither. It states consumption, and the plan runs from the first
+of the month to its last day. So the arithmetic inverts, and this task is where that lands —
+in `src/domain/`, which imports neither Electron nor the network and can be tested without a
+router or a portal present.
+
+```
+usedNow      = the portal's consumed figure          // stated, not derived
+remainingNow = planLimitBytes − usedNow              // derived, not stated
+periodStart  = first day of the current month
+planDays     = days in the current month             // 28 · 29 · 30 · 31
+elapsedDays  = days elapsed since periodStart
+```
+
+The anchor plays no part. Neither does the router's month counter: it read 51.1 Go against
+the portal's 7.37 Go on the same day, so the two count different traffic and joining them
+would produce a confident wrong number. On Orange the counter's only remaining job is the
+live throughput sparkline, which never touched the allowance anyway.
+
+The tiers collapse. The cap becomes the single gate: with it, the dial, the meter and both
+per-day figures are available at once, because the calendar supplies the length for free.
+Without it there is a consumed volume and nothing else — no dial, no meter, no per-day
+figure, since all three need a total. There is no Orange tier 1, because tier 1's inputs were
+a carrier remaining and a carrier expiry.
+
+Two boundaries deserve pinning rather than assuming. February and the 31-day months must both
+be exercised, since `planDays` is now a calendar fact and off-by-one there shifts every pace
+reading. And the first of the month is a real state: `elapsedDays` is not zero, or the ratio
+divides by zero — day one is one day elapsed, the same inclusive counting T-46 settled for
+the carrier's last valid day.
+
+The band thresholds, the meter and every existing figure keep their current definitions. Only
+their inputs change.
+
+### Acceptance
+
+- [ ] `usedBytes` on Orange equals the portal's consumed figure exactly, with no router counter in the expression
+- [ ] `remainingBytes` is `planLimitBytes − usedBytes`, clamped at zero
+- [ ] `planDays` is 31 in August, 30 in September, 28 in February 2026 and 29 in February 2028
+- [ ] on the first of the month `elapsedDays` is 1 and the pace ratio is finite
+- [ ] on the last day of a 31-day month `elapsedDays` is 31 and `elapsedShare` is 1
+- [ ] with a cap set, the dial share, the meter, `averagePerDay` and `affordedPerDay` are all produced from one portal reading
+- [ ] with no cap set, none of those four are produced and the consumed volume still is
+- [ ] the YAS path's existing quota and pace tests pass unchanged — this adds a mode, it does not rewrite the old one
+- [ ] the band boundaries stay exactly as T-44 left them: `safe` at or under 1.00, `warning` above 1.00 and under 1.20, `over` at 1.20 and above
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/domain/quota.test.ts` with the Orange mode, including both February lengths
+2. Extend `test/domain/pace.test.ts` with the first-of-month and last-day boundaries and the cap-absent case
+3. Add the calendar-month period to `src/domain/quota.ts` without disturbing the anchor path
+4. Route `src/domain/pace.ts` inputs from the calendar period when the carrier is Orange
+5. Confirm every pre-existing YAS test still passes untouched
+6. Run test, lint and build
+
+## T-55 Feed the panel from whichever carrier the SIM is on
+
+T-55 · status: todo · size: M · needs: T-50, T-52, T-54 · files: src/main/poller.ts, src/main/sync.ts, src/main/view-model.ts, test/main/poller.test.ts, test/main/view-model.test.ts
+
+The pieces exist separately after T-50 to T-54; this is where the app actually stops being a
+YAS app. The poll loop learns a second source and chooses between them on the carrier the
+router reports.
+
+```
+carrier = orange   →  fetch the portal each poll; no anchor, no login, no USSD
+carrier = yas      →  the anchor and the staleness-driven USSD dialogue, exactly as today
+carrier = unknown  →  router figures only; no allowance source
+```
+
+On Orange the whole allowance apparatus stands down. No anchor is read or written, no
+Keychain password is needed, no staleness timer runs and no dialogue is ever started —
+the portal is an unauthenticated `GET` that answers on every poll, so there is nothing to
+sync and nothing that could lock an account. The Sync button and its status line have no
+work on Orange and are hidden by T-56.
+
+Two failure modes need to stay distinct all the way to the view-model rather than being
+flattened into "offline", because they call for opposite reactions: the **router** being
+unreachable means the connection itself is down, while the **portal** being unreachable
+usually means the machine is on some other network and the connection is fine. The panel
+must be able to show live throughput from a healthy router while saying the allowance figure
+is stale — those are not the same outage.
+
+The portal answers a page of about 38 KB, so it is not free to fetch at the fast in-panel
+cadence. Poll it on the slow interval regardless of whether the panel is open, and reuse the
+last reading in between: consumption moves in minutes, not in seconds, and the fast cadence
+exists for the throughput sparkline, which comes from the router.
+
+### Acceptance
+
+- [ ] with the router reporting `ORANGE MG`, a poll fetches the portal and no USSD, login or anchor code path executes
+- [ ] with the router reporting `Yas`, the existing anchor and sync behaviour is byte-for-byte what it is today, asserted by the pre-existing tests passing unchanged
+- [ ] with an unknown carrier, router figures are still produced and no allowance source is contacted
+- [ ] the portal is fetched on the slow interval only, and opening the panel does not trigger an extra fetch
+- [ ] between portal fetches the last successful reading is reused rather than the allowance disappearing
+- [ ] a reachable router with an unreachable portal yields live throughput and signal alongside a flagged-stale allowance, not a blanket offline state
+- [ ] an unreachable router with a reachable portal yields the allowance and an offline connection state
+- [ ] no Keychain access is attempted anywhere on the Orange path
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/poller.test.ts` for the three carriers, the cadence rule and the two independent outages
+2. Add the portal source to `src/main/poller.ts`, gated on the carrier from T-50
+3. Gate the anchor and staleness logic in `src/main/sync.ts` to the YAS carrier
+4. Carry both reachability states separately through `src/main/view-model.ts`
+5. Extend `test/main/view-model.test.ts` for the mixed-outage cases
+6. Run test, lint and build
+
+## T-56 Show the forfait's name and hide what Orange cannot answer
+
+T-56 · status: todo · size: S · needs: T-55 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+The panel is 320×520 with no room to scroll, and on Orange several of its controls have
+nothing behind them. Leaving a Sync button that syncs nothing, and a plan-length field that
+is overruled by the calendar, is worse than the space they cost — both invite the user to
+operate a control that does not work.
+
+On Orange the panel drops the Sync button and its status line, and drops the plan-length
+input from the settings toggle. What stays is the plan cap, which the portal genuinely never
+states, and the router address. The forfait's own name — `Wifiber Go+ SSE` — takes the place
+the synced plan label held: it is text with no magnitude, which is exactly what the panel
+reserves text for.
+
+The user's request was that the app detect the plan rather than be told it, so the detected
+name being visible is the evidence that detection worked. When T-53 fell back to the first of
+several data forfaits rather than a remembered choice, the panel says so and offers the
+others — a silently chosen plan among several is the one case where the name alone is not
+enough.
+
+On YAS the panel is unchanged. This is a branch, not a redesign.
+
+### Acceptance
+
+- [ ] on Orange the Sync button and its status line are absent from the rendered panel
+- [ ] on Orange the plan-length input is absent from the settings toggle and the plan cap input remains
+- [ ] on YAS every one of those controls is still present and behaves as it does today
+- [ ] the detected forfait label is rendered on the Orange panel
+- [ ] when several data forfaits are live and none was remembered, the panel names the chosen one and lists the alternatives as selectable
+- [ ] choosing an alternative writes the remembered label from T-53 and the dial follows it on the next poll
+- [ ] the Orange panel's total height still fits the 520 px budget, asserted the way T-45 asserts it
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/view-model.test.ts` for the per-carrier control visibility and the forfait label
+2. Extend `test/renderer/popover.test.ts` for the rendered panel in both carriers and the height budget
+3. Branch the control set in `src/main/view-model.ts` on the carrier
+4. Add the forfait label and the alternatives list to `src/renderer/index.html` and `src/renderer/popover.ts`
+5. Adjust `src/renderer/popover.css` for the reclaimed space
+6. Run test, lint and build
+
+## T-57 Say when the portal cannot be reached or the forfait is unreadable
+
+T-57 · status: todo · size: S · needs: T-55 · files: src/main/view-model.ts, src/renderer/popover.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Three failures are possible on the Orange path and they have three different remedies, so
+collapsing them into one message would make each of them undiagnosable — the same reason an
+unrecognised router error code is carried to the surface with its number rather than becoming
+a bare "it failed".
+
+```
+unreachable        the machine is not on the Orange network      → connect through the router
+reached, no plan   200 answered but no forfait was parsed        → the page changed, or a middlebox replied
+no data forfait    forfaits exist but none of them is Internet   → the plan expired or is voice-only
+```
+
+The middle case is the one worth being careful about. A captive portal in front of this page
+already announces itself with `X-Header: intercepting the request`, and a middlebox returning
+someone else's `200` is exactly what produces a parse of zero forfaits. Reporting that as "no
+plan" would state something false about the user's account.
+
+Each message names what was actually observed — the HTTP status where there was one, the
+count of forfaits found where the page parsed — and none of them is an error dialog. The app
+runs unattended in the menu bar; every one of these is a line in the panel.
+
+The `unknown` carrier from T-50 gets the same treatment: the panel says which network name
+the router reported and that no allowance source is known for it, rather than showing nothing.
+
+### Acceptance
+
+- [ ] an unreachable portal renders a distinct message from a portal that answered but parsed to nothing
+- [ ] a non-200 reply names its status code in the message
+- [ ] a page parsing to forfaits with no Internet one among them renders a third distinct message naming how many were found
+- [ ] an unknown carrier renders the raw `FullName` the router reported
+- [ ] none of the four states produces a dialog, a thrown error or an empty panel
+- [ ] a stale-but-present allowance is still drawn alongside the message rather than being replaced by it
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/view-model.test.ts` for the four states and the stale-but-drawn case
+2. Map each tagged result from T-52 and T-53 to its own message in `src/main/view-model.ts`
+3. Render the message in `src/renderer/popover.ts` in the position the sync status line occupied
+4. Extend `test/renderer/popover.test.ts` for the rendered output of each state
+5. Run test, lint and build
+
+## T-58 Bring the README and screenshots up to the Orange setup
+
+T-58 · status: todo · size: S · needs: T-56, T-57 · files: README.md, docs/media/, test/readme.test.ts
+
+`test/readme.test.ts` already holds the README to the app's actual behaviour, and after T-50
+to T-57 it describes an app that no longer exists: a YAS meter driven by a USSD dialogue and
+a Sync press. The repository's own documentation is the last place the old carrier still
+looks like the only one.
+
+The README gains the Orange path — an unauthenticated portal read on the ordinary poll, a
+typed cap, a calendar month — beside the YAS path, and says the carrier is detected rather
+than configured, so a reader with either SIM finds themselves in it. The screenshots in
+`docs/media/` are reshot from the Orange panel, which is the one the user will actually see.
+
+Whatever `test/readme.test.ts` asserts about the panel's controls has to move with T-56's
+branch. If that test asserts against a single control set, it now needs to assert per
+carrier; leaving it passing by weakening it would be the failure T-49 caught in its own
+suite, where an assertion compared two unknowns and would have passed with both empty.
+
+### Acceptance
+
+- [ ] the README documents both carriers and states that the carrier is detected from the router, not configured
+- [ ] the README's Orange section names the portal URL, the typed cap and the calendar-month period
+- [ ] no instruction to enter a router password or press Sync is presented as universal
+- [ ] `docs/media/` screenshots show the Orange panel and every image referenced by the README exists
+- [ ] `test/readme.test.ts` asserts per carrier rather than being relaxed to pass against both
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Read `test/readme.test.ts` and extend its assertions per carrier before touching the README
+2. Rewrite the README's allowance section to cover both paths
+3. Reshoot the panel screenshots into `docs/media/`
+4. Run test, lint and build
