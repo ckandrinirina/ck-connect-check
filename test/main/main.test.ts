@@ -19,9 +19,17 @@ import {
   type DevicesModel,
   type DevicesWindow,
 } from "../../src/main/devices-window.js";
-import type { HostListResult } from "../../src/hilink/client.js";
+import type {
+  HostListResult,
+  MacFilterWriteResult,
+} from "../../src/hilink/client.js";
 import type { Device } from "../../src/hilink/devices.js";
-import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
+import { MAC_FILTER_CAP, type MacFilter } from "../../src/hilink/macfilter.js";
+import {
+  startMenuBarApp,
+  type DeviceAccessSource,
+  type MenuBarApp,
+} from "../../src/main/main.js";
 import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
@@ -1989,6 +1997,507 @@ describe("startMenuBarApp — the device list behind that window", () => {
 
     expect(devices.models.at(-1)).toEqual({ state: "offline" });
     expect(hosts.calls).toBe(0);
+
+    app.stop();
+  });
+});
+
+/** The Mac this app is imagined to be running on. Blocking it is unrecoverable. */
+const THIS_MAC = "AA:BB:CC:DD:EE:FF";
+
+/** Another device the filter already refuses, so a write has something to keep. */
+const TABLET_MAC = "A6:00:5E:00:00:03";
+
+/** A filter as the router sends one: four blocks, each holding the same list. */
+function macFilter(mode: MacFilter["mode"], ...macs: string[]): MacFilter {
+  const entries = macs.map((mac) => ({ mac, name: "" }));
+
+  return {
+    mode,
+    entries,
+    ssids: [0, 1, 2, 3].map((index) => ({
+      mode,
+      index,
+      entries: entries.map((entry) => ({ ...entry })),
+    })),
+  };
+}
+
+/** The filter the router holds, plus a count of everything asked of it. */
+interface RecordingAccess extends DeviceAccessSource {
+  /** Every filter read, whether it answered or not. */
+  reads: number;
+  /** Every filter written, in order — the assertion that a `POST` happened. */
+  writes: MacFilter[];
+  /** Every sign-in attempted. */
+  logins: number;
+  /** What the next read answers. Replaced to script a router that changed. */
+  held: MacFilter | null;
+  /** Whether a login is accepted. A refused one is never retried. */
+  signInSucceeds: boolean;
+  /** Whether the read answers before a sign-in, as the real router does not. */
+  readsBeforeLogin: boolean;
+  /** What the write answers. */
+  writeResult: MacFilterWriteResult;
+}
+
+function recordingAccess(
+  held: MacFilter | null,
+  overrides: Partial<
+    Pick<RecordingAccess, "signInSucceeds" | "readsBeforeLogin" | "writeResult">
+  > = {},
+): RecordingAccess {
+  const access: RecordingAccess = {
+    reads: 0,
+    writes: [],
+    logins: 0,
+    held,
+    signInSucceeds: overrides.signInSucceeds ?? true,
+    readsBeforeLogin: overrides.readsBeforeLogin ?? true,
+    writeResult: overrides.writeResult ?? { ok: true },
+    macFilter: () => {
+      access.reads += 1;
+
+      if (access.held === null) {
+        return Promise.resolve({ online: false as const, reason: "error" });
+      }
+      if (!access.readsBeforeLogin && access.logins === 0) {
+        return Promise.resolve({ online: false as const, reason: "session" });
+      }
+
+      return Promise.resolve({ online: true as const, filter: access.held });
+    },
+    writeMacFilter: (filter) => {
+      access.writes.push(filter);
+
+      if (access.writeResult.ok) {
+        access.held = filter;
+      }
+
+      return Promise.resolve(access.writeResult);
+    },
+    login: () => {
+      access.logins += 1;
+
+      return Promise.resolve(
+        access.signInSucceeds
+          ? { ok: true as const }
+          : { ok: false as const, reason: "refused" as const },
+      );
+    },
+  };
+
+  return access;
+}
+
+/** Starts the app with a filter behind it and the devices window already open. */
+function launchWithFilter(
+  access: DeviceAccessSource,
+  held: Device[] = [LAPTOP],
+) {
+  const devices = recordingDevices();
+  const app = startMenuBarApp({
+    configPath: MISSING_CONFIG,
+    client: countingClient(),
+    popover: recordingPopover(),
+    devices,
+    hosts: countingHosts({ online: true, devices: held }),
+    access,
+    credentials: storeHolding(CREDENTIAL),
+    localMacs: () => [THIS_MAC],
+  });
+
+  return { app, devices };
+}
+
+/** Every address the last write carried, block by block. */
+function writtenMacs(access: RecordingAccess): string[][] {
+  return (access.writes.at(-1)?.ssids ?? []).map((ssid) =>
+    ssid.entries.map((entry) => entry.mac),
+  );
+}
+
+/** The row the last pushed model holds for one address. */
+function rowFor(devices: { models: DevicesModel[] }, mac: string) {
+  const model = devices.models.at(-1);
+
+  return model?.state === "listed"
+    ? model.devices.find((device) => device.mac === mac)
+    : undefined;
+}
+
+/**
+ * Blocking and unblocking, the first write this app makes outside the USSD
+ * path. Every "no request was made" below is a call count on the stub, because
+ * a test that read the returned reason would pass an implementation that fired
+ * the request anyway. Nothing here reaches a router.
+ */
+describe("startMenuBarApp — blocking a device", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads the current filter and writes it back with the address added", async () => {
+    const access = recordingAccess(macFilter("blacklist", TABLET_MAC));
+    const { app } = launchWithFilter(access);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    // Composing the write from a remembered list would silently unblock
+    // whoever joined it since, so the read comes first and every entry stays.
+    expect(access.reads).toBeGreaterThanOrEqual(1);
+    expect(access.writes).toHaveLength(1);
+    expect(writtenMacs(access)).toEqual([
+      [TABLET_MAC, LAPTOP.mac],
+      [TABLET_MAC, LAPTOP.mac],
+      [TABLET_MAC, LAPTOP.mac],
+      [TABLET_MAC, LAPTOP.mac],
+    ]);
+
+    app.stop();
+  });
+
+  it("turns blacklist mode on in the same write when the filter was off", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app } = launchWithFilter(access);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    expect(access.writes).toHaveLength(1);
+    expect(access.writes[0]?.ssids.map((ssid) => ssid.mode)).toEqual([
+      "blacklist",
+      "blacklist",
+      "blacklist",
+      "blacklist",
+    ]);
+
+    app.stop();
+  });
+
+  it("leaves the mode alone when the last blocked device is unblocked", async () => {
+    const access = recordingAccess(macFilter("blacklist", LAPTOP.mac));
+    const { app } = launchWithFilter(access);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: false });
+
+    // Switching the filter off is a change to every other device that nobody
+    // asked for. The list empties; the mode stands.
+    expect(writtenMacs(access)).toEqual([[], [], [], []]);
+    expect(access.writes[0]?.mode).toBe("blacklist");
+    expect(access.writes[0]?.ssids.map((ssid) => ssid.mode)).toEqual([
+      "blacklist",
+      "blacklist",
+      "blacklist",
+      "blacklist",
+    ]);
+
+    app.stop();
+  });
+
+  it("makes no write at all when the filter read failed", async () => {
+    const access = recordingAccess(null);
+    const { app } = launchWithFilter(access);
+
+    const outcome = await app.setDeviceBlocked({
+      mac: LAPTOP.mac,
+      blocked: true,
+    });
+
+    expect(access.writes).toHaveLength(0);
+    expect(outcome.ok).toBe(false);
+
+    app.stop();
+  });
+
+  it("signs in once for a press and does not retry a login it was refused", async () => {
+    const access = recordingAccess(macFilter("off"), {
+      readsBeforeLogin: false,
+      signInSucceeds: false,
+    });
+    const { app } = launchWithFilter(access);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    // Five refusals lock the account, so one press costs at most one sign-in.
+    expect(access.logins).toBe(1);
+    expect(access.writes).toHaveLength(0);
+
+    app.stop();
+  });
+
+  it("tries again on a second press, because a press is always deliberate", async () => {
+    const access = recordingAccess(macFilter("off"), {
+      readsBeforeLogin: false,
+      signInSucceeds: false,
+    });
+    const { app } = launchWithFilter(access);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    expect(access.logins).toBe(2);
+
+    app.stop();
+  });
+
+  it("signs in once and then goes ahead, without a second sign-in for the re-read", async () => {
+    const access = recordingAccess(macFilter("off"), {
+      readsBeforeLogin: false,
+    });
+    const { app } = launchWithFilter(access);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    expect(access.logins).toBe(1);
+    expect(access.writes).toHaveLength(1);
+
+    app.stop();
+  });
+
+  it("refuses a further block at the cap, before any write, naming the cap", async () => {
+    const full = macFilter(
+      "blacklist",
+      ...Array.from(
+        { length: MAC_FILTER_CAP },
+        (_unused, slot) => `A2:00:5E:00:00:1${slot}`,
+      ),
+    );
+    const access = recordingAccess(full);
+    const { app } = launchWithFilter(access);
+
+    const outcome = await app.setDeviceBlocked({
+      mac: LAPTOP.mac,
+      blocked: true,
+    });
+
+    // A household reaching the firmware's cap has done nothing wrong: this is
+    // stated, not attempted and failed.
+    expect(access.writes).toHaveLength(0);
+    expect(outcome).toEqual({
+      ok: false,
+      reason: { kind: "full", cap: MAC_FILTER_CAP },
+    });
+
+    app.stop();
+  });
+
+  it("refuses a write that would set whitelist mode, before any request", async () => {
+    const access = recordingAccess(macFilter("whitelist", LAPTOP.mac));
+    const { app } = launchWithFilter(access);
+
+    // An unblock leaves the mode as it found it, so the write would carry
+    // whitelist straight back — and a whitelist blocks every device it does not
+    // name, including the Mac this app runs on.
+    const outcome = await app.setDeviceBlocked({
+      mac: LAPTOP.mac,
+      blocked: false,
+    });
+
+    expect(access.writes).toHaveLength(0);
+    expect(outcome).toEqual({ ok: false, reason: { kind: "whitelist" } });
+
+    app.stop();
+  });
+
+  it("refuses a block on this machine's own address before any request at all", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app } = launchWithFilter(access, [
+      { ...LAPTOP, mac: THIS_MAC, name: "this-mac" },
+    ]);
+
+    const reads = access.reads;
+    const outcome = await app.setDeviceBlocked({
+      mac: THIS_MAC,
+      blocked: true,
+    });
+
+    // The guard is at the domain layer, so it holds whatever the page offers:
+    // not even the read goes out.
+    expect(access.reads).toBe(reads);
+    expect(access.writes).toHaveLength(0);
+    expect(outcome).toEqual({ ok: false, reason: { kind: "self" } });
+
+    app.stop();
+  });
+
+  it("refuses it however the address is spelled", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app } = launchWithFilter(access);
+
+    const reads = access.reads;
+    const outcome = await app.setDeviceBlocked({
+      mac: "aa-bb-cc-dd-ee-ff",
+      blocked: true,
+    });
+
+    expect(access.reads).toBe(reads);
+    expect(access.writes).toHaveLength(0);
+    expect(outcome).toEqual({ ok: false, reason: { kind: "self" } });
+
+    app.stop();
+  });
+
+  it("leaves every other device blockable when this machine is not in the list", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      hosts: countingHosts(),
+      access,
+      credentials: storeHolding(CREDENTIAL),
+      localMacs: () => [],
+    });
+
+    expect(
+      await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true }),
+    ).toEqual({ ok: true });
+    expect(access.writes).toHaveLength(1);
+
+    app.stop();
+  });
+
+  it("makes no request when there is no stored password to sign in with", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      hosts: countingHosts(),
+      access,
+      credentials: storeHolding(null),
+      localMacs: () => [THIS_MAC],
+    });
+
+    const outcome = await app.setDeviceBlocked({
+      mac: LAPTOP.mac,
+      blocked: true,
+    });
+
+    expect(access.reads).toBe(0);
+    expect(access.writes).toHaveLength(0);
+    expect(outcome).toEqual({ ok: false, reason: "not-logged-in" });
+
+    app.stop();
+  });
+
+  it("shows the row as the router re-reads it, not as the click assumed", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The write is accepted, but the router goes on saying the filter is off.
+    access.writeResult = { ok: true };
+    access.macFilter = () => {
+      access.reads += 1;
+
+      return Promise.resolve({
+        online: true as const,
+        filter: macFilter("off"),
+      });
+    };
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    // The click assumed a block; the re-read says otherwise, and the re-read
+    // is what the row shows.
+    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(false);
+
+    app.stop();
+  });
+
+  it("re-reads the filter after a write and pushes the row it found", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+    const readsBefore = access.reads;
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    // One read to compose the write from, one afterwards to render from.
+    expect(access.reads - readsBefore).toBeGreaterThanOrEqual(2);
+    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+
+    app.stop();
+  });
+
+  it("re-reads even when the write was refused, rather than leaving a guess on screen", async () => {
+    const access = recordingAccess(macFilter("blacklist", LAPTOP.mac), {
+      writeResult: { ok: false, reason: "timeout" },
+    });
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const outcome = await app.setDeviceBlocked({
+      mac: LAPTOP.mac,
+      blocked: false,
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "timeout" });
+    // The router still refuses it, and the row still says so.
+    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — the filter behind the device list", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads the filter on the poll and marks the blocked rows from it", async () => {
+    const access = recordingAccess(macFilter("blacklist", LAPTOP.mac));
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+
+    app.stop();
+  });
+
+  it("asks for no filter while the window is shut", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app } = launchWithFilter(access);
+
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+    // The filter costs a request the menu bar never needs.
+    expect(access.reads).toBe(0);
+
+    app.stop();
+  });
+
+  it("claims nothing is blocked until a filter has actually been read", async () => {
+    const access = recordingAccess(null);
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(false);
 
     app.stop();
   });

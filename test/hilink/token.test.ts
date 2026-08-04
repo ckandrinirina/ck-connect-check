@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RouterClient } from "../../src/hilink/client.js";
+import type { MacFilter } from "../../src/hilink/macfilter.js";
 
 const SES_TOK_INFO = "/api/webserver/SesTokInfo";
 const TOKEN_ENDPOINT = "/api/webserver/token";
@@ -63,6 +64,8 @@ interface RecordedRequest {
   method: string;
   path: string;
   token: string | undefined;
+  /** What the request carried. Empty for a `GET`. */
+  body: string;
 }
 
 type Reply =
@@ -105,7 +108,10 @@ async function startStubRouter(responder?: Responder): Promise<StubRouter> {
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
-    req.on("data", () => {});
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString("utf8");
+    });
     req.on("end", () => {
       const hit = (hitCounts.get(path) ?? 0) + 1;
       hitCounts.set(path, hit);
@@ -113,6 +119,7 @@ async function startStubRouter(responder?: Responder): Promise<StubRouter> {
         method: req.method ?? "",
         path,
         token: headerValue(req.headers["__requestverificationtoken"]),
+        body,
       });
 
       const custom = responder?.(path, hit);
@@ -335,5 +342,197 @@ describe("a POST refused with 125003", () => {
 
     expect(result).toEqual({ ok: false, reason: "session" });
     expect(stub.hits(USSD_SEND)).toBe(1);
+  });
+});
+
+/**
+ * The MAC filter, read and written over the same authenticated transport.
+ *
+ * T-68's write is the first `POST` outside the USSD path, and it inherits the
+ * whole of it: the single-use rotating token, the `125003` refresh-and-retry
+ * rule, and the ban on ever signing in again to repair a spent token. Those are
+ * asserted here exactly the way the dialogue's are, on the same stub, and
+ * nothing in this file has ever spoken to a device.
+ */
+const MAC_FILTER = "/api/wlan/multi-macfilter-settings";
+
+/** Requests for one path, narrowed to a method — the same path serves both. */
+function callsOf(stub: StubRouter, method: string, path: string): number {
+  return stub.requests.filter(
+    (request) => request.method === method && request.path === path,
+  ).length;
+}
+
+/** Every body the filter endpoint was `POST`ed, in order. */
+function writtenBodies(stub: StubRouter): string[] {
+  return stub.requests
+    .filter(
+      (request) => request.method === "POST" && request.path === MAC_FILTER,
+    )
+    .map((request) => request.body);
+}
+
+/** The filter reply, off across all four SSIDs, as T-62 captured it. */
+const MAC_FILTER_AT_REST = fixture("macfilter");
+
+/**
+ * Everything the filter path needs that is not the filter itself: the login it
+ * rides behind, and the token endpoint the `125003` rule reaches for.
+ */
+const filterSupport: Responder = (path) => {
+  switch (path) {
+    case LOGIN:
+      return LOGIN_OK;
+    case TOKEN_ENDPOINT:
+      return { body: tokenReply(REFRESHED_TOKEN) };
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * A stub whose filter endpoint is scripted by *its own* hit count. The read and
+ * the write share one path, so `hit` counts both: the script is written as
+ * "first call, second call" and the tests read as they are ordered.
+ */
+async function startFilterStub(
+  filter: (call: number) => Reply,
+): Promise<StubRouter> {
+  let calls = 0;
+
+  return await startStubRouter((path, hit) => {
+    if (path === MAC_FILTER) {
+      calls += 1;
+
+      return filter(calls);
+    }
+
+    return filterSupport(path, hit);
+  });
+}
+
+describe("the MAC filter over the authenticated transport", () => {
+  it("reads the filter the router states, behind a session", async () => {
+    const stub = await startFilterStub(() => ({ body: MAC_FILTER_AT_REST }));
+
+    const client = new RouterClient({ baseUrl: stub.baseUrl });
+    await client.login(CREDENTIAL);
+
+    expect(await client.macFilter()).toEqual({
+      online: true,
+      filter: expect.objectContaining({ mode: "off", entries: [] }),
+    });
+  });
+
+  it("reports a refused read as offline rather than rejecting", async () => {
+    // `100003` is what the endpoint answers without a session, and T-62 found
+    // that even *reading* the filter needs the stored password.
+    const stub = await startFilterStub(() => ({ body: errorReply(100003) }));
+
+    expect(
+      await new RouterClient({ baseUrl: stub.baseUrl }).macFilter(),
+    ).toEqual({ online: false, reason: "error" });
+  });
+
+  /** Sign in, read the filter, and hand back what the router said it holds. */
+  async function readFilter(client: RouterClient): Promise<MacFilter> {
+    await client.login(CREDENTIAL);
+    const read = await client.macFilter();
+
+    if (!read.online) {
+      throw new Error("the stub refused the filter read");
+    }
+
+    return read.filter;
+  }
+
+  it("writes the whole filter back on a single POST", async () => {
+    const stub = await startFilterStub((call) =>
+      call === 1 ? { body: MAC_FILTER_AT_REST } : { body: OK_REPLY },
+    );
+    const client = new RouterClient({ baseUrl: stub.baseUrl });
+
+    expect(await client.writeMacFilter(await readFilter(client))).toEqual({
+      ok: true,
+    });
+    expect(callsOf(stub, "POST", MAC_FILTER)).toBe(1);
+    // All four blocks, or the router clears the three the write omitted.
+    expect([
+      ...(writtenBodies(stub)[0] ?? "").matchAll(/<Ssid>/g),
+    ]).toHaveLength(4);
+  });
+
+  it("refreshes the token and retries the filter write exactly once on 125003", async () => {
+    // Call 1 is the read, call 2 the write the router refuses, call 3 the retry.
+    const stub = await startFilterStub((call) =>
+      call === 1
+        ? { body: MAC_FILTER_AT_REST }
+        : call === 2
+          ? { body: errorReply(125003) }
+          : { body: OK_REPLY },
+    );
+    const client = new RouterClient({ baseUrl: stub.baseUrl });
+
+    expect(await client.writeMacFilter(await readFilter(client))).toEqual({
+      ok: true,
+    });
+    expect(callsOf(stub, "POST", MAC_FILTER)).toBe(2);
+    expect(stub.hits(TOKEN_ENDPOINT)).toBe(1);
+  });
+
+  it("never signs in again, whatever the retried filter write answers", async () => {
+    const stub = await startFilterStub((call) =>
+      call === 1 ? { body: MAC_FILTER_AT_REST } : { body: errorReply(125003) },
+    );
+    const client = new RouterClient({ baseUrl: stub.baseUrl });
+    const written = await client.writeMacFilter(await readFilter(client));
+
+    // Signing in again is the wrong repair for a spent token and the right way
+    // to walk the account into its five-failure lockout.
+    expect(callsOf(stub, "POST", LOGIN)).toBe(1);
+    expect(callsOf(stub, "POST", MAC_FILTER)).toBe(2);
+    expect(written).toEqual({
+      ok: false,
+      reason: {
+        kind: "error",
+        source: "api",
+        code: 125003,
+        endpoint: MAC_FILTER,
+      },
+    });
+  });
+
+  it("carries the token a reply rotated to, never the one the login issued", async () => {
+    const stub = await startFilterStub((call) =>
+      call === 1
+        ? {
+            body: MAC_FILTER_AT_REST,
+            headers: { __RequestVerificationToken: ROTATED_TOKEN },
+          }
+        : { body: OK_REPLY },
+    );
+    const client = new RouterClient({ baseUrl: stub.baseUrl });
+
+    await client.writeMacFilter(await readFilter(client));
+
+    expect(
+      stub.requests
+        .filter(
+          (request) => request.method === "POST" && request.path === MAC_FILTER,
+        )
+        .map((request) => request.token),
+    ).toEqual([ROTATED_TOKEN]);
+  });
+
+  it("reports a write the router refused for want of a session", async () => {
+    const stub = await startFilterStub(() => ({ body: errorReply(100003) }));
+
+    expect(
+      await new RouterClient({ baseUrl: stub.baseUrl }).writeMacFilter({
+        mode: "off",
+        entries: [],
+        ssids: [],
+      }),
+    ).toEqual({ ok: false, reason: "not-logged-in" });
   });
 });

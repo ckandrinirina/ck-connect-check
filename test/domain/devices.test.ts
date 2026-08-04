@@ -13,14 +13,19 @@ import { describe, expect, it } from "vitest";
 
 import type { Device } from "../../src/hilink/devices.js";
 import type { MacFilter } from "../../src/hilink/macfilter.js";
+import { MAC_FILTER_CAP } from "../../src/hilink/macfilter.js";
 import {
   compareDevices,
   deviceAssociatedFor,
   deviceDisplayName,
   isDeviceBlocked,
+  isLocalDevice,
   listDevices,
   normaliseMac,
+  refuseDeviceBlock,
   sortDevices,
+  withDeviceBlocked,
+  withDeviceUnblocked,
 } from "../../src/domain/devices.js";
 
 function device(overrides: Partial<Device> = {}): Device {
@@ -440,5 +445,374 @@ describe("src/domain/devices.ts", () => {
     expect(source).not.toMatch(/["']2,4 GHz["']/);
     expect(source).not.toMatch(/["']5 GHz["']/);
     expect(source).not.toMatch(/["']Ethernet["']/);
+  });
+});
+
+/**
+ * A filter as the router really sends one: four `<Ssid>` blocks, each with its
+ * own mode and its own slots. Everything T-68 writes is composed from a shape
+ * like this, because the router replaces the filter with whatever it is sent —
+ * a change built from a single block silently clears the other three.
+ */
+function ssids(mode: MacFilter["mode"], ...macs: string[]): MacFilter {
+  const entries = macs.map((mac) => ({ mac, name: `host-${mac.slice(-2)}` }));
+
+  return {
+    mode,
+    entries,
+    ssids: [0, 1, 2, 3].map((index) => ({
+      mode,
+      index,
+      entries: entries.map((entry) => ({ ...entry })),
+    })),
+  };
+}
+
+/** Every address each block holds, block by block. */
+function perSsid(next: MacFilter): string[][] {
+  return next.ssids.map((ssid) => ssid.entries.map((entry) => entry.mac));
+}
+
+const TABLET = "A6:00:5E:00:00:03";
+
+/** As many addresses as one block can hold. */
+function capacityMacs(): string[] {
+  return Array.from(
+    { length: MAC_FILTER_CAP },
+    (_unused, slot) => `A2:00:5E:00:00:1${slot}`,
+  );
+}
+
+describe("withDeviceBlocked — the write is the whole list", () => {
+  it("adds the address to every SSID block, because a write carries all four", () => {
+    const next = withDeviceBlocked(ssids("blacklist", LAPTOP), PHONE, "phone");
+
+    expect(perSsid(next)).toEqual([
+      [LAPTOP, PHONE],
+      [LAPTOP, PHONE],
+      [LAPTOP, PHONE],
+      [LAPTOP, PHONE],
+    ]);
+  });
+
+  it("leaves every entry that was already there exactly where it was", () => {
+    const next = withDeviceBlocked(
+      ssids("blacklist", LAPTOP, TABLET),
+      PHONE,
+      "phone",
+    );
+
+    // Composing the write from a remembered list would silently unblock
+    // whoever joined it since; this is that rule as an assertion.
+    expect(next.entries.map((entry) => entry.mac)).toEqual([
+      LAPTOP,
+      TABLET,
+      PHONE,
+    ]);
+  });
+
+  it("turns blacklist mode on when the filter was off, in the same write", () => {
+    const next = withDeviceBlocked(ssids("off"), LAPTOP, "laptop");
+
+    expect(next.mode).toBe("blacklist");
+    expect(next.ssids.map((ssid) => ssid.mode)).toEqual([
+      "blacklist",
+      "blacklist",
+      "blacklist",
+      "blacklist",
+    ]);
+  });
+
+  it("never composes a write in whitelist mode", () => {
+    // The one mode this task must never send. `1`→whitelist is inferred from
+    // the router's web UI and never observed, and writing it would block every
+    // device the list does not name — including the Mac running this app.
+    for (const mode of ["off", "blacklist"] as const) {
+      const next = withDeviceBlocked(ssids(mode), LAPTOP, "laptop");
+
+      expect(next.mode).not.toBe("whitelist");
+      expect(next.ssids.some((ssid) => ssid.mode === "whitelist")).toBe(false);
+    }
+  });
+
+  it("adds a device the list already holds exactly once", () => {
+    const next = withDeviceBlocked(ssids("blacklist", LAPTOP), LAPTOP, "again");
+
+    expect(perSsid(next)).toEqual([[LAPTOP], [LAPTOP], [LAPTOP], [LAPTOP]]);
+  });
+
+  it("recognises the same address written another way rather than listing it twice", () => {
+    const next = withDeviceBlocked(
+      ssids("blacklist", LAPTOP),
+      "a2-00-5e-00-00-01",
+      "again",
+    );
+
+    expect(perSsid(next)[0]).toEqual([LAPTOP]);
+  });
+
+  it("stores the address upper-cased, as every other address here is", () => {
+    const next = withDeviceBlocked(ssids("off"), "00:1a:2b:00:00:02", "phone");
+
+    expect(perSsid(next)[0]).toEqual([PHONE]);
+  });
+
+  it("keeps the name beside the address it was given", () => {
+    const next = withDeviceBlocked(ssids("off"), LAPTOP, "MacBookPro");
+
+    expect(next.ssids[0]?.entries[0]).toEqual({
+      mac: LAPTOP,
+      name: "MacBookPro",
+    });
+  });
+
+  it("leaves the filter it was handed untouched", () => {
+    const before = ssids("off");
+    const snapshot = JSON.stringify(before);
+
+    withDeviceBlocked(before, LAPTOP, "laptop");
+
+    expect(JSON.stringify(before)).toBe(snapshot);
+  });
+});
+
+describe("withDeviceUnblocked — the mode is not the write's to change", () => {
+  it("removes the address from every SSID block", () => {
+    const next = withDeviceUnblocked(ssids("blacklist", LAPTOP, PHONE), PHONE);
+
+    expect(perSsid(next)).toEqual([[LAPTOP], [LAPTOP], [LAPTOP], [LAPTOP]]);
+  });
+
+  it("leaves the mode alone when the last blocked device is unblocked", () => {
+    const next = withDeviceUnblocked(ssids("blacklist", LAPTOP), LAPTOP);
+
+    // Switching the filter off would be a change to every other device that
+    // nobody asked for. The list empties; the mode stands.
+    expect(next.entries).toEqual([]);
+    expect(next.mode).toBe("blacklist");
+    expect(next.ssids.map((ssid) => ssid.mode)).toEqual([
+      "blacklist",
+      "blacklist",
+      "blacklist",
+      "blacklist",
+    ]);
+  });
+
+  it("matches the address whatever separators or case it is written with", () => {
+    const next = withDeviceUnblocked(
+      ssids("blacklist", LAPTOP, PHONE),
+      "a2005e000001",
+    );
+
+    expect(perSsid(next)[0]).toEqual([PHONE]);
+  });
+
+  it("changes nothing when the address is not in the list", () => {
+    const next = withDeviceUnblocked(ssids("blacklist", LAPTOP), TABLET);
+
+    expect(perSsid(next)).toEqual([[LAPTOP], [LAPTOP], [LAPTOP], [LAPTOP]]);
+    expect(next.mode).toBe("blacklist");
+  });
+
+  it("leaves the filter it was handed untouched", () => {
+    const before = ssids("blacklist", LAPTOP);
+    const snapshot = JSON.stringify(before);
+
+    withDeviceUnblocked(before, LAPTOP);
+
+    expect(JSON.stringify(before)).toBe(snapshot);
+  });
+});
+
+describe("isLocalDevice — identified by MAC, never by IP", () => {
+  it("recognises this machine's own address in the list", () => {
+    expect(isLocalDevice(LAPTOP, [LAPTOP])).toBe(true);
+  });
+
+  it("ignores separators and case, as every other MAC comparison here does", () => {
+    expect(isLocalDevice("a2-00-5e-00-00-01", [LAPTOP])).toBe(true);
+    expect(isLocalDevice(LAPTOP, ["a2005e000001"])).toBe(true);
+  });
+
+  it("reads another device as another device", () => {
+    expect(isLocalDevice(PHONE, [LAPTOP])).toBe(false);
+  });
+
+  it("matches nothing when this machine has no interface in the list", () => {
+    // On Ethernet, with only Wi-Fi hosts reported, there is nothing to match.
+    // That is the correct outcome and not a fallback to work around.
+    expect(isLocalDevice(PHONE, [])).toBe(false);
+  });
+});
+
+describe("refuseDeviceBlock — what is refused before a request is made", () => {
+  const local = [LAPTOP];
+
+  it("allows an ordinary block", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("off"),
+        mac: PHONE,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows an ordinary unblock", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("blacklist", PHONE),
+        mac: PHONE,
+        blocked: false,
+        localMacs: local,
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a block on this machine's own address", () => {
+    // Blocking the Mac the app runs on severs the connection the undo would
+    // have to travel over. The guard lives here so it does not depend on the UI.
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("off"),
+        mac: LAPTOP,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "self" });
+  });
+
+  it("refuses it however the local address is spelled", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("off"),
+        mac: "a2-00-5e-00-00-01",
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "self" });
+  });
+
+  it("still allows this machine to be unblocked, which frees rather than severs", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("blacklist", LAPTOP),
+        mac: LAPTOP,
+        blocked: false,
+        localMacs: local,
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses nothing when this machine is not in the list at all", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("off"),
+        mac: PHONE,
+        blocked: true,
+        localMacs: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a further block once a block is at the cap, naming the cap", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("blacklist", ...capacityMacs()),
+        mac: PHONE,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "full", cap: MAC_FILTER_CAP });
+  });
+
+  it("still allows an unblock at the cap, which is the way back under it", () => {
+    const macs = capacityMacs();
+
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("blacklist", ...macs),
+        mac: macs[0] as string,
+        blocked: false,
+        localMacs: local,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows re-blocking a device already in a full list, which adds nothing", () => {
+    const macs = capacityMacs();
+
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("blacklist", ...macs),
+        mac: macs[3] as string,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses any write at all while the router is in whitelist mode", () => {
+    // Whitelist is the one mode this task never writes. An unblock leaves the
+    // mode as it found it, so the write would carry whitelist straight back.
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("whitelist", PHONE),
+        mac: PHONE,
+        blocked: false,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "whitelist" });
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("whitelist"),
+        mac: PHONE,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "whitelist" });
+  });
+
+  it("refuses a write when a single block is a whitelist, not only when all four are", () => {
+    const mixed = ssids("blacklist", PHONE);
+    const first = mixed.ssids[0];
+
+    if (first !== undefined) {
+      first.mode = "whitelist";
+    }
+
+    expect(
+      refuseDeviceBlock({
+        filter: mixed,
+        mac: PHONE,
+        blocked: false,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "whitelist" });
+  });
+
+  it("refuses a write composed from a filter with no SSID block to write back", () => {
+    // `MAC_FILTER_OFF` stands in before a filter has ever been read. A write
+    // from it would carry no blocks at all, which is not a write anyone meant.
+    expect(
+      refuseDeviceBlock({
+        filter: { mode: "off", entries: [], ssids: [] },
+        mac: PHONE,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "unreadable" });
+  });
+
+  it("puts this machine's own address before every other refusal", () => {
+    expect(
+      refuseDeviceBlock({
+        filter: ssids("whitelist", ...capacityMacs()),
+        mac: LAPTOP,
+        blocked: true,
+        localMacs: local,
+      }),
+    ).toEqual({ kind: "self" });
   });
 });

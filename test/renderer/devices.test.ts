@@ -80,8 +80,16 @@ function bodyRows(): HTMLTableRowElement[] {
   return [...document.querySelectorAll<HTMLTableRowElement>("table tbody tr")];
 }
 
+/**
+ * The text of a row's cells, without the last one.
+ *
+ * The final column holds the block control rather than a reading, and what it
+ * says is asserted where the control itself is — see "the block control" below.
+ */
 function cellsOfRow(index: number): (string | null)[] {
-  return [...(bodyRows()[index]?.cells ?? [])].map((cell) => cell.textContent);
+  return [...(bodyRows()[index]?.cells ?? [])]
+    .slice(0, -1)
+    .map((cell) => cell.textContent);
 }
 
 /** The name shown in each row, top to bottom. */
@@ -152,6 +160,7 @@ describe("the devices page", () => {
       "Network",
       "Connected for",
       "Access",
+      "Action",
     ]);
   });
 
@@ -289,13 +298,13 @@ describe("the devices table", () => {
   });
 });
 
-/** The last cell of a row — what the page says about the device's access. */
+/** The Access cell of a row — what the page says about the device's access. */
 function accessOfRow(index: number): string | null {
   const cells = bodyRows()[index]?.cells;
 
   return cells === undefined
     ? null
-    : (cells[cells.length - 1]?.textContent ?? null);
+    : (cells[cells.length - 2]?.textContent ?? null);
 }
 
 /**
@@ -377,7 +386,181 @@ describe("the devices table — the blocked state", () => {
     await apply(listed(row({ blocked: true })));
 
     expect(document.querySelector("table img")).toBeNull();
-    expect(bodyRows()[0]?.cells).toHaveLength(6);
+    expect(bodyRows()[0]?.cells).toHaveLength(7);
+  });
+});
+
+/** The block control of a row, or null when the row has none. */
+function controlOfRow(index: number): HTMLButtonElement | null {
+  return (
+    bodyRows()[index]?.querySelector<HTMLButtonElement>("[data-block]") ?? null
+  );
+}
+
+/** Every request the page handed the bridge, in order. */
+let sent: { mac: string; blocked: boolean }[] = [];
+
+/**
+ * Answers the confirmation the way the argument says, and counts the asking.
+ * jsdom's own `confirm` is a not-implemented stub, so it is always replaced.
+ */
+function confirmationAnswers(answer: boolean): { asked: string[] } {
+  const asked: string[] = [];
+
+  vi.spyOn(window, "confirm").mockImplementation((message?: string) => {
+    asked.push(message ?? "");
+
+    return answer;
+  });
+
+  return { asked };
+}
+
+/**
+ * The block control, and the confirmation in front of it.
+ *
+ * Blocking a device is an authenticated `POST` that changes what the router
+ * refuses, so it is never a side effect of a stray click: the page asks first,
+ * and a declined confirmation sends nothing at all. Every assertion about "no
+ * request was made" here is a call count, because a test reading a return value
+ * would pass an implementation that sent it anyway.
+ */
+describe("the devices table — the block control", () => {
+  beforeEach(() => {
+    sent = [];
+    window.devicesBridge = {
+      setBlocked(request: { mac: string; blocked: boolean }) {
+        sent.push(request);
+      },
+    };
+  });
+
+  it("offers to block a device the router is allowing", async () => {
+    await apply(listed(row({ blocked: false })));
+
+    expect(controlOfRow(0)?.textContent).toBe("Block");
+  });
+
+  it("offers to unblock a device the router is already refusing", async () => {
+    await apply(listed(row({ blocked: true })));
+
+    expect(controlOfRow(0)?.textContent).toBe("Unblock");
+  });
+
+  it("gives every row its own control", async () => {
+    await apply(listed(PHONE, row(), TABLET));
+
+    expect([0, 1, 2].map((index) => controlOfRow(index) !== null)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+  });
+
+  it("gives a blocked but absent device a control, which is the only way back", async () => {
+    await apply(listed(row({ blocked: true, present: false })));
+
+    // A blocked device stops associating, so without this it could only be
+    // unblocked by connecting first — the one thing it cannot do.
+    expect(controlOfRow(0)?.textContent).toBe("Unblock");
+  });
+
+  it("sends nothing at all when the confirmation is declined", async () => {
+    confirmationAnswers(false);
+    await apply(listed(row({ blocked: false })));
+
+    controlOfRow(0)?.click();
+
+    expect(sent).toEqual([]);
+  });
+
+  it("sends the block once the confirmation is accepted", async () => {
+    confirmationAnswers(true);
+    await apply(listed(row({ blocked: false })));
+
+    controlOfRow(0)?.click();
+
+    expect(sent).toEqual([{ mac: "A2:00:5E:00:00:01", blocked: true }]);
+  });
+
+  it("sends the unblock for a device already blocked", async () => {
+    confirmationAnswers(true);
+    await apply(listed(row({ blocked: true })));
+
+    controlOfRow(0)?.click();
+
+    expect(sent).toEqual([{ mac: "A2:00:5E:00:00:01", blocked: false }]);
+  });
+
+  it("names the device in what it asks, so the wrong row cannot be confirmed", async () => {
+    const { asked } = confirmationAnswers(false);
+    await apply(listed(PHONE));
+
+    controlOfRow(0)?.click();
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("galaxy-s10e");
+    expect(asked[0]).toContain("00:1A:2B:00:00:02");
+  });
+
+  it("asks once per press and sends once per confirmation", async () => {
+    const { asked } = confirmationAnswers(true);
+    await apply(listed(row({ blocked: false })));
+
+    controlOfRow(0)?.click();
+    controlOfRow(0)?.click();
+
+    expect(asked).toHaveLength(2);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("does not re-arm the same control on every poll", async () => {
+    const { asked } = confirmationAnswers(true);
+
+    await apply(listed(row({ blocked: false })));
+    await apply(listed(row({ blocked: false })));
+    await apply(listed(row({ blocked: false })));
+    controlOfRow(0)?.click();
+
+    // The row is kept and updated in place, so a listener added per render
+    // would fire three times for one press.
+    expect(asked).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("leaves the row saying what the router last said, not what the click assumed", async () => {
+    confirmationAnswers(true);
+    await apply(listed(row({ blocked: false })));
+
+    controlOfRow(0)?.click();
+
+    // The row follows the re-read the main process makes afterwards. Painting
+    // it here would show a block the router may well have refused.
+    expect(accessOfRow(0)).toBe("Allowed");
+    expect(bodyRows()[0]?.dataset["blocked"]).toBe("false");
+    expect(controlOfRow(0)?.textContent).toBe("Block");
+  });
+
+  it("follows the re-read when it lands, in the row it already has", async () => {
+    confirmationAnswers(true);
+    await apply(listed(row({ blocked: false })));
+    const [before] = bodyRows();
+
+    controlOfRow(0)?.click();
+    await apply(listed(row({ blocked: true })));
+
+    expect(bodyRows()[0]).toBe(before);
+    expect(accessOfRow(0)).toBe("Blocked");
+    expect(controlOfRow(0)?.textContent).toBe("Unblock");
+  });
+
+  it("survives a press with no bridge behind it rather than reporting an error", async () => {
+    confirmationAnswers(true);
+    delete window.devicesBridge;
+    await apply(listed(row()));
+
+    expect(() => controlOfRow(0)?.click()).not.toThrow();
+    expect(errors).toEqual([]);
   });
 });
 
