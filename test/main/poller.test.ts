@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../../src/config/defaults.js";
-import type { SnapshotResult } from "../../src/hilink/client.js";
+import type {
+  HostListResult,
+  SnapshotResult,
+} from "../../src/hilink/client.js";
+import type { Device } from "../../src/hilink/devices.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
 import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { UsageState } from "../../src/domain/quota.js";
@@ -814,5 +818,302 @@ describe("UsagePoller — the allowance source the carrier decides", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 5);
 
     expect(portal.calls).toBe(1);
+  });
+});
+
+/**
+ * The devices window is not the panel: it is opened deliberately, it can stay
+ * shut for days, and the list behind it costs a request the monitoring
+ * endpoints do not. So the read is gated on the window being open, and every
+ * test below is about that gate or about the list failing without taking the
+ * usage reading down with it.
+ */
+function hostDevice(overrides: Partial<Device> = {}): Device {
+  return {
+    mac: "A2:00:5E:00:00:01",
+    ip: "192.168.8.100",
+    name: "MacBookPro",
+    ssid: "HUAWEI-B310-XXXX",
+    associatedSeconds: 21_125,
+    ...overrides,
+  };
+}
+
+const PHONE = hostDevice({
+  mac: "00:1A:2B:00:00:02",
+  ip: "192.168.8.101",
+  name: "galaxy-s10e",
+  associatedSeconds: 3_600,
+});
+
+const HOSTS_LISTED: HostListResult = {
+  online: true,
+  devices: [PHONE, hostDevice()],
+};
+
+const HOSTS_EMPTY: HostListResult = { online: true, devices: [] };
+
+const HOSTS_OFFLINE: HostListResult = { online: false, reason: "unreachable" };
+
+/** Answers with `results[n]` for read `n`, repeating the last one thereafter. */
+function stubHosts(results: HostListResult[]) {
+  let calls = 0;
+
+  return {
+    get calls(): number {
+      return calls;
+    },
+    hosts(): Promise<HostListResult> {
+      const result = results[Math.min(calls, results.length - 1)];
+      calls += 1;
+
+      return Promise.resolve(result);
+    },
+  };
+}
+
+/** The names published by the last device push, in the order they arrived. */
+function publishedNames(results: HostListResult[]): string[] {
+  const last = results.at(-1);
+
+  return last?.online === true ? last.devices.map((one) => one.name) : [];
+}
+
+describe("UsagePoller — the connected devices", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads the host list on every poll while the window is open", async () => {
+    const hosts = stubHosts([HOSTS_LISTED]);
+    const published: HostListResult[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts,
+      wantsDevices: () => true,
+      onDevices: (result) => published.push(result),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hosts.calls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+
+    expect(hosts.calls).toBe(3);
+    expect(published).toHaveLength(3);
+    expect(publishedNames(published)).toEqual(["galaxy-s10e", "MacBookPro"]);
+
+    poller.stop();
+  });
+
+  it("asks for no host list at all while the window is shut", async () => {
+    const hosts = stubHosts([HOSTS_LISTED]);
+    const published: HostListResult[] = [];
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({
+      client,
+      config: CONFIG,
+      hosts,
+      wantsDevices: () => false,
+      onDevices: (result) => published.push(result),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
+
+    // Five ticks of the router being polled, and not one device request.
+    expect(client.calls).toBe(5);
+    expect(hosts.calls).toBe(0);
+    expect(published).toEqual([]);
+
+    poller.stop();
+  });
+
+  it("never asks when nothing has said a window is open", async () => {
+    const hosts = stubHosts([HOSTS_LISTED]);
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+
+    expect(hosts.calls).toBe(0);
+
+    poller.stop();
+  });
+
+  it("starts and stops reading as the window is opened and closed", async () => {
+    const hosts = stubHosts([HOSTS_LISTED]);
+    let open = false;
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts,
+      wantsDevices: () => open,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(hosts.calls).toBe(0);
+
+    open = true;
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(hosts.calls).toBe(1);
+
+    open = false;
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+    expect(hosts.calls).toBe(1);
+
+    poller.stop();
+  });
+
+  it("publishes an empty list as a list, not as a failure", async () => {
+    const published: HostListResult[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts: stubHosts([HOSTS_EMPTY]),
+      wantsDevices: () => true,
+      onDevices: (result) => published.push(result),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(published).toEqual([{ online: true, devices: [] }]);
+
+    poller.stop();
+  });
+
+  it("publishes the devices in the order the domain sorts them", async () => {
+    const published: HostListResult[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      // The router lists them in its own order; the window reads them in the
+      // stable one `sortDevices` states.
+      hosts: stubHosts([{ online: true, devices: [hostDevice(), PHONE] }]),
+      wantsDevices: () => true,
+      onDevices: (result) => published.push(result),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(publishedNames(published)).toEqual(["galaxy-s10e", "MacBookPro"]);
+
+    poller.stop();
+  });
+
+  it("reports the list unreachable without asking a router that is not answering", async () => {
+    const hosts = stubHosts([HOSTS_LISTED]);
+    const published: HostListResult[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([OFFLINE]),
+      config: CONFIG,
+      hosts,
+      wantsDevices: () => true,
+      onDevices: (result) => published.push(result),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Not an empty list: nobody asked, and an unreachable router has not said
+    // that nothing is connected to it.
+    expect(hosts.calls).toBe(0);
+    expect(published).toEqual([{ online: false, reason: "unreachable" }]);
+
+    poller.stop();
+  });
+
+  it("publishes a refused host list as unreachable rather than as an empty one", async () => {
+    const published: HostListResult[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts: stubHosts([HOSTS_OFFLINE]),
+      wantsDevices: () => true,
+      onDevices: (result) => published.push(result),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(published).toEqual([HOSTS_OFFLINE]);
+
+    poller.stop();
+  });
+
+  it("leaves the usage reading exactly as it was when the host list throws", async () => {
+    const states: UsageState[] = [];
+    const published: HostListResult[] = [];
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts: {
+        hosts: () => Promise.reject(new Error("host-list refused")),
+      },
+      wantsDevices: () => true,
+      onDevices: (result) => published.push(result),
+      onState: (state) => states.push(state),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The panel's figures come from the snapshot, which a device request has no
+    // business touching.
+    expect(poller.title).toBe("5.8Go · 29%");
+    expect(poller.state).toBe("ok");
+    expect(states).toEqual(["ok"]);
+    expect(published).toEqual([{ online: false, reason: "error" }]);
+
+    poller.stop();
+  });
+
+  it("keeps polling after a host list that failed", async () => {
+    const client = stubClient([USED_5_8_GB]);
+    const poller = new UsagePoller({
+      client,
+      config: CONFIG,
+      hosts: { hosts: () => Promise.reject(new Error("host-list refused")) },
+      wantsDevices: () => true,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+
+    expect(client.calls).toBe(3);
+    expect(poller.title).toBe("5.8Go · 29%");
+
+    poller.stop();
+  });
+
+  it("stops reading the host list once the poller is stopped", async () => {
+    const hosts = stubHosts([HOSTS_LISTED]);
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      hosts,
+      wantsDevices: () => true,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    poller.stop();
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 5);
+
+    expect(hosts.calls).toBe(1);
   });
 });

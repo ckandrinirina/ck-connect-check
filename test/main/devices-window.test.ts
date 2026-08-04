@@ -16,8 +16,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEVICES_WINDOW_HEIGHT,
   DEVICES_WINDOW_WIDTH,
+  buildDevicesModel,
   createDevicesWindow,
 } from "../../src/main/devices-window.js";
+import type { Device } from "../../src/hilink/devices.js";
 
 const electron = vi.hoisted(() => ({
   windows: [] as FakeWindow[],
@@ -27,6 +29,10 @@ interface FakeWindow {
   options: Record<string, unknown>;
   destroyed: boolean;
   handlers: Map<string, () => void>;
+  webContents: {
+    handlers: Map<string, () => void>;
+    executeJavaScript: ReturnType<typeof vi.fn>;
+  };
   loadFile: ReturnType<typeof vi.fn>;
   setSize: ReturnType<typeof vi.fn>;
   focus: ReturnType<typeof vi.fn>;
@@ -273,5 +279,147 @@ describe("createDevicesWindow", () => {
 
     expect(window.isDestroyed()).toBe(true);
     expect(devices.isOpen()).toBe(false);
+  });
+});
+
+function device(overrides: Partial<Device> = {}): Device {
+  return {
+    mac: "A2:00:5E:00:00:01",
+    ip: "192.168.8.100",
+    name: "MacBookPro",
+    ssid: "HUAWEI-B310-XXXX",
+    associatedSeconds: 21_125,
+    ...overrides,
+  };
+}
+
+/** Every script the window has run in its page, in order. */
+function pushedScripts(): string[] {
+  return lastWindow().webContents.executeJavaScript.mock.calls.map(
+    (call) => call[0] as string,
+  );
+}
+
+describe("buildDevicesModel", () => {
+  it("spells one row per device, the way the window reads them", () => {
+    const model = buildDevicesModel({ online: true, devices: [device()] });
+
+    expect(model).toEqual({
+      state: "listed",
+      devices: [
+        {
+          name: "MacBookPro",
+          ip: "192.168.8.100",
+          mac: "A2:00:5E:00:00:01",
+          network: "HUAWEI-B310-XXXX",
+          connectedFor: "5h 52m",
+        },
+      ],
+    });
+  });
+
+  it("falls back to the MAC for a host the router named nothing", () => {
+    const model = buildDevicesModel({
+      online: true,
+      devices: [device({ name: "" })],
+    });
+
+    expect(model).toEqual({
+      state: "listed",
+      devices: [expect.objectContaining({ name: "A2:00:5E:00:00:01" })],
+    });
+  });
+
+  it("puts the devices in the domain's stable order", () => {
+    const model = buildDevicesModel({
+      online: true,
+      devices: [device(), device({ mac: "00:1A:2B:00:00:02", name: "iPad" })],
+    });
+
+    expect(
+      model.state === "listed" ? model.devices.map((one) => one.name) : [],
+    ).toEqual(["iPad", "MacBookPro"]);
+  });
+
+  it("states an empty list as a list of no devices", () => {
+    expect(buildDevicesModel({ online: true, devices: [] })).toEqual({
+      state: "listed",
+      devices: [],
+    });
+  });
+
+  it("states an unreachable router as offline, never as an empty list", () => {
+    // The reason never reaches the page: unreachable is a normal state, and the
+    // panel's own model drops it for the same reason.
+    expect(buildDevicesModel({ online: false, reason: "unreachable" })).toEqual(
+      { state: "offline" },
+    );
+    expect(buildDevicesModel({ online: false, reason: "timeout" })).toEqual({
+      state: "offline",
+    });
+  });
+});
+
+describe("createDevicesWindow — pushing the list", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+  });
+
+  it("hands the page the model it was given", () => {
+    const devices = createDevicesWindow({ htmlPath: "/tmp/devices.html" });
+    devices.open();
+
+    devices.setDevices({ state: "listed", devices: [] });
+
+    expect(pushedScripts().at(-1)).toBe(
+      'window.applyDevicesModel({"state":"listed","devices":[]})',
+    );
+
+    devices.destroy();
+  });
+
+  it("pushes again once the page has finished loading", () => {
+    const devices = createDevicesWindow({ htmlPath: "/tmp/devices.html" });
+    devices.open();
+    devices.setDevices({ state: "offline" });
+
+    const window = lastWindow();
+    window.webContents.executeJavaScript.mockClear();
+    window.webContents.handlers.get("did-finish-load")?.();
+
+    // The first push lands while the page is still loading and is rejected;
+    // without this one an opened window would sit empty until the next poll.
+    expect(pushedScripts().at(-1)).toBe(
+      'window.applyDevicesModel({"state":"offline"})',
+    );
+
+    devices.destroy();
+  });
+
+  it("pushes the last model into a window opened after it arrived", () => {
+    const devices = createDevicesWindow({ htmlPath: "/tmp/devices.html" });
+
+    // A poll can land before the user has ever opened the window.
+    expect(() => devices.setDevices({ state: "offline" })).not.toThrow();
+
+    devices.open();
+
+    expect(pushedScripts().at(-1)).toBe(
+      'window.applyDevicesModel({"state":"offline"})',
+    );
+
+    devices.destroy();
+  });
+
+  it("pushes nothing into a window the user has closed", () => {
+    const devices = createDevicesWindow({ htmlPath: "/tmp/devices.html" });
+    devices.open();
+    const window = lastWindow();
+    window.close();
+
+    expect(() => devices.setDevices({ state: "offline" })).not.toThrow();
+    expect(window.webContents.executeJavaScript).not.toHaveBeenCalled();
+
+    devices.destroy();
   });
 });
