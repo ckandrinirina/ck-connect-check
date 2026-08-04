@@ -85,6 +85,7 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     percent: model.progress.label,
     prompt: model.progress.prompt,
     allowanceRemaining: model.allowance.remaining,
+    allowanceCaption: model.allowance.remainingCaption,
     allowancePlan: model.allowance.planLabel,
     allowanceExpires: model.allowance.expires,
     allowanceDaysLeft: model.allowance.daysUntilExpiry,
@@ -593,6 +594,10 @@ function setPresent(selector: string, wanted: boolean): void {
  * each. The plan length is two elements — the field and the line that refuses
  * it — because a complaint about a field that is not there is not a complaint
  * about anything.
+ *
+ * The expiry row is not a control at all but it is withdrawn by the same
+ * machinery, and for the same reason: a carrier that states no expiry leaves a
+ * row that reads "— · —" to the eye and reads out in full to a screen reader.
  */
 const CARRIER_CONTROLS: { flag: keyof PopoverModel["controls"]; of: string }[] =
   [
@@ -600,6 +605,7 @@ const CARRIER_CONTROLS: { flag: keyof PopoverModel["controls"]; of: string }[] =
     { flag: "sync", of: "[data-sync-row]" },
     { flag: "planDays", of: "form[data-plan-days]" },
     { flag: "planDays", of: '[data-field="planDaysError"]' },
+    { flag: "expiry", of: "[data-validity-row]" },
   ];
 
 /** Draws the control set this carrier has anything behind, and no more. */
