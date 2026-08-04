@@ -13,8 +13,10 @@
  * model small enough to live here rather than in a file of its own.
  */
 
-import { BrowserWindow } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
+
+import type { IpcMainEvent } from "electron";
 
 import {
   deviceAssociatedFor,
@@ -38,6 +40,45 @@ export const DEVICES_MENU_LABEL = "Connected devices…";
 const DEVICES_WINDOW_TITLE = "Connected devices";
 
 /**
+ * The page asking for a device to be blocked or unblocked.
+ *
+ * The model rides a global on the page because it only ever flows main →
+ * renderer. This goes the other way and ends in an authenticated `POST`, so it
+ * takes a named channel through a preload bridge, exactly as the panel's own
+ * writes do.
+ */
+export const DEVICES_SET_BLOCKED_CHANNEL = "devices:set-blocked";
+
+/** One press: the device, and the state being asked for. */
+export interface DeviceBlockRequest {
+  mac: string;
+  /** `true` blocks, `false` unblocks. */
+  blocked: boolean;
+}
+
+/**
+ * A block request out of a renderer message, or null when the payload is not
+ * one.
+ *
+ * The page is ours and its CSP lets nothing else run in it, but a channel that
+ * reaches the router validates its own input rather than trusting that — the
+ * same rule the password channel keeps.
+ */
+function readBlockRequest(payload: unknown): DeviceBlockRequest | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const { mac, blocked } = payload as Record<string, unknown>;
+
+  if (typeof mac !== "string" || typeof blocked !== "boolean") {
+    return null;
+  }
+
+  return { mac, blocked };
+}
+
+/**
  * The page, as the build leaves it. `npm run build` copies it into
  * `dist/renderer/` beside the script `tsc` emits there, and that copy is the one
  * the app loads: a packaged bundle carries `dist/` and drops `src/`, so a path
@@ -49,6 +90,16 @@ const DEVICES_WINDOW_TITLE = "Connected devices";
 function defaultHtmlPath(): string {
   return fileURLToPath(
     new URL("../../dist/renderer/devices.html", import.meta.url),
+  );
+}
+
+/**
+ * The compiled preload script, found by the same walk. It is the panel's own —
+ * one bridge file serves both pages, each reaching only the sends it uses.
+ */
+function defaultPreloadPath(): string {
+  return fileURLToPath(
+    new URL("../../dist/renderer/preload.cjs", import.meta.url),
   );
 }
 
@@ -136,8 +187,15 @@ export function buildDevicesModel(
 export interface DevicesWindowOptions {
   /** Path to the page. Injected so tests never touch the filesystem. */
   htmlPath?: string;
+  /** Path to the preload bridge. Injected for the same reason. */
+  preloadPath?: string;
   width?: number;
   height?: number;
+  /**
+   * The user pressed a row's block control, having confirmed it. The window
+   * starts nothing itself — what that costs the router is decided in `main.ts`.
+   */
+  onSetBlocked?: (request: DeviceBlockRequest) => void;
 }
 
 export interface DevicesWindow {
@@ -156,6 +214,7 @@ export function createDevicesWindow(
   const width = options.width ?? DEVICES_WINDOW_WIDTH;
   const height = options.height ?? DEVICES_WINDOW_HEIGHT;
   const htmlPath = options.htmlPath ?? defaultHtmlPath();
+  const preloadPath = options.preloadPath ?? defaultPreloadPath();
 
   let window: BrowserWindow | null = null;
   let model: DevicesModel | null = null;
@@ -163,6 +222,30 @@ export function createDevicesWindow(
   function alive(): BrowserWindow | null {
     return window !== null && !window.isDestroyed() ? window : null;
   }
+
+  /**
+   * `ipcMain` is process-wide, so every message is checked against this
+   * window's own page before it is acted on.
+   */
+  function fromThisWindow(event: IpcMainEvent): boolean {
+    const open = alive();
+
+    return open !== null && event.sender === open.webContents;
+  }
+
+  function onSetBlockedMessage(event: IpcMainEvent, payload: unknown): void {
+    if (!fromThisWindow(event)) {
+      return;
+    }
+
+    const request = readBlockRequest(payload);
+
+    if (request !== null) {
+      options.onSetBlocked?.(request);
+    }
+  }
+
+  ipcMain.on(DEVICES_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
 
   /**
    * Pushes the current list into the page. The renderer exposes a single global
@@ -196,6 +279,10 @@ export function createDevicesWindow(
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        // The one way the page can talk back: a bridge exposing a single send
+        // and nothing else. Without it a row could draw its block control and
+        // never be able to press it.
+        preload: preloadPath,
         // The list is pushed from the main process, and Chromium defers work in
         // a renderer it believes nobody is watching — the pushes would then queue
         // up behind a window that only looks idle. The panel needs this for the
@@ -248,6 +335,9 @@ export function createDevicesWindow(
       return alive() !== null;
     },
     destroy(): void {
+      // `ipcMain` outlives the window, so the subscription has to be given back
+      // explicitly or a destroyed window keeps answering for the next one.
+      ipcMain.removeListener(DEVICES_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
       alive()?.destroy();
       window = null;
     },

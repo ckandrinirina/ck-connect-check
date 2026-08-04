@@ -9,6 +9,7 @@
  */
 
 import { Menu, Tray, app } from "electron";
+import { networkInterfaces } from "node:os";
 
 import {
   loadConfig,
@@ -21,21 +22,39 @@ import {
 import { defaultConfigPath } from "../config/defaults.js";
 import { isAnchorStale, needsAutomaticSync } from "../domain/allowance.js";
 import type { Carrier } from "../domain/carrier.js";
+import {
+  isLocalDevice,
+  normaliseMac,
+  refuseDeviceBlock,
+  withDeviceBlocked,
+  withDeviceUnblocked,
+  type DeviceBlockRefusal,
+} from "../domain/devices.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import {
   RouterClient,
   type HostListResult,
+  type MacFilterResult,
+  type MacFilterWriteResult,
+  type RouterFailure,
   type SnapshotResult,
 } from "../hilink/client.js";
+import { MAC_FILTER_OFF, type MacFilter } from "../hilink/macfilter.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
-import type { Allowance, RouterSnapshot } from "../hilink/types.js";
+import type {
+  Allowance,
+  LoginResult,
+  RouterCredential,
+  RouterSnapshot,
+} from "../hilink/types.js";
 import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import {
   DEVICES_MENU_LABEL,
   buildDevicesModel,
   createDevicesWindow,
+  type DeviceBlockRequest,
   type DevicesWindow,
 } from "./devices-window.js";
 import {
@@ -69,6 +88,45 @@ import {
  */
 const STALE_CHECK_INTERVAL_MS = 60_000;
 
+/** The all-zero address a virtual interface reports instead of a real one. */
+const NO_MAC = "00:00:00:00:00:00";
+
+/**
+ * Every MAC belonging to an interface of this machine.
+ *
+ * Read from the interfaces rather than matched by IP: a DHCP lease moves
+ * between devices, and blocking the wrong one because the table shifted is the
+ * exact failure the self-block guard exists to prevent. All of them are taken,
+ * not just the active one — the router lists a device by whichever adapter is
+ * associated, which need not be the one this process happens to be using.
+ */
+function localMacAddresses(): string[] {
+  return Object.values(networkInterfaces())
+    .flatMap((entries) => entries ?? [])
+    .map((entry) => entry.mac)
+    .filter((mac) => mac !== "" && mac !== NO_MAC);
+}
+
+/**
+ * The slice of the router a block or unblock needs: the filter both ways, and
+ * the sign-in that both sit behind. Injected as one so a test can drive a press
+ * without a network and count every request it made.
+ */
+export interface DeviceAccessSource {
+  macFilter(): Promise<MacFilterResult>;
+  writeMacFilter(filter: MacFilter): Promise<MacFilterWriteResult>;
+  login(credential: RouterCredential): Promise<LoginResult>;
+}
+
+/**
+ * What became of a press.
+ *
+ * A refusal decided here is a {@link DeviceBlockRefusal} and cost no request at
+ * all; anything else is the router's own word on a request that was made.
+ */
+export type DeviceBlockOutcome =
+  { ok: true } | { ok: false; reason: DeviceBlockRefusal | RouterFailure };
+
 export interface MenuBarOptions {
   /** Where the config lives. Injected so tests never touch the user directory. */
   configPath?: string;
@@ -92,6 +150,18 @@ export interface MenuBarOptions {
    * independent of each other.
    */
   hosts?: HostListSource;
+  /**
+   * The MAC filter, read and written. Injected separately again, for the reason
+   * the two above are and one more: this is the only source here that *writes*,
+   * so a test must be able to count what it was asked to do.
+   */
+  access?: DeviceAccessSource;
+  /**
+   * This machine's own interface addresses. Injected so the self-block guard is
+   * testable without depending on whatever adapters the test host happens to
+   * have.
+   */
+  localMacs?: () => string[];
   /** The password store. Injected so tests need no Keychain. */
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
@@ -120,6 +190,15 @@ export interface MenuBarApp {
    * the carrier gave it. Exposed for the same reason the two above are.
    */
   setForfait(label: string): void;
+  /**
+   * Blocks or unblocks one device, having been asked to. Exposed for the same
+   * reason {@link MenuBarApp.sync} is — it is what the window's control does,
+   * and a test can drive it without an Electron window.
+   *
+   * The confirmation is the page's and has already happened; nothing here is
+   * ever reached by a timer.
+   */
+  setDeviceBlocked(request: DeviceBlockRequest): Promise<DeviceBlockOutcome>;
   /** Stops polling and releases the tray item. */
   stop(): void;
 }
@@ -147,6 +226,8 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const routerClient = new RouterClient({ baseUrl: `http://${config.host}` });
   const router = options.client ?? routerClient;
   const allowanceRouter = options.allowance ?? routerClient;
+  const access: DeviceAccessSource = options.access ?? routerClient;
+  const localMacs = options.localMacs ?? localMacAddresses;
   const credentials: CredentialStore = options.credentials ?? {
     // The plaintext exists only inside `credentials.ts`; this file never sees
     // one that it did not receive straight from the panel's prompt.
@@ -214,7 +295,13 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // the panel is 320×520 with nothing left to spend and nothing scrolls in it.
   // Created before the poller, which asks it on every tick whether anyone is
   // looking at the list.
-  const devices = options.devices ?? createDevicesWindow();
+  const devices =
+    options.devices ??
+    createDevicesWindow({
+      // The page has already confirmed it; what it costs the router is settled
+      // in `setDeviceBlocked`, and a refusal there costs no request at all.
+      onSetBlocked: (request) => void setDeviceBlocked(request),
+    });
 
   function refreshPopover(): void {
     popover.setModel(
@@ -492,6 +579,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
    * read on every poll while the window is open, and a wrong password retried
    * on that cadence would reach the router's five-failure lockout in under
    * three minutes. The same rule the sync keeps, for the same reason.
+   *
+   * A *press* is deliberately not governed by this. It happens because someone
+   * asked, once, so it is allowed its own single sign-in — see
+   * {@link setDeviceBlocked}.
    */
   let deviceLoginRefused = false;
 
@@ -528,14 +619,178 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     return await routerClient.hosts();
   }
 
+  /**
+   * The filter as the router last stated it.
+   *
+   * Starts off and holding nothing, which is both the router's own state at
+   * rest and the only honest assumption before one has been read: no device is
+   * ever drawn as blocked on the strength of a guess. It is a cache for
+   * *rendering* only — every write reads the filter again rather than composing
+   * itself from this, because a stale list written back would silently unblock
+   * whoever joined it since.
+   */
+  let lastFilter: MacFilter = MAC_FILTER_OFF;
+
+  /** The last host list the poll published, so a press can redraw from it. */
+  let lastHosts: HostListResult = { online: false, reason: "session" };
+
+  /** Pushes the window whatever the last list and the last filter add up to. */
+  function refreshDevices(): void {
+    devices.setDevices(buildDevicesModel(lastHosts, lastFilter));
+  }
+
+  /**
+   * The host list, and the filter behind it.
+   *
+   * The two ride one tick and one session: the filter needs the same login the
+   * host list just took out, and asking for it on a schedule of its own would
+   * be a second thing to keep in step for no saving. A filter that does not
+   * answer leaves the last one standing rather than claiming nothing is
+   * blocked — the window would otherwise say every device is allowed on the
+   * strength of a request that failed.
+   */
+  const hostSource: HostListSource = options.hosts ?? { hosts: readHostList };
+  const hosts: HostListSource = {
+    hosts: async (): Promise<HostListResult> => {
+      const listed = await hostSource.hosts();
+
+      // The filter is behind the password exactly as the host list is, and it
+      // is asked for only once the list has answered: with no credential
+      // stored, or with the router not answering, the request could only be
+      // refused, and an unasked question is cheaper than a refused one.
+      if (!listed.online || credentials.load() === null) {
+        return listed;
+      }
+
+      const filter = await access.macFilter();
+
+      if (filter.online) {
+        lastFilter = filter.filter;
+      }
+
+      return listed;
+    },
+  };
+
+  /**
+   * Block or unblock one device, having been asked to.
+   *
+   * The write is the whole filter, so this is always read-modify-write: what
+   * the router currently holds, plus or minus one address, sent back entire. A
+   * read that fails ends the press — there is nothing safe to write from.
+   *
+   * The sign-in is taken out at most once per press, and a refused one is not
+   * retried: five refusals lock the account. A second press tries again,
+   * because a press is always deliberate — which is exactly why the run-wide
+   * latch that parks the poll's list does not apply here.
+   *
+   * Whatever happens, the filter is read again afterwards and the row is drawn
+   * from that. The click's assumption is never what the window shows.
+   */
+  async function setDeviceBlocked(
+    request: DeviceBlockRequest,
+  ): Promise<DeviceBlockOutcome> {
+    const credential = credentials.load();
+
+    if (credential === null) {
+      return { ok: false, reason: "not-logged-in" };
+    }
+
+    // Before any request at all, so the guard holds whatever the page renders.
+    if (request.blocked && isLocalDevice(request.mac, localMacs())) {
+      return { ok: false, reason: { kind: "self" } };
+    }
+
+    let signedIn = false;
+
+    /** One read, buying a session with it the first time the router refuses. */
+    const read = async (): Promise<MacFilterResult> => {
+      const first = await access.macFilter();
+
+      if (first.online || signedIn) {
+        return first;
+      }
+
+      signedIn = true;
+
+      const login = await access.login(credential);
+
+      if (!login.ok) {
+        return { online: false, reason: "session" };
+      }
+
+      return await access.macFilter();
+    };
+
+    /** Re-read and redraw, so the row states the router and not the click. */
+    const settle = async (): Promise<void> => {
+      const reread = await read();
+
+      if (reread.online) {
+        lastFilter = reread.filter;
+        refreshDevices();
+      }
+    };
+
+    const current = await read();
+
+    if (!current.online) {
+      return { ok: false, reason: current.reason };
+    }
+
+    lastFilter = current.filter;
+
+    const refusal = refuseDeviceBlock({
+      filter: current.filter,
+      mac: request.mac,
+      blocked: request.blocked,
+      localMacs: localMacs(),
+    });
+
+    if (refusal !== null) {
+      return { ok: false, reason: refusal };
+    }
+
+    const written = await access.writeMacFilter(
+      request.blocked
+        ? withDeviceBlocked(current.filter, request.mac, nameFor(request.mac))
+        : withDeviceUnblocked(current.filter, request.mac),
+    );
+
+    await settle();
+
+    return written.ok ? { ok: true } : { ok: false, reason: written.reason };
+  }
+
+  /**
+   * What to store beside a newly blocked address.
+   *
+   * The router keeps a name in the slot next to each MAC, and the one it
+   * already knows the device by is the only name anyone has for it once it
+   * stops associating and drops out of the host list.
+   */
+  function nameFor(mac: string): string {
+    if (!lastHosts.online) {
+      return "";
+    }
+
+    const wanted = normaliseMac(mac);
+
+    return (
+      lastHosts.devices.find((device) => normaliseMac(device.mac) === wanted)
+        ?.name ?? ""
+    );
+  }
+
   const poller = new UsagePoller({
     client,
     config,
-    hosts: options.hosts ?? { hosts: readHostList },
+    hosts,
     // The window being open is the only reason to ask for the list at all.
     wantsDevices: () => devices.isOpen(),
     onDevices: (result) => {
-      devices.setDevices(buildDevicesModel(result));
+      lastHosts = result;
+      refreshDevices();
     },
     // Only ever read on Orange, and only on the idle interval — the poller
     // decides both, from the carrier the router reports.
@@ -621,6 +876,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     setPlanLimit,
     setPlanDays,
     setForfait,
+    setDeviceBlocked,
     stop() {
       clearInterval(staleCheck);
       poller.stop();

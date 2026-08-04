@@ -18,6 +18,14 @@ declare global {
   interface Window {
     /** The one entry point the main process calls. */
     applyDevicesModel(model: DevicesModel): void;
+    /**
+     * The one way back, from `preload.cts`. Optional because the page has to
+     * render without it — under Vitest, and in the instant before the bridge
+     * lands — and a missing bridge must cost a press, never an exception.
+     */
+    devicesBridge?: {
+      setBlocked(request: { mac: string; blocked: boolean }): void;
+    };
   }
 }
 
@@ -53,6 +61,71 @@ function cellsOf(device: DeviceRow): string[] {
   ];
 }
 
+/** What the control offers to do, which is always the opposite of the state. */
+const BLOCK_ACTION = "Block";
+const UNBLOCK_ACTION = "Unblock";
+
+/**
+ * What the user is asked before anything is sent.
+ *
+ * The device is named, and its MAC given beside the name: two devices can share
+ * a name, and the address is what the write actually acts on — so a
+ * confirmation that only said "Block MacBookPro?" could be agreed to for the
+ * wrong row.
+ */
+function confirmationFor(device: DeviceRow, blocked: boolean): string {
+  const named = `${device.name} (${device.mac})`;
+
+  return blocked
+    ? `Block ${named} from the router's Wi-Fi?`
+    : `Allow ${named} back onto the router's Wi-Fi?`;
+}
+
+/**
+ * Asks, and sends only if the answer was yes.
+ *
+ * Nothing on the row is repainted here. What the router ends up refusing is
+ * settled by the write and the re-read behind it, and a row that showed the
+ * block straight away would be stating something that may well have been
+ * refused — the next pushed model is the only thing that moves it.
+ */
+function press(device: DeviceRow, blocked: boolean): void {
+  if (!window.confirm(confirmationFor(device, blocked))) {
+    return;
+  }
+
+  window.devicesBridge?.setBlocked({ mac: device.mac, blocked });
+}
+
+/**
+ * The control in a row's last cell, created once and re-aimed thereafter.
+ *
+ * The handler is assigned rather than added, because rows are kept between
+ * polls: a listener added on every render would fire once per poll the row had
+ * survived, turning one press into a handful of writes.
+ */
+function fillAction(cell: HTMLTableCellElement, device: DeviceRow): void {
+  const existing = cell.querySelector<HTMLButtonElement>("[data-block]");
+  const control = existing ?? document.createElement("button");
+
+  if (existing === null) {
+    control.type = "button";
+    control.dataset["block"] = "";
+    cell.replaceChildren(control);
+  }
+
+  const wanted = !device.blocked;
+  const label = wanted ? BLOCK_ACTION : UNBLOCK_ACTION;
+
+  if (control.textContent !== label) {
+    control.textContent = label;
+  }
+
+  control.onclick = (): void => {
+    press(device, wanted);
+  };
+}
+
 /** The row elements already on the page, by the MAC each one belongs to. */
 let rowsByMac = new Map<string, HTMLTableRowElement>();
 
@@ -65,12 +138,13 @@ let rowsByMac = new Map<string, HTMLTableRowElement>();
 function fill(row: HTMLTableRowElement, device: DeviceRow): void {
   const values = cellsOf(device);
 
-  while (row.cells.length < values.length) {
+  // One more cell than there are readings: the last one holds the control.
+  while (row.cells.length < values.length + 1) {
     row.append(document.createElement("td"));
   }
 
-  // Stated on the row as well as in its last cell, so a stylesheet has
-  // something to hang on without the words having to go.
+  // Stated on the row as well as in its cells, so a stylesheet has something to
+  // hang on without the words having to go.
   row.dataset["blocked"] = String(device.blocked);
   row.dataset["present"] = String(device.present);
 
@@ -81,6 +155,12 @@ function fill(row: HTMLTableRowElement, device: DeviceRow): void {
       cell.textContent = value;
     }
   });
+
+  const action = row.cells[values.length];
+
+  if (action !== undefined) {
+    fillAction(action, device);
+  }
 }
 
 /**

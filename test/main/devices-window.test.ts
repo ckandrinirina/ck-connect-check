@@ -14,16 +14,20 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  DEVICES_SET_BLOCKED_CHANNEL,
   DEVICES_WINDOW_HEIGHT,
   DEVICES_WINDOW_WIDTH,
   buildDevicesModel,
   createDevicesWindow,
+  type DeviceBlockRequest,
 } from "../../src/main/devices-window.js";
 import type { Device } from "../../src/hilink/devices.js";
 import type { MacFilter } from "../../src/hilink/macfilter.js";
 
 const electron = vi.hoisted(() => ({
   windows: [] as FakeWindow[],
+  /** Every `ipcMain.on` subscription still registered, by channel. */
+  channels: new Map<string, Set<(...args: unknown[]) => void>>(),
 }));
 
 interface FakeWindow {
@@ -84,7 +88,30 @@ vi.mock("electron", () => {
     }
   }
 
-  return { BrowserWindow };
+  /**
+   * A stand-in for `ipcMain`: the renderer never runs here, so a "press" is
+   * this suite calling the handler `devices-window.ts` registered, with the
+   * sender it chooses.
+   */
+  const ipcMain = {
+    on(channel: string, handler: (...args: unknown[]) => void) {
+      const listeners =
+        electron.channels.get(channel) ??
+        new Set<(...args: unknown[]) => void>();
+
+      listeners.add(handler);
+      electron.channels.set(channel, listeners);
+
+      return ipcMain;
+    },
+    removeListener(channel: string, handler: (...args: unknown[]) => void) {
+      electron.channels.get(channel)?.delete(handler);
+
+      return ipcMain;
+    },
+  };
+
+  return { BrowserWindow, ipcMain };
 });
 
 function lastWindow(): FakeWindow {
@@ -475,5 +502,173 @@ describe("createDevicesWindow — pushing the list", () => {
     expect(window.webContents.executeJavaScript).not.toHaveBeenCalled();
 
     devices.destroy();
+  });
+});
+
+/** Delivers a message on a channel, as `ipcMain` would. */
+function send(channel: string, sender: unknown, payload?: unknown): void {
+  for (const handler of electron.channels.get(channel) ?? []) {
+    handler({ sender }, payload);
+  }
+}
+
+/**
+ * The press that reaches the main process.
+ *
+ * Unlike the model, which only ever flows main → renderer and rides a global on
+ * the page, a block travels the other way and touches the router — so it goes
+ * over a named channel through a preload bridge, exactly as the panel's own
+ * writes do, and every message is checked against this window's own page.
+ */
+describe("createDevicesWindow — a block pressed in the page", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  it("gives the page a bridge to talk back through", () => {
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      preloadPath: "/tmp/preload.cjs",
+    });
+    devices.open();
+
+    // Without a preload the page could render the control and never send it.
+    expect(lastWindow().options["webPreferences"]).toMatchObject({
+      preload: "/tmp/preload.cjs",
+      contextIsolation: true,
+      nodeIntegration: false,
+    });
+
+    devices.destroy();
+  });
+
+  it("forwards a press from its own page", () => {
+    const pressed: DeviceBlockRequest[] = [];
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      onSetBlocked: (request) => pressed.push(request),
+    });
+    devices.open();
+
+    send(DEVICES_SET_BLOCKED_CHANNEL, lastWindow().webContents, {
+      mac: "A2:00:5E:00:00:01",
+      blocked: true,
+    });
+
+    expect(pressed).toEqual([{ mac: "A2:00:5E:00:00:01", blocked: true }]);
+
+    devices.destroy();
+  });
+
+  it("forwards an unblock as the other half of the same press", () => {
+    const pressed: DeviceBlockRequest[] = [];
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      onSetBlocked: (request) => pressed.push(request),
+    });
+    devices.open();
+
+    send(DEVICES_SET_BLOCKED_CHANNEL, lastWindow().webContents, {
+      mac: "00:1A:2B:00:00:02",
+      blocked: false,
+    });
+
+    expect(pressed).toEqual([{ mac: "00:1A:2B:00:00:02", blocked: false }]);
+
+    devices.destroy();
+  });
+
+  it("ignores a message from anywhere but its own page", () => {
+    const pressed: DeviceBlockRequest[] = [];
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      onSetBlocked: (request) => pressed.push(request),
+    });
+    devices.open();
+
+    // `ipcMain` is process-wide, and this channel reaches the router.
+    send(
+      DEVICES_SET_BLOCKED_CHANNEL,
+      { notThisWindow: true },
+      {
+        mac: "A2:00:5E:00:00:01",
+        blocked: true,
+      },
+    );
+
+    expect(pressed).toEqual([]);
+
+    devices.destroy();
+  });
+
+  it("ignores a payload that is not a block request", () => {
+    const pressed: DeviceBlockRequest[] = [];
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      onSetBlocked: (request) => pressed.push(request),
+    });
+    devices.open();
+    const sender = lastWindow().webContents;
+
+    for (const payload of [
+      undefined,
+      null,
+      "A2:00:5E:00:00:01",
+      { mac: "A2:00:5E:00:00:01" },
+      { mac: 12, blocked: true },
+      { mac: "A2:00:5E:00:00:01", blocked: "yes" },
+      { blocked: true },
+    ]) {
+      send(DEVICES_SET_BLOCKED_CHANNEL, sender, payload);
+    }
+
+    expect(pressed).toEqual([]);
+
+    devices.destroy();
+  });
+
+  it("ignores a press arriving before the window exists", () => {
+    const pressed: DeviceBlockRequest[] = [];
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      onSetBlocked: (request) => pressed.push(request),
+    });
+
+    send(
+      DEVICES_SET_BLOCKED_CHANNEL,
+      {},
+      {
+        mac: "A2:00:5E:00:00:01",
+        blocked: true,
+      },
+    );
+
+    expect(pressed).toEqual([]);
+
+    devices.destroy();
+  });
+
+  it("gives its subscription back when destroyed", () => {
+    const pressed: DeviceBlockRequest[] = [];
+    const devices = createDevicesWindow({
+      htmlPath: "/tmp/devices.html",
+      onSetBlocked: (request) => pressed.push(request),
+    });
+    devices.open();
+    const sender = lastWindow().webContents;
+
+    devices.destroy();
+    send(DEVICES_SET_BLOCKED_CHANNEL, sender, {
+      mac: "A2:00:5E:00:00:01",
+      blocked: true,
+    });
+
+    // `ipcMain` outlives the window, so a destroyed one that kept answering
+    // would act for the next.
+    expect(pressed).toEqual([]);
+    expect(electron.channels.get(DEVICES_SET_BLOCKED_CHANNEL)?.size ?? 0).toBe(
+      0,
+    );
   });
 });

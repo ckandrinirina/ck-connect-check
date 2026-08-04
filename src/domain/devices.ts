@@ -17,7 +17,12 @@
  */
 
 import type { Device } from "../hilink/devices.js";
-import type { MacFilter } from "../hilink/macfilter.js";
+import {
+  MAC_FILTER_CAP,
+  collapseMacFilter,
+  type MacFilter,
+  type MacFilterSsid,
+} from "../hilink/macfilter.js";
 
 import { formatDuration } from "./format.js";
 
@@ -173,4 +178,171 @@ export function listDevices(
   return listed.sort((first, second) =>
     compareDevices(first.device, second.device),
   );
+}
+
+/**
+ * Whether an address belongs to the machine the app is running on.
+ *
+ * The comparison is on MAC and never on IP. A DHCP lease moves between devices,
+ * and blocking the wrong one because the table shifted is exactly the failure
+ * this guard exists to prevent. An empty `localMacs` matches nothing, which is a
+ * correct answer — on Ethernet, with only Wi-Fi hosts reported, this machine
+ * genuinely is not in the list — and not a fallback to work around.
+ */
+export function isLocalDevice(
+  mac: string,
+  localMacs: readonly string[],
+): boolean {
+  const wanted = normaliseMac(mac);
+
+  return localMacs.some((local) => normaliseMac(local) === wanted);
+}
+
+/** One SSID block with its entries copied, so no caller's filter is mutated. */
+function copySsid(
+  ssid: MacFilterSsid,
+  entries: MacFilter["entries"],
+): MacFilterSsid {
+  return {
+    index: ssid.index,
+    mode: ssid.mode,
+    entries: entries.map((entry) => ({ ...entry })),
+  };
+}
+
+/**
+ * The filter to write so that one more address is refused.
+ *
+ * Every block gets the address, because the router replaces the filter with
+ * whatever it is sent and a body naming one SSID clears the other three. The
+ * mode moves to blacklist in the same write: blocking the first device on a
+ * filter that is off has to turn the filter on, or the write would be recorded
+ * and govern nothing.
+ *
+ * Blacklist is the only mode this ever produces. `2` meaning blacklist is
+ * inferred rather than observed — see `MODES` in `../hilink/macfilter.ts` and
+ * the all-zero fixture that would settle it — but whichever number it turns out
+ * to be, the mode named here is the one that refuses the addresses it lists.
+ */
+export function withDeviceBlocked(
+  filter: MacFilter,
+  mac: string,
+  name: string,
+): MacFilter {
+  const added = { mac: normaliseSpelling(mac), name };
+
+  return collapseMacFilter(
+    filter.ssids.map((ssid) =>
+      copySsid(
+        { ...ssid, mode: "blacklist" },
+        holds(ssid, mac) ? ssid.entries : [...ssid.entries, added],
+      ),
+    ),
+  );
+}
+
+/**
+ * The filter to write so that one address is refused no longer.
+ *
+ * The mode is left exactly as it was found, including when the last entry goes
+ * and the list empties. Switching the filter off would be a change to every
+ * other device that nobody asked for, and the user asked about one.
+ */
+export function withDeviceUnblocked(filter: MacFilter, mac: string): MacFilter {
+  const wanted = normaliseMac(mac);
+
+  return collapseMacFilter(
+    filter.ssids.map((ssid) =>
+      copySsid(
+        ssid,
+        ssid.entries.filter((entry) => normaliseMac(entry.mac) !== wanted),
+      ),
+    ),
+  );
+}
+
+/** An address stored the way every other address here is stored. */
+function normaliseSpelling(mac: string): string {
+  return mac.trim().toUpperCase();
+}
+
+/** Whether one block already names an address, however either is spelled. */
+function holds(ssid: MacFilterSsid, mac: string): boolean {
+  const wanted = normaliseMac(mac);
+
+  return ssid.entries.some((entry) => normaliseMac(entry.mac) === wanted);
+}
+
+/**
+ * Why a block or unblock will not be attempted.
+ *
+ * Each of these is settled *before* a request goes out, because each names a
+ * write that would be wrong rather than one that would fail: the router would
+ * accept every one of them.
+ */
+export type DeviceBlockRefusal =
+  | { kind: "self" }
+  | { kind: "full"; cap: number }
+  | { kind: "whitelist" }
+  | { kind: "unreadable" };
+
+export interface DeviceBlockCheck {
+  /** The filter as the router last stated it — never a remembered one. */
+  filter: MacFilter;
+  mac: string;
+  /** The state being asked for: `true` blocks, `false` unblocks. */
+  blocked: boolean;
+  /** Every MAC belonging to an interface of this machine. */
+  localMacs: readonly string[];
+}
+
+/**
+ * Whether the write may go out at all, and why not when it may not.
+ *
+ * Four refusals, in the order they matter:
+ *
+ * - **this machine's own address.** Blocking the Mac the app runs on severs the
+ *   connection the undo would have to travel over; no confirmation dialog makes
+ *   that a reasonable thing to offer. It is checked here, at the domain layer,
+ *   so the guard holds whatever the page decides to render.
+ * - **nothing to write back.** A filter with no SSID block is the stand-in used
+ *   before one has been read; composing a write from it would send no blocks at
+ *   all, which is not a write anyone meant to make.
+ * - **whitelist.** A whitelist blocks every device it does not name. Since an
+ *   unblock leaves the mode as it found it, a filter already in whitelist mode
+ *   would have that mode written straight back — and the `1`/`2` mapping is
+ *   inferred rather than observed, so this task refuses to touch a whitelist at
+ *   all rather than reason about one it cannot verify.
+ * - **the cap.** Ten entries per SSID is the firmware's limit, and a household
+ *   that reaches it has done nothing wrong. Blocking a device the list already
+ *   holds adds nothing, so it is allowed even at the cap.
+ */
+export function refuseDeviceBlock({
+  filter,
+  mac,
+  blocked,
+  localMacs,
+}: DeviceBlockCheck): DeviceBlockRefusal | null {
+  if (blocked && isLocalDevice(mac, localMacs)) {
+    return { kind: "self" };
+  }
+  if (filter.ssids.length === 0) {
+    return { kind: "unreadable" };
+  }
+  if (
+    filter.mode === "whitelist" ||
+    filter.ssids.some((ssid) => ssid.mode === "whitelist")
+  ) {
+    return { kind: "whitelist" };
+  }
+  if (
+    blocked &&
+    filter.ssids.some(
+      (ssid) => ssid.entries.length >= MAC_FILTER_CAP && !holds(ssid, mac),
+    )
+  ) {
+    return { kind: "full", cap: MAC_FILTER_CAP };
+  }
+
+  return null;
 }

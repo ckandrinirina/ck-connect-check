@@ -24,7 +24,15 @@ import {
   readLoginReply,
 } from "./login.js";
 import {
+  MAC_FILTER_ENDPOINT,
+  macFilterRequestXml,
+  parseMacFilter,
+  type MacFilter,
+} from "./macfilter.js";
+import {
   HilinkApiError,
+  HilinkParseError,
+  NO_RIGHTS_CODE,
   SPENT_TOKEN_CODE,
   isStaleSessionError,
   parseCurrentPlmn,
@@ -40,7 +48,7 @@ import { SessionStore, sessionHeaders } from "./session.js";
 import {
   UssdDialogue,
   type AllowanceResult,
-  type UssdFailure,
+  type RouterFailure,
   type UssdOptions,
 } from "./ussd.js";
 import type {
@@ -70,6 +78,7 @@ export type { OfflineReason } from "./types.js";
 /** The USSD dialogue's own result and failure vocabulary — see `./ussd.ts`. */
 export type {
   AllowanceResult,
+  RouterFailure,
   RouterRefusal,
   UssdFailure,
   UssdOptions,
@@ -90,6 +99,27 @@ export type SnapshotResult =
 export type HostListResult =
   | { online: true; devices: Device[] }
   | { online: false; reason: OfflineReason };
+
+/**
+ * One reading of the WLAN MAC filter, shaped like {@link HostListResult} and
+ * for the same reason. Reading it needs the stored password: without a session
+ * the endpoint answers `100003`, which arrives here as an ordinary offline
+ * result and leaves the window saying nothing about who is blocked — never
+ * saying that nobody is.
+ */
+export type MacFilterResult =
+  | { online: true; filter: MacFilter }
+  | { online: false; reason: OfflineReason };
+
+/**
+ * What became of a filter write.
+ *
+ * Unlike a read, this is always the result of a deliberate press, so the reason
+ * is carried whole — including a router error code nobody has named — because
+ * something has to be said back to the person who pressed it.
+ */
+export type MacFilterWriteResult =
+  { ok: true } | { ok: false; reason: RouterFailure };
 
 export interface RouterClientOptions {
   /** Router origin, e.g. `http://192.168.8.1`. Injected — never hard-coded here. */
@@ -180,7 +210,7 @@ function offlineReason(
  * status and its path. A dialogue is driven by an explicit press and reports
  * back to the user, so "it was refused" has to be able to say what by.
  */
-function ussdTransportFailure(error: unknown): UssdFailure {
+function ussdTransportFailure(error: unknown): RouterFailure {
   if (error instanceof RouterHttpError) {
     return {
       kind: "error",
@@ -191,6 +221,37 @@ function ussdTransportFailure(error: unknown): UssdFailure {
   }
 
   return offlineReason(error, "session");
+}
+
+/**
+ * Why a write reported by the router itself failed.
+ *
+ * The same reasoning as the dialogue's, kept apart from it because a filter
+ * write has no `busy` and no carrier text to find unreadable: a code we have no
+ * name for travels as itself, so the user is told what refused them rather than
+ * that something did.
+ */
+function writeFailure(error: unknown): RouterFailure {
+  if (error instanceof HilinkApiError) {
+    if (error.code === NO_RIGHTS_CODE) {
+      return "not-logged-in";
+    }
+    if (error.isStaleSession) {
+      return "session";
+    }
+
+    return {
+      kind: "error",
+      source: "api",
+      code: error.code,
+      endpoint: error.endpoint,
+    };
+  }
+  if (error instanceof HilinkParseError) {
+    return "error";
+  }
+
+  return ussdTransportFailure(error);
 }
 
 export class RouterClient {
@@ -304,6 +365,53 @@ export class RouterClient {
       };
     } catch (error) {
       return { online: false, reason: offlineReason(error, "session") };
+    }
+  }
+
+  /**
+   * The WLAN MAC filter as the router currently holds it. Resolves to an
+   * offline result rather than rejecting, exactly like
+   * {@link RouterClient.hosts}, and needs a session for the same reason.
+   *
+   * All four `<Ssid>` blocks come back intact, because the write that follows
+   * has to carry every one of them.
+   */
+  async macFilter(): Promise<MacFilterResult> {
+    try {
+      const headers = sessionHeaders(await this.#session.current());
+
+      return {
+        online: true,
+        filter: parseMacFilter(await this.#get(MAC_FILTER_ENDPOINT, headers)),
+      };
+    } catch (error) {
+      return { online: false, reason: offlineReason(error, "session") };
+    }
+  }
+
+  /**
+   * Replace the whole filter with the one given.
+   *
+   * The router holds one filter and replaces what it is sent, so this is the
+   * only shape a change can take — and the caller must have read the filter it
+   * is handing back, because a write composed from a remembered one would
+   * silently unblock everyone who joined it since.
+   *
+   * It rides {@link RouterClient.#write}, so a `125003` costs one token refresh
+   * and one retry and nothing here ever signs in again. Only ever called from
+   * an explicit press: an authenticated write on a timer is how an account
+   * reaches its five-failure lockout.
+   */
+  async writeMacFilter(filter: MacFilter): Promise<MacFilterWriteResult> {
+    try {
+      readReply(
+        await this.#write(MAC_FILTER_ENDPOINT, macFilterRequestXml(filter)),
+        MAC_FILTER_ENDPOINT,
+      );
+
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: writeFailure(error) };
     }
   }
 

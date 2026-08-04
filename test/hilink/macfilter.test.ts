@@ -20,8 +20,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  MAC_FILTER_CAP,
   MAC_FILTER_ENDPOINT,
   MAC_FILTER_OFF,
+  macFilterRequestXml,
+  macFilterStatus,
   parseMacFilter,
   type MacFilter,
 } from "../../src/hilink/macfilter.js";
@@ -278,6 +281,147 @@ describe("parseMacFilter — failures carry the endpoint", () => {
       entries: [],
       ssids: [],
     });
+  });
+});
+
+/**
+ * The write T-68 adds. The router replaces the whole filter with what it is
+ * sent, so the body is judged on what it *carries* rather than on what it
+ * changes: four blocks, ten slots each, both spellings, and a status the reader
+ * beside it agrees with.
+ *
+ * No test here reaches a router. The captured reply is off with every slot
+ * empty, so every populated case is a reply built to the captured shape.
+ */
+describe("macFilterRequestXml", () => {
+  const atRest = parseMacFilter(captured);
+
+  it("states the cap the firmware actually enforces, which is ten per SSID", () => {
+    // T-62 corrected the architecture's guess of 32: the reply carries
+    // `WifiMacFilterMac0..9` and nothing beyond it.
+    expect(MAC_FILTER_CAP).toBe(10);
+  });
+
+  it("carries all four SSID blocks, so a write cannot clear the ones it omits", () => {
+    const body = macFilterRequestXml(atRest);
+
+    expect([...body.matchAll(/<Ssid>/g)]).toHaveLength(4);
+    expect(body).toContain("<Index>0</Index>");
+    expect(body).toContain("<Index>1</Index>");
+    expect(body).toContain("<Index>2</Index>");
+    expect(body).toContain("<Index>3</Index>");
+  });
+
+  it("sends every one of the ten slots, empty ones included", () => {
+    const body = macFilterRequestXml(atRest);
+
+    for (let slot = 0; slot < MAC_FILTER_CAP; slot += 1) {
+      expect(body).toContain(`<WifiMacFilterMac${slot}>`);
+      expect(body).toContain(`<wifihostname${slot}>`);
+    }
+    expect(body).not.toContain("<WifiMacFilterMac10>");
+  });
+
+  it("reproduces the router's own casing split rather than tidying it", () => {
+    const filter = everySsid(BLACKLIST, [["A2:00:5E:00:00:01", "MacBookPro"]]);
+    const body = macFilterRequestXml(filter);
+
+    // `WifiMacFilterMacN` is capitalised and `wifihostnameN` is not. That is the
+    // device's spelling, and a write has to reproduce both exactly.
+    expect(body).toContain(
+      "<WifiMacFilterMac0>A2:00:5E:00:00:01</WifiMacFilterMac0>",
+    );
+    expect(body).toContain("<wifihostname0>MacBookPro</wifihostname0>");
+    expect(body).not.toContain("<WifiHostname0>");
+  });
+
+  it("puts each address in the slot its block holds it in", () => {
+    const body = macFilterRequestXml(
+      everySsid(BLACKLIST, [
+        ["A2:00:5E:00:00:01", "MacBookPro"],
+        ["00:1A:2B:00:00:02", "galaxy-s10e"],
+      ]),
+    );
+
+    expect(body).toContain(
+      "<WifiMacFilterMac1>00:1A:2B:00:00:02</WifiMacFilterMac1>",
+    );
+    expect(body).toContain("<wifihostname1>galaxy-s10e</wifihostname1>");
+    expect(body).toContain("<WifiMacFilterMac9></WifiMacFilterMac9>");
+  });
+
+  it("is a request, not a response, and declares its encoding", () => {
+    const body = macFilterRequestXml(atRest);
+
+    expect(body).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(body).toContain("<request>");
+    expect(body).toContain("</request>");
+    expect(body).not.toContain("<response>");
+  });
+
+  it("escapes a name the router stored, which is the one string we did not write", () => {
+    // Built directly rather than parsed back: a reply carrying these characters
+    // raw is not XML, which is the whole reason the write escapes them.
+    const named: MacFilter = {
+      mode: "blacklist",
+      entries: [{ mac: "A2:00:5E:00:00:01", name: "Bill & Ben's <box>" }],
+      ssids: [
+        {
+          index: 0,
+          mode: "blacklist",
+          entries: [{ mac: "A2:00:5E:00:00:01", name: "Bill & Ben's <box>" }],
+        },
+      ],
+    };
+
+    expect(macFilterRequestXml(named)).toContain(
+      "<wifihostname0>Bill &amp; Ben&apos;s &lt;box&gt;</wifihostname0>",
+    );
+  });
+
+  it("writes each block's own status, so a mixed filter is carried as it was read", () => {
+    const mixed = parseMacFilter(
+      reply(
+        ssidBlock(0, BLACKLIST, [["A2:00:5E:00:00:01", "MacBookPro"]]),
+        ssidBlock(1, OFF),
+        ssidBlock(2, OFF),
+        ssidBlock(3, OFF),
+      ),
+    );
+    const statuses = [
+      ...macFilterRequestXml(mixed).matchAll(
+        /<WifiMacFilterStatus>(\d+)<\/WifiMacFilterStatus>/g,
+      ),
+    ].map((match) => match[1]);
+
+    expect(statuses).toEqual([String(BLACKLIST), "0", "0", "0"]);
+  });
+});
+
+/**
+ * The one place the router's status number and the app's named mode meet.
+ *
+ * `1`→whitelist and `2`→blacklist are **inferred from the router's web UI and
+ * never observed**: the captured reply is all zeros. These tests therefore pin
+ * the *round trip* rather than the number — whatever `MODES` says, the writer
+ * and the reader must not disagree, so correcting the table corrects both at
+ * once.
+ */
+describe("macFilterStatus — the mode mapping, written and read the same way", () => {
+  it("round-trips every mode through the number the router is sent", () => {
+    for (const mode of ["off", "whitelist", "blacklist"] as const) {
+      expect(everySsid(macFilterStatus(mode)).mode).toBe(mode);
+    }
+  });
+
+  it("agrees with the status the fixture's off filter carries", () => {
+    expect(macFilterStatus("off")).toBe(0);
+  });
+
+  it("hands out a number for every mode and never a word", () => {
+    for (const mode of ["off", "whitelist", "blacklist"] as const) {
+      expect(Number.isInteger(macFilterStatus(mode))).toBe(true);
+    }
   });
 });
 

@@ -127,7 +127,7 @@ right.
 | `/api/wlan/host-list`                | GET    | login | one `<Host>` per Wi-Fi client — `ID`, `MacAddress`, `IpAddress`, `HostName`, `AssociatedTime`, `AssociatedSsid`   |
 | `/api/lan/HostInfo`                  | GET    | —     | **not implemented**: `100002`, even on an authenticated session                                                   |
 | `/api/wlan/multi-macfilter-settings` | GET    | login | `<Ssids>` → four `<Ssid>` blocks, each `Index`, `WifiMacFilterStatus`, `WifiMacFilterMac0..9`, `wifihostname0..9` |
-| `/api/wlan/multi-macfilter-settings` | POST   | login | writes the whole filter back — not yet exercised; T-68 is the first write                                         |
+| `/api/wlan/multi-macfilter-settings` | POST   | login | writes the whole filter back — built by T-68, and **never yet sent to a real device**: see the mode warning below |
 
 **`host-list` is the only device source, and the app reads nothing else.** `/api/lan/HostInfo`
 was expected to add wired clients and the connection medium; it does not exist on this
@@ -165,6 +165,18 @@ router's own web UI offers (disabled, allow, deny) and the mapping `src/hilink/m
 converts at the boundary. A status outside those three is rejected rather than guessed at,
 so a firmware that numbers them differently fails loudly instead of drawing the wrong
 verdict on every row.
+
+> **The `1`/`2` mapping is inferred and has never been observed (T-68).** The only captured
+> reply is all zeros, so nothing in this repository proves which integer the firmware means by
+> which mode; a live check was attempted and did not settle it. If `2` is in fact the
+> whitelist, a write believing it is the blacklist would tell the router "allow only this one
+> address" and cut off every other device — including the Mac running this app, over the very
+> connection the undo would have to travel. Two things follow, and both are enforced in code:
+> the mapping lives in exactly one table (`MODES` in `src/hilink/macfilter.ts`, which both
+> `parseMacFilter` and `macFilterStatus` read, so one edit corrects the reader and the writer
+> together), and **blacklist is the only mode the app ever writes** — a change to a filter
+> already in whitelist mode is refused in `refuseDeviceBlock` before any request is made,
+> rather than reasoned about against a mapping nobody has verified.
 
 ## Orange portal
 
@@ -485,6 +497,14 @@ Append-only. One line each, always with the reason.
 - An address the filter blocks and `host-list` does not report is shown as a device that is blocked and absent (T-67) — a blocked device stops associating, so without a row of its own it could only be unblocked by connecting first, which is the one thing it cannot do
 - A remembered address that does not read as blocked adds no row (T-67) — with the filter off, or under a whitelist, such an entry names a device that is merely remembered or merely permitted, and a ghost row for it answers no question the window was asked
 - The blocked state is a word in an Access column, not a tint on the row (T-67) — the window ships unstyled, and the pace meter's rule already stands: colour is never the only carrier of a verdict
+- Every write reads the filter first and sends back all four blocks with one address added or removed (T-68) — the router replaces the filter with whatever it is sent, so a write composed from a remembered list silently unblocks whoever joined it since, and a read that fails ends the press rather than guessing
+- Blocking the first device turns blacklist mode on in the same write, and unblocking the last one leaves the mode exactly as it found it (T-68) — the user asked about one device, and switching the filter off is a change to every other one
+- Blacklist is the only mode this app ever writes, and a filter already in whitelist mode is refused before any request (T-68) — the `1`/`2` mapping is inferred and unverified, and a whitelist blocks every device it does not name, so there is no safe way to reason about one
+- A block requested for this machine's own MAC is refused in `src/domain/` before any request, not only hidden in the page (T-68) — the guard must hold whatever the UI renders, and it matches on MAC rather than IP because a DHCP lease moves and the wrong row is the exact failure it prevents
+- The cap is stated rather than attempted (T-68) — ten entries per SSID is the firmware's limit, a household reaching it has done nothing wrong, and the refusal names the cap instead of reporting a write that failed
+- A press gets its own single sign-in, where the poll's list gets one for the whole run (T-68) — a refused login is never retried inside one press, but a second press tries again, because a press is deliberate and a poll is not
+- The row after a write is drawn from a re-read of the filter, never from the click (T-68) — the router is the only thing that knows what it is now refusing, and a row painted optimistically would state a block that may have been refused
+- The devices page talks back over a preload bridge on a named channel, where the model rides a global (T-68) — the model only ever flows main → renderer, and this ends in an authenticated `POST`, so it is validated in the main process like every other channel that can reach the router
 
 ## Conventions
 
