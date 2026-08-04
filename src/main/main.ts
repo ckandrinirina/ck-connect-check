@@ -24,6 +24,11 @@ import { RouterClient, type SnapshotResult } from "../hilink/client.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
 import type { Allowance, RouterSnapshot } from "../hilink/types.js";
 import { loadCredential, saveCredential } from "./credentials.js";
+import {
+  DEVICES_MENU_LABEL,
+  createDevicesWindow,
+  type DevicesWindow,
+} from "./devices-window.js";
 import { UsagePoller, type SnapshotSource } from "./poller.js";
 import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
 import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
@@ -50,6 +55,8 @@ export interface MenuBarOptions {
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
   popover?: Popover;
+  /** The connected-devices window. Injected for the same reason the panel is. */
+  devices?: DevicesWindow;
 }
 
 export interface MenuBarApp {
@@ -310,9 +317,30 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     },
   };
 
+  // The device list is a window of its own rather than a section of the panel:
+  // the panel is 320×520 with nothing left to spend and nothing scrolls in it.
+  const devices = options.devices ?? createDevicesWindow();
+
+  // Electron quits when the last window closes and nobody has said otherwise.
+  // This app's home is the menu bar, where there is no window at all, so closing
+  // the device list must leave the tray item and the poll loop exactly as they
+  // were.
+  app.on("window-all-closed", () => {
+    // Deliberately nothing.
+  });
+
   // A context menu would swallow the left click on macOS, so Quit moves to the
   // right button and the left one belongs to the popover.
-  const menu = Menu.buildFromTemplate([{ label: "Quit", role: "quit" }]);
+  const menu = Menu.buildFromTemplate([
+    {
+      label: DEVICES_MENU_LABEL,
+      click: () => {
+        devices.open();
+      },
+    },
+    { type: "separator" },
+    { label: "Quit", role: "quit" },
+  ]);
 
   tray.on("right-click", () => tray.popUpContextMenu(menu));
   bindTrayToPopover(tray, panel);
@@ -326,6 +354,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     stop() {
       poller.stop();
       popover.destroy();
+      devices.destroy();
       tray.destroy();
     },
   };

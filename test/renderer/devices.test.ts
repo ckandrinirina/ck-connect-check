@@ -50,8 +50,8 @@ beforeEach(async () => {
     errors.push(args);
   });
   loadPage();
-  // Reset first: the page is rebuilt for every test, so the module has to run
-  // against it again rather than being served from the import cache.
+  // The page is rebuilt for every test, so the module has to run against the
+  // new one rather than being served from the import cache.
   vi.resetModules();
   await import("../../src/renderer/devices.js");
 });
@@ -85,6 +85,38 @@ describe("the devices page", () => {
 
   it("declares a body for the rows to land in", () => {
     expect(document.querySelector("table tbody[data-devices]")).not.toBeNull();
+  });
+
+  it("writes one row per device, in the order the columns are declared", async () => {
+    const { renderDevices } = await import("../../src/renderer/devices.js");
+
+    renderDevices([
+      {
+        name: "iPhone",
+        ipAddress: "192.168.8.101",
+        macAddress: "AA:BB:CC:DD:EE:FF",
+      },
+    ]);
+
+    const cells = [...(bodyRows()[0]?.cells ?? [])].map(
+      (cell) => cell.textContent,
+    );
+    expect(bodyRows()).toHaveLength(1);
+    expect(cells).toEqual(["iPhone", "192.168.8.101", "AA:BB:CC:DD:EE:FF"]);
+  });
+
+  it("replaces the rows it wrote instead of adding to them", async () => {
+    const { renderDevices } = await import("../../src/renderer/devices.js");
+
+    renderDevices([
+      { name: "iPhone", ipAddress: "192.168.8.101", macAddress: "AA" },
+    ]);
+    renderDevices([
+      { name: "MacBook", ipAddress: "192.168.8.102", macAddress: "BB" },
+    ]);
+
+    expect(bodyRows()).toHaveLength(1);
+    expect(bodyRows()[0]?.cells[0]?.textContent).toBe("MacBook");
   });
 
   it("loads its script and nothing from anywhere else", () => {
