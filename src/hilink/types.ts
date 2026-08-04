@@ -3,6 +3,8 @@
  * `src/hilink/` — these are the objects the rest of the app sees.
  */
 
+import type { Carrier } from "../domain/carrier.js";
+
 /** `/api/webserver/SesTokInfo` — the handshake every other call depends on. */
 export interface SessionCredentials {
   /** Sent verbatim as the `Cookie` header, e.g. `SessionID=…`. */
@@ -65,8 +67,18 @@ export interface RouterStatus {
 
 /** `/api/net/current-plmn` — the network we are attached to. */
 export interface CarrierInfo {
-  /** Empty string when the router reports no carrier name. */
+  /**
+   * `FullName` as the router spells it, kept for display. Empty string when the
+   * router reports no carrier name, or reports none at all.
+   */
   carrier: string;
+  /**
+   * Which network that name is. Unlike `networkTypeCode`, this is not a display
+   * decision left to the view: the allowance comes from a USSD dialogue on YAS
+   * and from a web page on Orange, so the branch is a fact about the snapshot.
+   * `unknown` for a spelling no table covers — see `../domain/carrier.js`.
+   */
+  id: Carrier;
 }
 
 /** `/api/monitoring/start_date` — billing cycle settings held by the router. */
