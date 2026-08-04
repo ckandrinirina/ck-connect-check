@@ -177,11 +177,15 @@ function shownNotice(): string {
     refusalNotice(),
   ];
 
-  return notices
-    .filter((notice) => notice !== null && !notice.hidden)
-    .map((notice) => notice.textContent?.trim() ?? "")
-    .join(" ")
-    .trim();
+  const said: string[] = [];
+
+  for (const notice of notices) {
+    if (notice !== null && !notice.hidden) {
+      said.push(notice.textContent?.trim() ?? "");
+    }
+  }
+
+  return said.join(" ").trim();
 }
 
 describe("the devices page", () => {

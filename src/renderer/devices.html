@@ -51,14 +51,34 @@
       <tbody data-devices></tbody>
     </table>
     <!--
-      The two ways of having no rows, which are not the same answer. The router
-      saying nothing is connected is a fact about the household; the router not
-      answering is a fact about the router, and the app runs unattended, so it
-      is a state on the page rather than a dialog.
+      The three ways of having no rows, which are not the same answer. The
+      router saying nothing is connected is a fact about the household; the
+      router not answering is a fact about the router; and no password stored is
+      a fact about this app, which the user settles in the panel. The app runs
+      unattended, so each is a state on the page rather than a dialog.
     -->
     <p class="notice" data-devices-empty hidden>
       No device is connected to the router.
     </p>
     <p class="notice" data-devices-offline hidden>Waiting for the router</p>
+    <!--
+      Not a failure, and worded so it cannot read as one. The router is fine and
+      has not been asked anything: reading or changing the blocked list needs the
+      router's own password, and this window has nowhere to type one — so the
+      sentence names the place that has, or it states a problem with no way out.
+    -->
+    <p class="notice" data-devices-no-password hidden>
+      No router password is stored, so the router has not been asked which
+      devices it is blocking. Open the menu bar panel and save the router
+      password there, then reopen this window.
+    </p>
+    <!--
+      Why the last press changed nothing. It sits beside the table rather than
+      in place of it: a write that failed says nothing about which devices are
+      connected, so the rows stay exactly where they were. Its words are written
+      by `devices.ts`, because a router code and the filter's cap are numbers
+      only the model knows.
+    -->
+    <p class="notice" data-devices-refusal hidden></p>
   </body>
 </html>

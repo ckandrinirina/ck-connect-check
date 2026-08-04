@@ -12,7 +12,11 @@
  * The main process pushes updates by calling {@link Window.applyDevicesModel}.
  */
 
-import type { DeviceRow, DevicesModel } from "../main/devices-window.js";
+import type {
+  DeviceRefusal,
+  DeviceRow,
+  DevicesModel,
+} from "../main/devices-window.js";
 
 declare global {
   interface Window {
@@ -167,6 +171,59 @@ function fillLocalReason(cell: HTMLTableCellElement): void {
   }
 }
 
+/**
+ * What each word-shaped failure says, one sentence apiece.
+ *
+ * The same rule the panel's failure table follows: "it did not work" tells the
+ * user nothing they can act on, whereas a dropped session, a router that never
+ * answered and a missing sign-in each call for something different. Every one of
+ * them ends by saying that nothing was changed, because the row beside it still
+ * shows the old state and the two have to agree.
+ */
+const REFUSAL_WORDS: Record<Extract<DeviceRefusal, string>, string> = {
+  unreachable: "The router did not answer, so nothing was changed.",
+  timeout: "The router took too long to answer, so nothing was changed.",
+  session:
+    "The router dropped the session, so nothing was changed — try again.",
+  error: "The router refused the change without saying why.",
+  "not-logged-in":
+    "The router wants a sign-in before it will change the blocked list. Save the router password in the menu bar panel.",
+};
+
+/**
+ * Why the last press changed nothing, as one sentence.
+ *
+ * A refusal carrying a number says the number and the endpoint it came from.
+ * That is the one thing on this page the user cannot work out for themselves and
+ * the only thing that makes an unrecognised refusal reportable, so it is spelled
+ * out rather than collapsed into "the router refused it" — the panel's own rule,
+ * applied to the one other place this app writes to the router.
+ */
+function refusalText(refusal: DeviceRefusal): string {
+  if (typeof refusal === "string") {
+    return REFUSAL_WORDS[refusal];
+  }
+
+  switch (refusal.kind) {
+    case "error":
+      return refusal.source === "http"
+        ? `The router answered HTTP ${String(refusal.code)} at ${refusal.endpoint}, so nothing was changed.`
+        : `The router refused the change (code ${String(refusal.code)} at ${refusal.endpoint}).`;
+    case "full":
+      // The cap is the actionable part: it says how many have to go before
+      // another can be added, and a household that reached it did nothing wrong.
+      return `The router's blocked list is full — it holds ${String(refusal.cap)} devices per network. Unblock one before blocking another.`;
+    case "whitelist":
+      return "The router's Wi-Fi filter is set as a whitelist, which allows only the devices it names. This app only ever writes a blocked list, so nothing was changed — change the filter in the router's own web page first.";
+    case "unreadable":
+      return "The router did not say which devices it is blocking, so there was nothing safe to write back and nothing was changed.";
+    case "self":
+      // The row already says this where the control would have been, so this is
+      // the domain guard speaking for a press the page should never have offered.
+      return `${LOCAL_REASON}, so nothing was changed.`;
+  }
+}
+
 /** The row elements already on the page, by the MAC each one belongs to. */
 let rowsByMac = new Map<string, HTMLTableRowElement>();
 
@@ -242,23 +299,61 @@ function show(selector: string, visible: boolean): void {
 }
 
 /**
+ * Which of the four the page is in.
+ *
+ * `empty` is the one that is derived rather than pushed: a list that answered
+ * and held nothing is still a `listed` model, and only the count tells it from
+ * a list that answered and held something.
+ */
+type PageState = "listed" | "empty" | "offline" | "no-password";
+
+function stateOf(model: DevicesModel): PageState {
+  if (model.state !== "listed") {
+    return model.state;
+  }
+
+  return model.devices.length === 0 ? "empty" : "listed";
+}
+
+/**
+ * States why the last press changed nothing, or takes the statement back down.
+ *
+ * Written into a region of its own beside the table rather than over it. The
+ * rows are what the window is for, and a write that failed has said nothing
+ * whatever about which devices are connected.
+ */
+function renderRefusal(refusal: DeviceRefusal | undefined): void {
+  const notice = document.querySelector<HTMLElement>("[data-devices-refusal]");
+
+  if (notice === null) {
+    return;
+  }
+
+  const said = refusal === undefined ? "" : refusalText(refusal);
+
+  // `textContent`, never `innerHTML`: an endpoint arrives from the router.
+  if (notice.textContent !== said) {
+    notice.textContent = said;
+  }
+
+  notice.hidden = said === "";
+}
+
+/**
  * Puts a pushed model on screen.
  *
- * Three states, and the point of the middle one is that it is not the last: a
- * router that is not answering has not said that nothing is connected to it, so
- * "no devices" is only ever printed when the router itself said so.
+ * Four states and one notice that rides beside them, and the point of every one
+ * is that it is not any of the others: a router that is not answering has not
+ * said that nothing is connected to it, a router nobody has the password for has
+ * not been asked at all, and a press the router refused has not emptied the
+ * household. "No devices" is only ever printed when the router itself said so.
  */
 export function renderDevices(model: DevicesModel): void {
   if (model.state === "listed") {
     renderRows(model.devices);
   }
 
-  const state =
-    model.state === "offline"
-      ? "offline"
-      : model.devices.length === 0
-        ? "empty"
-        : "listed";
+  const state = stateOf(model);
 
   // Deliberately not `data-devices`, which is the table body's own marker: the
   // page would then have two elements answering to the selector that finds the
@@ -267,6 +362,8 @@ export function renderDevices(model: DevicesModel): void {
   show("[data-devices-table]", state === "listed");
   show("[data-devices-empty]", state === "empty");
   show("[data-devices-offline]", state === "offline");
+  show("[data-devices-no-password]", state === "no-password");
+  renderRefusal(model.state === "listed" ? model.refusal : undefined);
 }
 
 window.applyDevicesModel = renderDevices;
