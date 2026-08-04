@@ -13,12 +13,34 @@
  * reading every half minute; the rate readout behind it is not, so
  * {@link UsagePoller.setActive} switches to a much shorter interval for as long
  * as the panel is open.
+ *
+ * On Orange there is a second source alongside the router, and it runs on its
+ * own timer rather than as part of the poll: the selfcare portal answers a page
+ * of about 38 KB, which is not something to ask for every two seconds because
+ * someone opened the panel. So it keeps the slow interval whatever the router
+ * is doing, and the last reading stands in between — consumption moves in
+ * minutes, and the fast cadence exists for the throughput sparkline, which
+ * comes from the router.
+ *
+ * The two sources fail independently, and are reported that way. A router that
+ * has stopped answering says nothing about a portal that is still answering,
+ * and a portal that is out of reach usually means the machine is on some other
+ * network, where the router is perfectly fine.
  */
 
 import type { AppConfig } from "../config/defaults.js";
 import { readPlanUsage } from "../domain/allowance.js";
-import { usageState, type UsageState } from "../domain/quota.js";
+import type { Carrier } from "../domain/carrier.js";
+import {
+  systemClock,
+  usageState,
+  type Clock,
+  type UsageState,
+} from "../domain/quota.js";
 import type { SnapshotResult } from "../hilink/client.js";
+import type { OrangePortalResult } from "../orange/portal.js";
+import { selectForfait } from "../orange/select.js";
+import type { OrangeForfait } from "../orange/types.js";
 import { buildTrayTitle } from "./tray.js";
 
 /** Shown between launch and the first reading — no data yet, and no failure yet. */
@@ -35,9 +57,56 @@ export interface SnapshotSource {
   snapshot(): Promise<SnapshotResult>;
 }
 
+/** The slice of the Orange boundary the poller needs — a stub satisfies it in tests. */
+export interface PortalSource {
+  read(): Promise<OrangePortalResult>;
+}
+
+/**
+ * One reading of the Orange portal, already narrowed to the forfait the meter
+ * measures. The selection is made here rather than in the panel so that every
+ * poll measures the same plan, and so the panel is handed a figure rather than
+ * a page.
+ */
+export interface PortalReading {
+  /** The forfait being measured, or null when the page listed no data plan. */
+  forfait: OrangeForfait | null;
+  /** Everything the user could plausibly be offered instead, in page order. */
+  candidates: OrangeForfait[];
+  /** Whether {@link PortalReading.forfait} is the user's remembered choice. */
+  remembered: boolean;
+  /** When it was read — the panel measures the figure's age from here. */
+  at: Date;
+}
+
+/**
+ * Where the portal stands, kept apart from where the router stands.
+ *
+ * {@link PortalStatus.reading} survives a failed fetch on purpose: the last
+ * figure the carrier gave is still the best answer there is, and losing it
+ * every time a laptop moves to another network would make the allowance blink
+ * rather than age.
+ */
+export interface PortalStatus {
+  /** The last successful reading, reused between fetches. Null before the first. */
+  reading: PortalReading | null;
+  /** Whether the most recent attempt answered. False before the first, too. */
+  live: boolean;
+}
+
 export interface UsagePollerOptions {
   client: SnapshotSource;
   config: AppConfig;
+  /**
+   * The Orange portal. Absent means no portal is ever read — which is what
+   * every test that is not about Orange wants, and what the app itself does
+   * until a SIM reports the network.
+   */
+  portal?: PortalSource;
+  /** Called after every settled portal fetch, so the panel can be re-pushed. */
+  onPortal?: (status: PortalStatus) => void;
+  /** Injected so a reading's age is testable without a real clock. */
+  clock?: Clock;
   /** Called only when the title actually changes, so the tray is not rewritten needlessly. */
   onTitle?: (title: string) => void;
   /**
@@ -54,6 +123,9 @@ export class UsagePoller {
   readonly #config: AppConfig;
   readonly #onTitle: ((title: string) => void) | undefined;
   readonly #onState: ((state: UsageState) => void) | undefined;
+  readonly #portalSource: PortalSource | undefined;
+  readonly #onPortal: ((status: PortalStatus) => void) | undefined;
+  readonly #clock: Clock;
 
   #title = STARTUP_TRAY_TITLE;
   /** Retained between polls — the previous state is what makes the callback edge-triggered. */
@@ -64,11 +136,21 @@ export class UsagePoller {
   /** True while the panel is on screen — the only thing that picks the interval. */
   #active = false;
 
+  /** The portal's own standing, which the router's does not decide. */
+  #portal: PortalStatus = { reading: null, live: false };
+  /** The portal's own timer, deliberately never the poll's. */
+  #portalTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while a page is on the wire, so two fetches cannot overlap. */
+  #portalInFlight = false;
+
   constructor(options: UsagePollerOptions) {
     this.#client = options.client;
     this.#config = options.config;
     this.#onTitle = options.onTitle;
     this.#onState = options.onState;
+    this.#portalSource = options.portal;
+    this.#onPortal = options.onPortal;
+    this.#clock = options.clock ?? systemClock;
   }
 
   /** The title the menu bar should currently be showing. */
@@ -83,6 +165,14 @@ export class UsagePoller {
    */
   get state(): UsageState {
     return this.#state;
+  }
+
+  /**
+   * The carrier's own figure on Orange, and whether the portal answered last
+   * time. Empty on every other network — there is no portal to read.
+   */
+  get portal(): PortalStatus {
+    return this.#portal;
   }
 
   /** Polls immediately, then once per configured interval until {@link stop}. */
@@ -139,6 +229,8 @@ export class UsagePoller {
       clearTimeout(this.#timer);
       this.#timer = null;
     }
+
+    this.#stopPortal();
   }
 
   async #tick(): Promise<void> {
@@ -163,6 +255,9 @@ export class UsagePoller {
   #apply(result: SnapshotResult): void {
     if (result.online) {
       this.#consecutiveFailures = 0;
+      // Which allowance source is the right one is a fact about the SIM, and
+      // the router states it on an endpoint the poll already reads.
+      this.#followCarrier(result.snapshot.carrier.id);
       this.#setTitle(buildTrayTitle(result, this.#config));
 
       // The same reading the title and the panel's dial are built from, so the
@@ -219,5 +314,111 @@ export class UsagePoller {
       this.#timer = null;
       void this.#tick();
     }, seconds * 1_000);
+  }
+
+  /**
+   * Starts or stops the portal loop for the network the SIM is on.
+   *
+   * Orange is the only carrier with a portal; on YAS the figure comes from a
+   * dialogue nobody polls, and on a network the app cannot place there is no
+   * allowance source at all. A SIM swapped back therefore stops the loop rather
+   * than leaving it fetching a page for a subscriber who has moved.
+   */
+  #followCarrier(carrier: Carrier): void {
+    if (carrier === "orange") {
+      this.#startPortal();
+
+      return;
+    }
+
+    this.#stopPortal();
+  }
+
+  /** Begins the portal loop, unless one is already running. */
+  #startPortal(): void {
+    if (
+      this.#portalSource === undefined ||
+      this.#portalTimer !== null ||
+      this.#portalInFlight
+    ) {
+      return;
+    }
+
+    void this.#portalTick();
+  }
+
+  #stopPortal(): void {
+    if (this.#portalTimer !== null) {
+      clearTimeout(this.#portalTimer);
+      this.#portalTimer = null;
+    }
+  }
+
+  /**
+   * One fetch, then the next one an idle interval later — never an active one.
+   * That is the whole cadence rule: the panel opening is a reason to ask the
+   * router more often and never a reason to ask for the portal's page again.
+   */
+  async #portalTick(): Promise<void> {
+    const source = this.#portalSource;
+
+    if (source === undefined) {
+      return;
+    }
+
+    let result: OrangePortalResult;
+
+    this.#portalInFlight = true;
+
+    try {
+      result = await source.read();
+    } catch {
+      // The boundary resolves rather than rejects, but an unattended app must
+      // not die of a stub or a future implementation that throws.
+      result = { state: "unreachable", reason: "offline" };
+    } finally {
+      this.#portalInFlight = false;
+    }
+
+    if (!this.#running) {
+      return;
+    }
+
+    this.#applyPortal(result);
+
+    this.#portalTimer = setTimeout(() => {
+      this.#portalTimer = null;
+      void this.#portalTick();
+    }, this.#config.pollIntervalSeconds * 1_000);
+  }
+
+  /**
+   * A page that arrived replaces the reading; anything else leaves the last one
+   * standing and only says the portal is not answering. Both are published, so
+   * the panel can age a figure it is still showing.
+   */
+  #applyPortal(result: OrangePortalResult): void {
+    if (result.state !== "read") {
+      this.#portal = { reading: this.#portal.reading, live: false };
+      this.#onPortal?.(this.#portal);
+
+      return;
+    }
+
+    const selection = selectForfait(
+      result.page.forfaits,
+      this.#config.orangeForfaitLabel,
+    );
+
+    this.#portal = {
+      reading: {
+        forfait: selection.selected,
+        candidates: selection.candidates,
+        remembered: selection.remembered,
+        at: this.#clock.now(),
+      },
+      live: true,
+    };
+    this.#onPortal?.(this.#portal);
   }
 }

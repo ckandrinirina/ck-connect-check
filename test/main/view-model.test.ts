@@ -19,6 +19,8 @@ import {
   parseAllowance,
   parseUssdContent,
 } from "../../src/hilink/ussd-parse.js";
+import type { OrangeForfait } from "../../src/orange/types.js";
+import type { PortalStatus } from "../../src/main/poller.js";
 import type { SyncFailure, SyncState } from "../../src/main/sync.js";
 import type {
   PlanDaysRefusal,
@@ -1581,5 +1583,215 @@ describe("buildPopoverModel — an unconfirmed plan cap", () => {
     for (const leaf of leaves(unconfirmed.planCapPrompt)) {
       expect(typeof leaf === "string" || typeof leaf === "number").toBe(true);
     }
+  });
+});
+
+/**
+ * Orange states the reverse of YAS — a consumed volume, no remaining and no
+ * expiry — and it states it on a page that answers only on the Orange network.
+ * So the panel has two independent sources under it, and the point of most of
+ * what follows is that one of them failing says nothing about the other.
+ */
+const ORANGE_SNAPSHOT = snapshot({
+  carrier: { carrier: "ORANGE MG", id: "orange" },
+});
+
+const ORANGE_ONLINE: SnapshotResult = {
+  online: true,
+  snapshot: ORANGE_SNAPSHOT,
+};
+
+/** The live capture: 7.37 Go consumed of a Wifiber plan that states no cap. */
+const WIFIBER: OrangeForfait = {
+  label: "Wifiber Go+ SSE",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 7_370_000_000,
+};
+
+/** A portal reading taken 7h 46m ago, answering or not as `live` says. */
+function portal(live: boolean): PortalStatus {
+  return {
+    reading: {
+      forfait: WIFIBER,
+      candidates: [WIFIBER],
+      remembered: false,
+      at: SEVEN_HOURS_AGO,
+    },
+    live,
+  };
+}
+
+describe("buildPopoverModel — Orange, with the router and the portal both answering", () => {
+  const model = buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    portal: portal(true),
+    clock,
+  });
+
+  it("headlines the portal's consumed figure, not the router's counter", () => {
+    // The router counted 5.83 Go over the same period. The two count different
+    // traffic, and the carrier's own figure is the one the panel stands behind.
+    expect(model.monthTotal).toBe("7.37 Go");
+  });
+
+  it("draws the dial from the portal figure against the typed cap", () => {
+    expect(model.progress.available).toBe(true);
+    expect(model.progress.label).toBe("37%");
+  });
+
+  it("names the forfait it is measuring and what is left of the cap", () => {
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.planLabel).toBe("Wifiber Go+ SSE");
+    expect(model.allowance.remaining).toBe("12.63 Go");
+    expect(model.allowance.stale).toBe(false);
+  });
+
+  it("states no expiry, because the portal states none", () => {
+    expect(model.allowance.expires).toBe("—");
+    expect(model.allowance.daysUntilExpiry).toBe("—");
+  });
+
+  it("draws the pace against the calendar month rather than a typed length", () => {
+    // 27 days into a 31 day July: 7.37 Go so far is 272.96 Mo a day against the
+    // 645.16 Mo a day the cap affords.
+    expect(model.pace?.meter?.average).toBe("272.96 Mo");
+    expect(model.pace?.meter?.afforded).toBe("645.16 Mo");
+    expect(model.pace?.meter?.state).toBe("safe");
+  });
+
+  it("reads live, since the router answered", () => {
+    expect(model.freshness.stale).toBe(false);
+    expect(model.freshness.label).toBe("Live");
+    expect(model.carrier).toBe("ORANGE MG");
+  });
+});
+
+describe("buildPopoverModel — Orange, with an anchor left over from Yas", () => {
+  const model = buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
+    portal: portal(true),
+    clock,
+  });
+
+  it("reads the portal and never the anchor", () => {
+    // The anchor says 12.00 Go left and names a plan that expires next month.
+    // Neither reaches the panel: on Orange the anchor apparatus stands down.
+    expect(model.allowance.remaining).toBe("12.63 Go");
+    expect(model.allowance.expires).toBe("—");
+    expect(model.allowance.planLabel).toBe("Wifiber Go+ SSE");
+  });
+
+  it("never calls the Sync button to attention, having nothing to sync", () => {
+    expect(model.sync.attention).toBe(false);
+  });
+});
+
+describe("buildPopoverModel — Orange, a live router and an unreachable portal", () => {
+  const model = buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    portal: portal(false),
+    clock,
+  });
+
+  it("keeps the connection live rather than going blanket offline", () => {
+    expect(model.freshness.stale).toBe(false);
+    expect(model.freshness.label).toBe("Live");
+  });
+
+  it("still shows live throughput and signal from the router", () => {
+    expect(model.downloadRate).toBe("2.4 Ko/s");
+    expect(model.uploadRate).toBe("0 o/s");
+    expect(model.signalBars).toBe(4);
+    expect(model.maxSignalBars).toBe(5);
+    expect(model.connectedDevices).toBe("3");
+  });
+
+  it("shows the last allowance the portal gave, marked stale and said why", () => {
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.remaining).toBe("12.63 Go");
+    expect(model.allowance.stale).toBe(true);
+    expect(model.allowance.note).not.toBe("");
+  });
+
+  it("never surfaces the portal's reason as an error to the renderer", () => {
+    for (const leaf of leaves(model)) {
+      expect(leaf).not.toBe("unreachable");
+    }
+  });
+});
+
+describe("buildPopoverModel — Orange, an unreachable router and a live portal", () => {
+  const model = buildPopoverModel({
+    result: OFFLINE,
+    lastReading: { snapshot: ORANGE_SNAPSHOT, at: SEVEN_HOURS_AGO },
+    config: configWith(20_000_000_000),
+    portal: portal(true),
+    clock,
+  });
+
+  it("reports the connection as the thing that is down", () => {
+    expect(model.freshness.stale).toBe(true);
+    expect(model.freshness.age).toBe("7h 46m");
+  });
+
+  it("keeps the allowance, which the router was never the source of", () => {
+    expect(model.allowance.available).toBe(true);
+    expect(model.allowance.remaining).toBe("12.63 Go");
+    expect(model.allowance.stale).toBe(false);
+    expect(model.monthTotal).toBe("7.37 Go");
+  });
+});
+
+describe("buildPopoverModel — Orange, with no cap typed in yet", () => {
+  const model = buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(null),
+    portal: portal(true),
+    clock,
+  });
+
+  it("still states the consumed volume, which needs no cap", () => {
+    expect(model.monthTotal).toBe("7.37 Go");
+  });
+
+  it("draws no dial, and asks for the one thing that would", () => {
+    expect(model.progress.available).toBe(false);
+    expect(model.progress.prompt).toMatch(/limit/i);
+  });
+
+  it("has no remaining volume and no pace, both of which need a total", () => {
+    expect(model.allowance.remaining).toBe("—");
+    expect(model.pace).toBeNull();
+  });
+});
+
+describe("buildPopoverModel — Orange, before the portal has answered once", () => {
+  const model = buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    portal: { reading: null, live: false },
+    clock,
+  });
+
+  it("shows no allowance rather than inventing a zero", () => {
+    expect(model.allowance.available).toBe(false);
+    expect(model.monthTotal).toBe("—");
+    expect(model.progress.available).toBe(false);
+  });
+
+  it("still shows every figure the router itself produced", () => {
+    expect(model.downloadRate).toBe("2.4 Ko/s");
+    expect(model.connectedDevices).toBe("3");
+    expect(model.carrier).toBe("ORANGE MG");
+    expect(model.signalBars).toBe(4);
   });
 });

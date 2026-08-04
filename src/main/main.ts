@@ -20,13 +20,19 @@ import {
 } from "../config/config.js";
 import { defaultConfigPath } from "../config/defaults.js";
 import { isAnchorStale, needsAutomaticSync } from "../domain/allowance.js";
+import type { Carrier } from "../domain/carrier.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import { RouterClient, type SnapshotResult } from "../hilink/client.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
 import type { Allowance, RouterSnapshot } from "../hilink/types.js";
+import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
-import { UsagePoller, type SnapshotSource } from "./poller.js";
+import {
+  UsagePoller,
+  type PortalSource,
+  type SnapshotSource,
+} from "./poller.js";
 import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
 import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
 import {
@@ -59,6 +65,11 @@ export interface MenuBarOptions {
    * ever reaching it — and so it is obvious that the poll loop cannot.
    */
   allowance?: AllowanceSource;
+  /**
+   * The Orange selfcare portal. Injected for the same reason
+   * {@link MenuBarOptions.client} is: no test may reach `123.orange.mg`.
+   */
+  portal?: PortalSource;
   /** The password store. Injected so tests need no Keychain. */
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
@@ -159,10 +170,22 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         config,
         history: history.samples(),
         sync: syncState,
+        portal: poller.portal,
         planLimitProblem,
         planDaysProblem,
       }),
     );
+  }
+
+  /**
+   * Which network the SIM is on, as the last reading found it.
+   *
+   * Read from the last successful reading rather than the current result, so an
+   * unreachable router does not turn a known carrier into an unknown one — the
+   * SIM has not changed just because the device stopped answering.
+   */
+  function currentCarrier(): Carrier {
+    return lastReading?.snapshot.carrier.id ?? "unknown";
   }
 
   /**
@@ -262,6 +285,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const sync = createAllowanceSync({
     router: allowanceRouter,
     credentials,
+    // The dialogue is the YAS path. On Orange it never starts, so no password
+    // is ever asked of the Keychain and no account can be walked towards its
+    // five-failure lockout for a figure a plain `GET` already answered.
+    carrier: currentCarrier,
     onAllowance: anchorAllowance,
     onStateChange: (state) => {
       if (state.phase === "failed" && isRouterRefusal(state.reason)) {
@@ -376,6 +403,12 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const poller = new UsagePoller({
     client,
     config,
+    // Only ever read on Orange, and only on the idle interval — the poller
+    // decides both, from the carrier the router reports.
+    portal: options.portal ?? { read: () => readInfoConso() },
+    onPortal: () => {
+      refreshPopover();
+    },
     onTitle: (title) => tray.setTitle(title),
   });
 
