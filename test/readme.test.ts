@@ -4,11 +4,23 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { parseConfig, readPlanDaysEntry } from "../src/config/config.js";
-import { DEFAULT_SYNC_STALE_AFTER_MINUTES } from "../src/config/defaults.js";
+import {
+  DEFAULT_SYNC_STALE_AFTER_MINUTES,
+  defaultConfig,
+} from "../src/config/defaults.js";
 import { isNewPlan } from "../src/domain/allowance.js";
 import type { AllowanceAnchor } from "../src/domain/allowance.js";
-import { readPace } from "../src/domain/pace.js";
+import { carrierFrom } from "../src/domain/carrier.js";
+import type { Carrier } from "../src/domain/carrier.js";
+import { readMonthlyPace, readPace } from "../src/domain/pace.js";
+import { calendarMonthPeriod, readPortalUsage } from "../src/domain/quota.js";
+import type { SnapshotResult } from "../src/hilink/client.js";
 import type { MonthStatistics } from "../src/hilink/types.js";
+import type { PortalStatus } from "../src/main/poller.js";
+import { buildTrayTitle } from "../src/main/tray.js";
+import { INFO_CONSO_PATH, PORTAL_BASE_URL } from "../src/orange/portal.js";
+import { selectForfait } from "../src/orange/select.js";
+import type { OrangeForfait } from "../src/orange/types.js";
 
 /**
  * A documentation-rot guard rather than a style check. The README tells a
@@ -30,18 +42,95 @@ function readRepoFile(relativePath: string): string {
 
 const readme = readRepoFile("README.md");
 
-/** The sections the README has to carry, by the heading each one opens with. */
+/**
+ * The sections the README has to carry, by the heading each one opens with.
+ *
+ * The one allowance section became three in T-58. There is no longer a single
+ * answer to "where does the figure come from" — it is a USSD dialogue on YAS
+ * and a web page on Orange — so a reader with either SIM needs a heading of
+ * their own to land on rather than a page written for whoever came first.
+ */
 const REQUIRED_HEADINGS = [
   "## What it does",
   "## What it was tested against",
   "## Install and build",
-  "## The plan cap and the carrier sync",
+  "## Where the allowance comes from",
+  "### On Orange — the info-conso portal",
+  "### On YAS — the USSD sync",
   "## The pace meter",
   "## When it syncs by itself",
   "## After a top-up",
   "## The config file",
   "## Troubleshooting",
 ];
+
+/** The heading that opens the Orange path, and the one that opens the YAS path. */
+const ORANGE_HEADING = "### On Orange — the info-conso portal";
+const YAS_HEADING = "### On YAS — the USSD sync";
+
+const readmeLines = readme.split("\n");
+
+/**
+ * One section's body, from its heading down to the next heading of the same or
+ * a higher level.
+ *
+ * Per-carrier assertions need this. Asserting a claim against the whole page
+ * proves only that the sentence is somewhere on it, which is exactly how a
+ * README ends up telling an Orange reader to press a button their panel does
+ * not draw: the sentence is true of YAS and the page never says so.
+ */
+function section(heading: string): string {
+  const level = /^#+/.exec(heading)?.[0].length ?? 0;
+
+  expect(level).toBeGreaterThan(0);
+
+  const start = readmeLines.findIndex((line) => line.startsWith(heading));
+
+  expect(start).toBeGreaterThanOrEqual(0);
+
+  const rest = readmeLines.slice(start + 1);
+  const nextHeading = new RegExp(`^#{1,${String(level)}} `);
+  const end = rest.findIndex((line) => nextHeading.test(line));
+  const body = (end === -1 ? rest : rest.slice(0, end)).join("\n").trim();
+
+  // A heading with nothing under it would satisfy every `not.toMatch` below
+  // while saying nothing at all — the empty-versus-empty comparison T-49
+  // caught in its own suite.
+  expect(body.length).toBeGreaterThan(0);
+
+  return body;
+}
+
+/** The heading a line sits under, so a claim can be placed as well as found. */
+function owningHeading(lineIndex: number): string {
+  for (let index = lineIndex; index >= 0; index -= 1) {
+    const line = readmeLines[index];
+    if (line !== undefined && line.startsWith("#")) return line;
+  }
+
+  return "";
+}
+
+/**
+ * Instructions that only one carrier can carry out. Pressing Sync does nothing
+ * on Orange — the panel does not draw the button — and the portal answers a
+ * plain `GET`, so there is no admin password in the Orange path at all.
+ */
+const CARRIER_ONLY_INSTRUCTIONS = [
+  /press \*\*Sync\*\*/i,
+  /\bpress Sync\b/,
+  /\basks for the router's admin password\b/i,
+  /\benter the router's admin password\b/i,
+];
+
+/** Every line of the README that gives one of those instructions. */
+function carrierOnlyInstructionLines(): { line: string; heading: string }[] {
+  return readmeLines
+    .map((line, index) => ({ line, heading: owningHeading(index) }))
+    .filter(({ line }) =>
+      CARRIER_ONLY_INSTRUCTIONS.some((pattern) => pattern.test(line)),
+    );
+}
 
 /**
  * Every `[text](target)` and `![alt](target)` whose target is a path in this
@@ -182,6 +271,74 @@ function readWorkedExample(planDays: number | null) {
     clock: workedExampleClock,
   });
 }
+
+/**
+ * The Orange forfait the live capture states, with the volume it stated. The
+ * README quotes the menu bar title this produces, so the page and the tray are
+ * checked against one another rather than against a number typed twice.
+ */
+const WIFIBER_CONSUMED_BYTES = 7_370_000_000;
+
+const wifiber: OrangeForfait = {
+  label: "Wifiber Go+ SSE",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: WIFIBER_CONSUMED_BYTES,
+};
+
+/** A second live data forfait — the case that makes the choice worth offering. */
+const topUp: OrangeForfait = {
+  label: "Pass Internet 5Go",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 1_000_000_000,
+};
+
+/** The cap the README's Orange example types in, chosen to read `37%`. */
+const ORANGE_EXAMPLE_CAP = 20 * GIGAOCTET;
+
+/** A portal that answered, holding the forfait above. Never fetched here. */
+const portalStanding: PortalStatus = {
+  reading: {
+    forfait: wifiber,
+    candidates: [wifiber],
+    remembered: true,
+    at: workedExampleNow,
+  },
+  live: true,
+};
+
+/** One router snapshot, on whichever network the caller names. */
+function snapshotOn(id: Carrier, fullName: string): SnapshotResult {
+  return {
+    online: true,
+    snapshot: {
+      month: workedExampleMonth,
+      traffic: {
+        downloadRateBps: 0,
+        uploadRateBps: 0,
+        connectTimeSeconds: 0,
+      },
+      status: {
+        connected: true,
+        signalBars: 4,
+        maxSignalBars: 5,
+        connectedDevices: 3,
+        networkTypeCode: 101,
+      },
+      carrier: { carrier: fullName, id },
+      billing: {
+        startDay: 1,
+        routerDataLimitBytes: 0,
+        warnThresholdPercent: 90,
+      },
+    },
+  };
+}
+
+/** August 2026 — 31 days long, and the fourth is the day the SIM moved. */
+const augustFourth = new Date(2026, 7, 4);
+const augustClock = { now: () => augustFourth };
 
 describe("README.md", () => {
   it("exists at the root, where a visitor lands", () => {
@@ -502,3 +659,272 @@ describe("README.md on a new plan", () => {
     expect(configTableRow("planCapConfirmed")).toMatch(/sync/i);
   });
 });
+
+/**
+ * Which network the app is on, and where that answer comes from.
+ *
+ * The carrier is read off `/api/net/current-plmn` on every poll and is not a
+ * setting, so a reader must never go looking for one. That is a claim about the
+ * config as much as about the prose, and it is checked both ways here: the
+ * table has to map the names the router really spells, and the config has to
+ * carry no key a reader could mistake for a carrier switch.
+ */
+describe("README.md on the carrier it detects", () => {
+  it("says the carrier is read from the router rather than configured", () => {
+    const where = section("## Where the allowance comes from");
+
+    expect(where).toMatch(/detect/i);
+    // The endpoint named, so the claim is checkable rather than reassuring.
+    expect(where).toContain("/api/net/current-plmn");
+    expect(where).toMatch(/not (?:a )?configur|never configur|rather than/i);
+  });
+
+  it.each([
+    ["ORANGE MG", "orange"],
+    ["Yas", "yas"],
+  ])("names %s, which carrier.ts maps to %s", (fullName, id) => {
+    expect(carrierFrom(fullName)).toBe(id);
+    expect(readme).toContain(fullName);
+  });
+
+  it("offers no setting a reader could mistake for a carrier switch", () => {
+    // The other direction of the same claim. A `carrier` key would make the
+    // page's "detected, not configured" false the moment it landed.
+    const keys = parsedConfigKeys();
+
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.filter((key) => /carrier|network|operator/i.test(key))).toEqual(
+      [],
+    );
+  });
+
+  it("says an unmapped network is its own answer, as carrierFrom returns", () => {
+    expect(carrierFrom("Telma")).toBe("unknown");
+    expect(carrierFrom(undefined)).toBe("unknown");
+    expect(section("## Where the allowance comes from")).toMatch(
+      /another network|any other network|unknown|neither/i,
+    );
+  });
+});
+
+/**
+ * The Orange path. Every claim is anchored to the module that implements it —
+ * the portal's own constants, the calendar-month period, the portal arithmetic,
+ * the forfait selection and the tray title — rather than to the presence of the
+ * word "Orange" somewhere on the page.
+ */
+describe("README.md on Orange", () => {
+  const orange = () => section(ORANGE_HEADING);
+
+  it("names the page the app actually fetches", () => {
+    // Built from the boundary's own constants, so moving the portal breaks this
+    // rather than leaving the README quietly wrong.
+    const portalUrl = new URL(INFO_CONSO_PATH, PORTAL_BASE_URL).toString();
+
+    expect(portalUrl).toBe("http://123.orange.mg/info-conso/");
+    expect(orange()).toContain(portalUrl);
+  });
+
+  it("says the read carries no credential, as the boundary carries none", () => {
+    const source = readRepoFile("src/orange/portal.ts");
+    const body = /export interface OrangePortalOptions \{([\s\S]*?)\n\}/.exec(
+      source,
+    )?.[1];
+
+    expect(body).toBeTruthy();
+
+    const options = [...body!.matchAll(/^ {2}(\w+)\??:/gm)].map(
+      (match) => match[1],
+    );
+
+    // Two knobs, and neither of them is a credential: there is nothing for the
+    // README to tell a reader to type.
+    expect([...options].sort()).toEqual(["baseUrl", "timeoutMs"]);
+    expect(orange()).toMatch(
+      /no (?:login|password|account|authentication)|without (?:a )?(?:login|password)|unauthenticated/i,
+    );
+  });
+
+  it("says the period is the calendar month the code reads", () => {
+    const period = calendarMonthPeriod(augustClock);
+
+    expect(period.planDays).toBe(31);
+    expect(period.elapsedDays).toBe(4);
+    expect(orange()).toMatch(/calendar month/i);
+  });
+
+  it("says the plan length is not typed, as the reading takes none", () => {
+    const source = readRepoFile("src/domain/pace.ts");
+    const body = /export interface MonthlyPaceInput \{([\s\S]*?)\n\}/.exec(
+      source,
+    )?.[1];
+
+    expect(body).toBeTruthy();
+
+    const inputs = [...body!.matchAll(/^ {2}(\w+)\??:/gm)].map(
+      (match) => match[1],
+    );
+
+    // No `planDays` anywhere in it — the calendar supplies the period, so the
+    // field is not on the Orange panel and must not be asked for on the page.
+    expect(inputs).not.toContain("planDays");
+    expect(orange()).toMatch(
+      /no plan length|never typed|not typed|from the calendar/i,
+    );
+  });
+
+  it("says the cap is typed, since the portal states none", () => {
+    const capless = readMonthlyPace({
+      consumedBytes: WIFIBER_CONSUMED_BYTES,
+      planLimitBytes: null,
+      clock: augustClock,
+    });
+
+    // The consumed volume survives without a cap; every share does not.
+    expect(capless.usedBytes).toBe(WIFIBER_CONSUMED_BYTES);
+    expect(capless.usedShare).toBeNull();
+    expect(capless.state).toBeNull();
+
+    const capped = readMonthlyPace({
+      consumedBytes: WIFIBER_CONSUMED_BYTES,
+      planLimitBytes: ORANGE_EXAMPLE_CAP,
+      clock: augustClock,
+    });
+
+    expect(capped.usedShare).toBeCloseTo(0.3685, 10);
+    expect(orange()).toMatch(/cap|plan size/i);
+    expect(orange()).toMatch(/typed|type it|you type/i);
+  });
+
+  it("says the portal states consumed, which is how the arithmetic runs", () => {
+    const usage = readPortalUsage(WIFIBER_CONSUMED_BYTES, ORANGE_EXAMPLE_CAP);
+
+    // The figure passes through untouched and the remainder is the derived
+    // half — the reverse of YAS, which is the sentence the page has to carry.
+    expect(usage.usedBytes).toBe(WIFIBER_CONSUMED_BYTES);
+    expect(usage.remainingBytes).toBe(
+      ORANGE_EXAMPLE_CAP - WIFIBER_CONSUMED_BYTES,
+    );
+    expect(orange()).toMatch(/consumed|spent|used/i);
+  });
+
+  it("names the forfait, and the setting that remembers a chosen one", () => {
+    const alone = selectForfait([wifiber, topUp]);
+
+    expect(alone.remembered).toBe(false);
+    expect(alone.candidates).toHaveLength(2);
+
+    const chosen = selectForfait([wifiber, topUp], wifiber.label);
+
+    expect(chosen.remembered).toBe(true);
+    expect(chosen.selected?.label).toBe(wifiber.label);
+    expect(
+      parseConfig({ orangeForfaitLabel: wifiber.label }).orangeForfaitLabel,
+    ).toBe(wifiber.label);
+
+    expect(orange()).toContain(wifiber.label);
+    expect(readme).toContain("orangeForfaitLabel");
+  });
+
+  it("quotes the menu bar titles buildTrayTitle actually produces", () => {
+    const result = snapshotOn("orange", "ORANGE MG");
+
+    const capped = buildTrayTitle(
+      result,
+      { ...defaultConfig(), planLimitBytes: ORANGE_EXAMPLE_CAP },
+      workedExampleClock,
+      portalStanding,
+    );
+    const uncapped = buildTrayTitle(
+      result,
+      defaultConfig(),
+      workedExampleClock,
+      portalStanding,
+    );
+
+    expect(capped).toBe("7.4Go · 37%");
+    expect(uncapped).toBe("7.4Go");
+    expect(orange()).toContain(capped);
+    expect(orange()).toContain(uncapped);
+  });
+
+  it("gives no instruction the Orange panel cannot carry out", () => {
+    const body = orange();
+
+    for (const pattern of CARRIER_ONLY_INSTRUCTIONS) {
+      expect(body).not.toMatch(pattern);
+    }
+  });
+});
+
+/**
+ * The YAS path, which is unchanged and has to stay written down as such. The
+ * risk here is the opposite of the Orange one: not a missing section, but a YAS
+ * instruction left standing where a reader on the other SIM will meet it.
+ */
+describe("README.md on YAS", () => {
+  const yas = () => section(YAS_HEADING);
+
+  it("keeps the dialogue, the password and the Sync press in its own section", () => {
+    const body = yas();
+
+    expect(body).toContain("#359#");
+    expect(body).toMatch(/password/i);
+    expect(body).toMatch(/Sync/);
+  });
+
+  it("puts every carrier-only instruction under a heading that says YAS", () => {
+    const instructions = carrierOnlyInstructionLines();
+
+    // Guarded against passing on an empty page: the README really does give
+    // these instructions, and the claim is about where they sit, not whether
+    // they were deleted.
+    expect(instructions.length).toBeGreaterThan(0);
+
+    for (const { line, heading } of instructions) {
+      expect(`${heading} :: ${line}`).toMatch(/YAS/);
+    }
+  });
+
+  it("takes its menu bar figure from the anchor, not from the portal", () => {
+    // The same portal standing goes in as the Orange case above; on YAS the
+    // title is built from the anchor instead, which is the branch the page's
+    // two sections describe.
+    const title = buildTrayTitle(
+      snapshotOn("yas", "Yas"),
+      {
+        ...defaultConfig(),
+        planLimitBytes: WORKED_EXAMPLE_CAP,
+        allowanceAnchor: workedExampleAnchor,
+      },
+      workedExampleClock,
+      portalStanding,
+    );
+
+    expect(title).toBe("60Go · 40%");
+  });
+
+  it("marks its automatic sync as the YAS path, since Orange has none", () => {
+    const heading = readmeLines.find((line) =>
+      line.startsWith("## When it syncs by itself"),
+    );
+
+    expect(heading).toMatch(/YAS/);
+  });
+});
+
+/*
+ * The Orange panel screenshot T-58 asks for is still not here, and no
+ * assertion stands in for it.
+ *
+ * `docs/media/` needs a capture of the panel as it renders on Orange — the
+ * dial, the pace meter, the named forfait, and no Sync row — which takes a
+ * running app on a real screen against a SIM on the Orange network. Nothing in
+ * this suite can produce one, and a drawn or borrowed image would be a picture
+ * of an app nobody ran.
+ *
+ * The assertion is deliberately absent rather than skipped, so it cannot pass
+ * by describing a file nobody has taken. The link check above already fails the
+ * moment the README references an image that is not there, which is the half of
+ * the criterion a test can honestly hold.
+ */
