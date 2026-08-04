@@ -19,6 +19,7 @@ import {
   parseAllowance,
   parseUssdContent,
 } from "../../src/hilink/ussd-parse.js";
+import { selectForfait } from "../../src/orange/select.js";
 import type { OrangeForfait } from "../../src/orange/types.js";
 import type { PortalStatus } from "../../src/main/poller.js";
 import type { SyncFailure, SyncState } from "../../src/main/sync.js";
@@ -1793,5 +1794,193 @@ describe("buildPopoverModel — Orange, before the portal has answered once", ()
     expect(model.connectedDevices).toBe("3");
     expect(model.carrier).toBe("ORANGE MG");
     expect(model.signalBars).toBe(4);
+  });
+});
+
+/**
+ * A second data forfait beside the Wifiber plan, so a choice has something to
+ * choose between. Alike in nature and bundle type — the two differ only in
+ * which one the user meant.
+ */
+const TOP_UP: OrangeForfait = {
+  label: "Pass Internet 5 Go",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 1_000_000_000,
+};
+
+/** A voice bundle, which `selectForfait` never carries into the candidates. */
+const VOICE: OrangeForfait = {
+  label: "Pass Appel 100 min",
+  nature: "Voix",
+  bundleType: "voice",
+};
+
+/**
+ * A portal standing built from a real selection over `forfaits`, so what the
+ * panel is handed is exactly what the poller would hand it.
+ */
+function portalOver(
+  forfaits: readonly OrangeForfait[],
+  rememberedLabel?: string,
+): PortalStatus {
+  const selection = selectForfait(forfaits, rememberedLabel);
+
+  return {
+    reading: {
+      forfait: selection.selected,
+      candidates: selection.candidates,
+      remembered: selection.remembered,
+      at: SEVEN_HOURS_AGO,
+    },
+    live: true,
+  };
+}
+
+/** The Orange panel for one portal standing, against a 20 Go cap. */
+function orangeModel(status: PortalStatus): PopoverModel {
+  return buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    portal: status,
+    clock,
+  });
+}
+
+/** A Yas panel with an anchor behind it, for the carrier the branch spares. */
+function yasModel(): PopoverModel {
+  return buildPopoverModel({
+    result: online(),
+    lastReading: null,
+    config: configWith(20_000_000_000, anchorOf(12_000_000_000)),
+    clock,
+  });
+}
+
+describe("buildPopoverModel — which controls each carrier's panel offers", () => {
+  it("drops the Sync button and the plan length on Orange", () => {
+    const model = orangeModel(portal(true));
+
+    // Neither has anything behind it: there is no dialogue to press for, and
+    // the calendar month overrules any length the user could type.
+    expect(model.controls.sync).toBe(false);
+    expect(model.controls.planDays).toBe(false);
+  });
+
+  it("keeps the plan cap on Orange, which the portal never states", () => {
+    const model = orangeModel(portal(true));
+
+    expect(model.planLimit.value).toBe("20");
+    expect(model.planLimit.description).not.toBe("");
+  });
+
+  it("offers every control on Yas, exactly as it always did", () => {
+    expect(yasModel().controls.sync).toBe(true);
+    expect(yasModel().controls.planDays).toBe(true);
+  });
+
+  it("offers every control before any reading has named a carrier", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: configWith(20_000_000_000),
+      clock,
+    });
+
+    expect(model.controls.sync).toBe(true);
+    expect(model.controls.planDays).toBe(true);
+  });
+});
+
+describe("buildPopoverModel — the forfait the Orange panel names", () => {
+  it("names the detected plan, which is the evidence detection worked", () => {
+    expect(orangeModel(portal(true)).forfait?.label).toBe("Wifiber Go+ SSE");
+  });
+
+  it("has no forfait section on Yas, where there is no such page", () => {
+    expect(yasModel().forfait).toBeNull();
+  });
+
+  it("offers nothing to choose when the page listed one data plan", () => {
+    const model = orangeModel(portalOver([WIFIBER, VOICE]));
+
+    expect(model.forfait?.label).toBe("Wifiber Go+ SSE");
+    expect(model.forfait?.note).toBe("");
+    expect(model.forfait?.alternatives).toEqual([]);
+  });
+
+  it("says it picked, and lists the others, when several were live", () => {
+    const model = orangeModel(portalOver([WIFIBER, TOP_UP]));
+
+    expect(model.forfait?.label).toBe("Wifiber Go+ SSE");
+    expect(model.forfait?.note).not.toBe("");
+    expect(model.forfait?.alternatives.map((one) => one.label)).toEqual([
+      "Pass Internet 5 Go",
+    ]);
+  });
+
+  it("never offers the plan it is already measuring", () => {
+    const labels = orangeModel(
+      portalOver([WIFIBER, TOP_UP]),
+    ).forfait?.alternatives.map((one) => one.label);
+
+    expect(labels).not.toContain("Wifiber Go+ SSE");
+  });
+
+  it("never offers a voice bundle, which is not a data plan at all", () => {
+    const labels = orangeModel(
+      portalOver([WIFIBER, TOP_UP, VOICE]),
+    ).forfait?.alternatives.map((one) => one.label);
+
+    expect(labels).toEqual(["Pass Internet 5 Go"]);
+  });
+
+  it("gives every alternative an accessible name of its own", () => {
+    const alternatives =
+      orangeModel(portalOver([WIFIBER, TOP_UP])).forfait?.alternatives ?? [];
+
+    expect(alternatives).not.toHaveLength(0);
+
+    for (const alternative of alternatives) {
+      expect(alternative.description).not.toBe("");
+      expect(alternative.description).toContain(alternative.label);
+    }
+  });
+
+  it("stops offering once the choice is the user's own", () => {
+    const model = orangeModel(
+      portalOver([WIFIBER, TOP_UP], "Pass Internet 5 Go"),
+    );
+
+    // The panel names what it measures and says nothing further: the choice
+    // was made, so there is nothing left to disclose.
+    expect(model.forfait?.label).toBe("Pass Internet 5 Go");
+    expect(model.forfait?.note).toBe("");
+    expect(model.forfait?.alternatives).toEqual([]);
+  });
+
+  it("measures the remembered plan, so the dial follows the choice", () => {
+    const model = orangeModel(
+      portalOver([WIFIBER, TOP_UP], "Pass Internet 5 Go"),
+    );
+
+    // 1.00 Go consumed on the top-up, against the Wifiber plan's 7.37 Go.
+    expect(model.monthTotal).toBe("1.00 Go");
+    expect(model.allowance.planLabel).toBe("Pass Internet 5 Go");
+  });
+
+  it("hands the renderer only strings it need not format", () => {
+    const model = orangeModel(portalOver([WIFIBER, TOP_UP]));
+
+    for (const leaf of leaves(model.forfait)) {
+      expect(typeof leaf).toBe("string");
+    }
+  });
+
+  it("hands the renderer plain flags for the control set", () => {
+    for (const leaf of leaves(orangeModel(portal(true)).controls)) {
+      expect(typeof leaf).toBe("boolean");
+    }
   });
 });

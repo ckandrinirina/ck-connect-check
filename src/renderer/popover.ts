@@ -40,6 +40,12 @@ export interface PopoverBridge {
   setPlanLimit(value: string): void;
   /** Hand the plan length over on exactly the same terms. */
   setPlanDays(value: string): void;
+  /**
+   * Name the forfait the meter should measure from here on. The label is the
+   * carrier's own, passed through untouched: it is what the config stores and
+   * what the next portal read matches against.
+   */
+  chooseForfait(label: string): void;
 }
 
 declare global {
@@ -84,6 +90,7 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     allowanceDaysLeft: model.allowance.daysUntilExpiry,
     allowanceSynced: model.allowance.syncedAgo,
     allowanceNote: model.allowance.note,
+    forfaitNote: model.forfait?.note ?? "",
     syncStatus: model.sync.status,
   };
 }
@@ -526,6 +533,129 @@ function applyPlanCapPrompt(model: PopoverModel): void {
   }
 }
 
+/**
+ * Controls taken off the page, each with the comment left where it stood.
+ *
+ * Taken off rather than hidden: a control the carrier has nothing behind is one
+ * the user must not be able to operate, and `hidden` leaves an element in the
+ * document — still focusable by script, still reachable by keyboard in the
+ * cases where a stylesheet is not applied. Removing it is the only answer that
+ * is true whatever the CSS does.
+ *
+ * The comment is what makes it reversible. The SIM decides which controls the
+ * panel offers, and a SIM can be swapped without the app restarting, so a
+ * removed control has to know where to go back.
+ */
+const withdrawn = new Map<string, { node: Element; marker: Comment }>();
+
+/**
+ * Puts a control on the page, or takes it off.
+ *
+ * The marker's own connectedness is the state, rather than the map alone: the
+ * page can be replaced wholesale beneath this module — by a reload, and by
+ * every test that loads the markup afresh — and a map entry pointing at a
+ * document that no longer exists must not be mistaken for a control that is
+ * currently withdrawn.
+ */
+function setPresent(selector: string, wanted: boolean): void {
+  const held = withdrawn.get(selector);
+  const stands = held !== undefined && held.marker.isConnected;
+
+  if (wanted) {
+    if (stands) {
+      held.marker.replaceWith(held.node);
+    }
+
+    withdrawn.delete(selector);
+
+    return;
+  }
+
+  if (stands) {
+    return;
+  }
+
+  const node = document.querySelector(selector);
+
+  if (node === null) {
+    return;
+  }
+
+  const marker = document.createComment(selector);
+
+  node.replaceWith(marker);
+  withdrawn.set(selector, { node, marker });
+}
+
+/**
+ * The controls whose presence the carrier decides, by the flag that decides
+ * each. The plan length is two elements — the field and the line that refuses
+ * it — because a complaint about a field that is not there is not a complaint
+ * about anything.
+ */
+const CARRIER_CONTROLS: { flag: keyof PopoverModel["controls"]; of: string }[] =
+  [
+    { flag: "sync", of: "[data-sync]" },
+    { flag: "sync", of: "[data-sync-row]" },
+    { flag: "planDays", of: "form[data-plan-days]" },
+    { flag: "planDays", of: '[data-field="planDaysError"]' },
+  ];
+
+/** Draws the control set this carrier has anything behind, and no more. */
+function applyControls(model: PopoverModel): void {
+  for (const control of CARRIER_CONTROLS) {
+    setPresent(control.of, model.controls[control.flag]);
+  }
+}
+
+/**
+ * Lists the plans the meter could measure instead, or takes the offer away.
+ *
+ * Rebuilt only when the labels themselves change. A poll pushes a fresh model
+ * every couple of seconds while the panel is open, and replacing the buttons
+ * under a pointer already on one is how a click lands on nothing.
+ */
+function applyForfait(model: PopoverModel): void {
+  const host = document.querySelector<HTMLElement>("[data-forfait-choice]");
+  const list = document.querySelector<HTMLElement>(
+    "[data-forfait-alternatives]",
+  );
+
+  if (host === null || list === null) {
+    return;
+  }
+
+  const alternatives = model.forfait?.alternatives ?? [];
+
+  host.hidden = alternatives.length === 0;
+
+  const labels = alternatives.map((option) => option.label).join("\n");
+
+  if (list.dataset["labels"] === labels) {
+    return;
+  }
+
+  list.dataset["labels"] = labels;
+  list.replaceChildren(
+    ...alternatives.map((option) => {
+      const button = document.createElement("button");
+
+      button.type = "button";
+      button.className = "forfait-alternative";
+      button.dataset["forfaitLabel"] = option.label;
+      button.textContent = option.label;
+      button.setAttribute("aria-label", option.description);
+      button.addEventListener("click", () => {
+        // The label as the carrier spells it. Which plan that names, and
+        // whether it is still on the page, are both decided the other side.
+        window.popoverBridge?.chooseForfait(option.label);
+      });
+
+      return button;
+    }),
+  );
+}
+
 /** A share of the meter's track, 0 to 1, as the CSS length it is drawn at. */
 function trackShare(share: number): string {
   return `${(share * 100).toFixed(2)}%`;
@@ -630,6 +760,9 @@ function applySync(model: PopoverModel): void {
 }
 
 window.applyPopoverModel = (model: PopoverModel): void => {
+  // Before anything is filled in: a control that has just come back has to be
+  // on the page in time for this model's own strings to reach it.
+  applyControls(model);
   bindControls();
 
   const fields = fieldsOf(model);
@@ -673,6 +806,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPlanDays(model);
   applyPlanCapPrompt(model);
   applyPace(model);
+  applyForfait(model);
   applySync(model);
 };
 

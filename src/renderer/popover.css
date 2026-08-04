@@ -500,6 +500,53 @@ body {
   font-size: 11px;
 }
 
+/* Which plan the figure above is about, offered only where the app picked it
+   from several. Hidden through the `hidden` attribute rather than a class, and
+   given a `display` of its own so the UA rule cannot lose to this one — the
+   same bargain `.pace-meter` and `.password-prompt` already make. It costs no
+   height at all until there is a choice to offer. */
+.forfait-choice {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.forfait-choice[hidden] {
+  display: none;
+}
+
+.forfait-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* As many as the carrier listed, so they wrap rather than overrun the panel. */
+.forfait-alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.forfait-alternative {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.forfait-alternative:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Nothing synced yet: the strip has no figure to show, so it says so instead. */
 :root[data-allowance="none"] .allowance-meta,
 :root[data-allowance="none"] .allowance-validity,
