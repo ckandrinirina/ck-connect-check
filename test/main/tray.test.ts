@@ -8,6 +8,7 @@ import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import type { PortalStatus } from "../../src/main/poller.js";
 import {
   MAX_TRAY_TITLE_LENGTH,
   NO_TRAY_VALUE,
@@ -15,6 +16,7 @@ import {
   buildTrayTitle,
 } from "../../src/main/tray.js";
 import { buildPopoverModel } from "../../src/main/view-model.js";
+import type { OrangeForfait } from "../../src/orange/types.js";
 
 const GB = 1_000_000_000;
 
@@ -329,5 +331,305 @@ describe("buildTrayTitle — an unconfirmed plan cap", () => {
     expect(
       titleFor({ usedBytes: ROUTER_COUNTER, planCapConfirmed: true }),
     ).toBe("5.8Go · 29%");
+  });
+});
+
+/**
+ * The same router, with the SIM on Orange. Everything the menu bar knows about
+ * the plan arrives from the portal here — there is no anchor, and there never
+ * will be one, because nothing is dialled on this network.
+ */
+const ORANGE_ONLINE: SnapshotResult = {
+  online: true,
+  snapshot: { ...snapshot(), carrier: { carrier: "ORANGE MG", id: "orange" } },
+};
+
+/** A router the app can read but a network it cannot place. */
+const UNKNOWN_ONLINE: SnapshotResult = {
+  online: true,
+  snapshot: { ...snapshot(), carrier: { carrier: "Telma", id: "unknown" } },
+};
+
+/** The live capture: 7.37 Go consumed of a Wifiber plan that states no cap. */
+const WIFIBER: OrangeForfait = {
+  label: "Wifiber Go+ SSE",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 7_370_000_000,
+};
+
+const PORTAL_READ_AT = new Date(2026, 6, 27, 10, 0, 0);
+
+function portalWith(forfait: OrangeForfait | null, live = true): PortalStatus {
+  return {
+    reading: {
+      forfait,
+      candidates: forfait === null ? [] : [forfait],
+      remembered: false,
+      at: PORTAL_READ_AT,
+    },
+    live,
+  };
+}
+
+/** The portal having read a plan with `bytes` spent on it. */
+function consuming(bytes: number): PortalStatus {
+  return portalWith({ ...WIFIBER, consumedBytes: bytes });
+}
+
+/** Nothing has ever been fetched — the state the app starts every Orange run in. */
+const NEVER_READ: PortalStatus = { reading: null, live: false };
+
+/**
+ * The menu bar title on Orange. No anchor is ever configured: the figure has to
+ * come from the portal, and a test that left one lying about could not tell
+ * which of the two the tray had read.
+ */
+function orangeTitle(
+  situation: Case = {},
+  portal: PortalStatus = portalWith(WIFIBER),
+): string {
+  return buildTrayTitle(
+    ORANGE_ONLINE,
+    configFor({ anchored: false, ...situation }),
+    clock,
+    portal,
+  );
+}
+
+describe("buildTrayTitle — Orange", () => {
+  it("renders the portal's consumed volume and its share of the cap", () => {
+    // The same two halves, in the same order, with the same separator as Yas.
+    expect(orangeTitle({ cap: 20 * GB })).toBe("7.4Go · 37%");
+  });
+
+  it("shows the consumed volume alone when no cap has been set", () => {
+    const title = orangeTitle({ cap: null });
+
+    // A share needs something to measure against, and there is nothing. The
+    // volume is what the carrier actually stated, so it is what is shown.
+    expect(title).toBe("7.4Go");
+    expect(title).not.toContain("%");
+    expect(title).not.toContain(TRAY_WARN_MARKER);
+  });
+
+  it("never falls back to the router's own month counter", () => {
+    // The router counted 5.83 Go over the same period the portal counted 7.37.
+    // The two count different traffic; joining them invents a figure.
+    for (const cap of [20 * GB, null]) {
+      expect(orangeTitle({ cap })).not.toContain("5.8");
+    }
+  });
+
+  it("shows a dash before the portal has ever answered", () => {
+    expect(orangeTitle({ cap: 20 * GB }, NEVER_READ)).toBe(NO_TRAY_VALUE);
+  });
+
+  it("shows a dash when the page listed no data forfait at all", () => {
+    expect(orangeTitle({ cap: 20 * GB }, portalWith(null))).toBe(NO_TRAY_VALUE);
+  });
+
+  it("shows a dash when the forfait states no consumed volume", () => {
+    const silent = portalWith({ label: "Wifiber Go+ SSE", nature: "Internet" });
+
+    expect(orangeTitle({ cap: 20 * GB }, silent)).toBe(NO_TRAY_VALUE);
+  });
+
+  it("keeps showing the last figure while the portal is out of reach", () => {
+    // The panel shows it, marked. The menu bar has no room to mark anything,
+    // and a figure that blinked out every time a laptop moved network would be
+    // worse than one that ages quietly.
+    expect(orangeTitle({ cap: 20 * GB }, portalWith(WIFIBER, false))).toBe(
+      "7.4Go · 37%",
+    );
+  });
+
+  it("ignores an anchor left over from Yas", () => {
+    // A SIM swap leaves the old anchor in the config. It describes a plan on
+    // another network, and the portal is the only thing that speaks for this one.
+    expect(
+      buildTrayTitle(
+        ORANGE_ONLINE,
+        configFor({ usedBytes: ROUTER_COUNTER, cap: 20 * GB }),
+        clock,
+        portalWith(WIFIBER),
+      ),
+    ).toBe("7.4Go · 37%");
+  });
+
+  it("stays inside the width limit across the range, overruns included", () => {
+    // Up to twice the cap: Orange states consumption outright, so unlike Yas —
+    // where the carrier's remaining stops at zero — the share can pass 100%.
+    for (const cap of [1 * GB, 20 * GB, 100 * GB, 999 * GB]) {
+      for (let used = 0; used <= 2 * cap; used += cap / 8) {
+        const title = orangeTitle({ cap }, consuming(used));
+
+        expect(
+          title.length,
+          `"${title}" for ${String(used)} bytes consumed`,
+        ).toBeLessThanOrEqual(MAX_TRAY_TITLE_LENGTH);
+      }
+    }
+  });
+
+  it("stays inside the width limit with no cap at all", () => {
+    for (let usedGb = 0; usedGb <= 999; usedGb += 37) {
+      const title = orangeTitle({ cap: null }, consuming(usedGb * GB));
+
+      expect(
+        title.length,
+        `"${title}" for ${String(usedGb)} Go consumed`,
+      ).toBeLessThanOrEqual(MAX_TRAY_TITLE_LENGTH);
+    }
+  });
+
+  it("keeps the share exact where a mistyped cap outgrows the width budget", () => {
+    // A cap a hundred times smaller than what has been spent is a typo, not a
+    // plan. The share stays exactly what the panel shows rather than being
+    // rounded into a figure that would read as plausible; the width budget is
+    // the thing that gives, and this is the only case where it does.
+    expect(orangeTitle({ cap: 1 * GB }, consuming(111 * GB))).toBe(
+      `111Go ${TRAY_WARN_MARKER} 11100%`,
+    );
+  });
+});
+
+describe("buildTrayTitle — Orange, agreeing with the panel", () => {
+  function bothFor(
+    situation: Case,
+    portal: PortalStatus = portalWith(WIFIBER),
+  ): { tray: string; panel: string } {
+    const config = configFor({ anchored: false, ...situation });
+
+    return {
+      tray: buildTrayTitle(ORANGE_ONLINE, config, clock, portal),
+      panel: buildPopoverModel({
+        result: ORANGE_ONLINE,
+        lastReading: null,
+        config,
+        portal,
+        clock,
+      }).progress.label,
+    };
+  }
+
+  it("shows the same percentage as the panel's dial", () => {
+    const { tray, panel } = bothFor({ cap: 20 * GB });
+
+    expect(panel).toBe("37%");
+    expect(tray).toContain(panel);
+  });
+
+  it("agrees with the panel across the whole range", () => {
+    for (let usedGb = 0; usedGb <= 20; usedGb += 1) {
+      const { tray, panel } = bothFor({ cap: 20 * GB }, consuming(usedGb * GB));
+
+      expect(tray, `at ${String(usedGb)} Go consumed`).toContain(panel);
+    }
+  });
+
+  it("goes blank in exactly the cases the panel withdraws the dial", () => {
+    // The one exception is the missing cap: the panel drops the ring and keeps
+    // the volume beside it, and the menu bar does the same in the one string it
+    // has. Withdrawing the *share* is what these two agree on.
+    for (const portal of [NEVER_READ, portalWith(null)]) {
+      const { tray, panel } = bothFor({ cap: 20 * GB }, portal);
+
+      expect(panel).toBe(NO_TRAY_VALUE);
+      expect(tray).toBe(NO_TRAY_VALUE);
+    }
+
+    expect(bothFor({ cap: null }).tray).not.toContain("%");
+  });
+});
+
+describe("buildTrayTitle — the warning marker on Orange", () => {
+  it("leaves a title below the warn threshold unmarked", () => {
+    const title = orangeTitle({ cap: 20 * GB }, consuming(17.9 * GB));
+
+    expect(title).toBe("18Go · 90%");
+    expect(title).not.toContain(TRAY_WARN_MARKER);
+  });
+
+  it("marks a title that has reached the warn threshold exactly", () => {
+    expect(orangeTitle({ cap: 20 * GB }, consuming(18 * GB))).toBe(
+      `18Go ${TRAY_WARN_MARKER} 90%`,
+    );
+  });
+
+  it("marks a title that has consumed the whole plan", () => {
+    expect(orangeTitle({ cap: 20 * GB }, consuming(20 * GB))).toContain(
+      TRAY_WARN_MARKER,
+    );
+  });
+
+  it("takes the threshold from the config rather than always warning at 90", () => {
+    const capped = { cap: 20 * GB, warnThresholdPercent: 75 };
+
+    expect(orangeTitle(capped, consuming(15 * GB))).toContain(TRAY_WARN_MARKER);
+    expect(orangeTitle(capped, consuming(14 * GB))).not.toContain(
+      TRAY_WARN_MARKER,
+    );
+  });
+
+  it("never marks a title that has no share to warn against", () => {
+    expect(orangeTitle({ cap: null }, consuming(19 * GB))).not.toContain(
+      TRAY_WARN_MARKER,
+    );
+    expect(orangeTitle({ cap: 20 * GB }, NEVER_READ)).not.toContain(
+      TRAY_WARN_MARKER,
+    );
+  });
+
+  it("bands the title exactly as the panel bands its dial", () => {
+    for (const usedGb of [0, 10, 17.9, 18, 20, 25]) {
+      const config = configFor({ anchored: false, cap: 20 * GB });
+      const portal = consuming(usedGb * GB);
+      const state = buildPopoverModel({
+        result: ORANGE_ONLINE,
+        lastReading: null,
+        config,
+        portal,
+        clock,
+      }).progress.state;
+      const marked = buildTrayTitle(
+        ORANGE_ONLINE,
+        config,
+        clock,
+        portal,
+      ).includes(TRAY_WARN_MARKER);
+
+      expect(marked, `at ${String(usedGb)} Go consumed`).toBe(state !== "ok");
+    }
+  });
+});
+
+describe("buildTrayTitle — a carrier the app cannot place", () => {
+  it("reads exactly as it does on Yas", () => {
+    const config = configFor({ usedBytes: ROUTER_COUNTER });
+
+    expect(buildTrayTitle(UNKNOWN_ONLINE, config, clock)).toBe(
+      buildTrayTitle(ONLINE, config, clock),
+    );
+    expect(buildTrayTitle(UNKNOWN_ONLINE, config, clock)).toBe("5.8Go · 29%");
+  });
+
+  it("ignores a portal reading, since it is not on Orange", () => {
+    expect(
+      buildTrayTitle(
+        UNKNOWN_ONLINE,
+        configFor({ anchored: false }),
+        clock,
+        portalWith(WIFIBER),
+      ),
+    ).toBe(NO_TRAY_VALUE);
+  });
+
+  it("leaves Yas itself reading from the anchor, portal or no portal", () => {
+    const config = configFor({ usedBytes: ROUTER_COUNTER });
+
+    expect(buildTrayTitle(ONLINE, config, clock, portalWith(WIFIBER))).toBe(
+      "5.8Go · 29%",
+    );
   });
 });
