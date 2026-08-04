@@ -1909,6 +1909,10 @@ describe("startMenuBarApp — the device list behind that window", () => {
           mac: "A2:00:5E:00:00:01",
           network: "HUAWEI-B310-XXXX",
           connectedFor: "5h 52m",
+          // No filter has been read, so nothing is claimed to be blocked —
+          // T-68 is what gives the poll a filter to pass in.
+          blocked: false,
+          present: true,
         },
       ],
     });
