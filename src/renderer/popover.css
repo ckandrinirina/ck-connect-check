@@ -697,6 +697,30 @@ body {
   font-size: 11px;
 }
 
+/* The line saying why there is no figure, built exactly like the sync footer
+   above because it stands in that footer's place. Given a `display` of its own
+   so the UA `hidden` rule cannot lose to this one — the same bargain
+   `.pace-meter`, `.password-prompt` and `.forfait-choice` already make, so it
+   costs no height at all while every figure is present. */
+.notice {
+  display: block;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+/* Warned rather than alarmed, and in words either way: this is the same colour
+   `.allowance-note` uses to mark a figure that can no longer be trusted. */
+.notice-message {
+  min-width: 0;
+  color: var(--warn);
+  font-size: 11px;
+}
+
 /* The first-run password prompt. Hidden through the `hidden` attribute rather
    than a class, so it costs no height until the panel asks for it. */
 .password-prompt {

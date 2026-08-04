@@ -2304,4 +2304,21 @@ describe("buildPopoverModel — what a notice never does", () => {
     expect(model.notice).toBe("");
     expect(model.forfait?.alternatives).not.toEqual([]);
   });
+
+  it("never stands beside the sync row it takes the place of", () => {
+    // The panel has 320×520 and does not scroll, so the line has to be paid
+    // for out of a row that is already off the panel wherever it appears.
+    // Asserted rather than assumed: the height budget in the renderer suite
+    // is only true while these two are mutually exclusive.
+    const models = [
+      ...failures.map((failure) => orangeFailing(failure)),
+      orangeModel(portalOver([UNPLACED, UNPLACED_TOO])),
+      unplacedCarrierModel("AIRTEL MG"),
+    ];
+
+    for (const model of models) {
+      expect(model.notice).not.toBe("");
+      expect(model.controls.sync).toBe(false);
+    }
+  });
 });

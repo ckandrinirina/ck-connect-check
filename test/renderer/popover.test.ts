@@ -3046,4 +3046,28 @@ describe("the panel's notice row", () => {
     expect(document.querySelector("[data-sync]")).toBeNull();
     expect(document.querySelector("[data-sync-row]")).toBeNull();
   });
+
+  it("never stands on the page beside the row it takes the place of", () => {
+    // The panel is 320×520 and does not scroll, so the row the line spends is
+    // the row the sync status line gave back. Asserted rather than assumed:
+    // the height budget above is only true while the two never coincide.
+    const models = [
+      orangeFailingModel({ state: "unreachable", reason: "offline" }),
+      orangeFailingModel({ state: "unreachable", reason: "timeout" }),
+      orangeFailingModel({ state: "unreachable", reason: "http", status: 503 }),
+      orangeFailingModel({ state: "unreadable" }),
+      orangeModel([UNPLACED]),
+      unplacedCarrierModel(),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(noticeRow().hidden).toBe(false);
+      expect(document.querySelector("[data-sync-row]")).toBeNull();
+      expect(document.querySelector("[data-forfait-choice]")?.hidden).toBe(
+        true,
+      );
+    }
+  });
 });

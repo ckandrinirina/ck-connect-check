@@ -44,6 +44,7 @@ import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { RouterRefusal, SnapshotResult } from "../hilink/client.js";
 import type { RouterSnapshot } from "../hilink/types.js";
+import type { OrangePortalResult } from "../orange/portal.js";
 import type { OrangeForfait } from "../orange/types.js";
 
 /**
@@ -338,6 +339,14 @@ export interface PopoverControls {
 const ALL_CONTROLS: PopoverControls = { sync: true, planDays: true };
 
 /**
+ * What a carrier the app cannot place offers. `createAllowanceSync` already
+ * refuses to dial on one — there is no allowance source to dial for — so the
+ * button is a control that does nothing when pressed, and the row it stands in
+ * is exactly the room the line saying so needs.
+ */
+const UNPLACED_CONTROLS: PopoverControls = { sync: false, planDays: true };
+
+/**
  * What Orange offers. Neither absence is a limitation of the app: there is no
  * dialogue to press for, since the portal answers a plain `GET`, and the
  * calendar month states the period any typed length would contradict.
@@ -383,13 +392,22 @@ const FORFAIT_PICKED_NOTE = "Picked for you from several plans.";
  * candidates, and a selection the app made rather than the user. Either alone
  * is not worth a control — a single forfait has no alternative to offer, and a
  * remembered one was already decided.
+ *
+ * `offering` is the third gate, and it is the panel's rather than the page's:
+ * wherever there is a notice to show, every alternative is a dead control.
+ * `selectForfait` only ever remembers a data forfait, so a page that listed
+ * none has nothing a press could point the meter at, and a page that could not
+ * be read cannot show the effect of a choice either.
  */
-function buildForfait(reading: PortalReading): PopoverForfait {
+function buildForfait(
+  reading: PortalReading,
+  offering: boolean,
+): PopoverForfait {
   const { forfait, candidates, remembered } = reading;
   const label =
     forfait === null || forfait.label === "" ? NO_VALUE : forfait.label;
 
-  if (candidates.length <= 1 || remembered) {
+  if (!offering || candidates.length <= 1 || remembered) {
     return { label, note: "", alternatives: [] };
   }
 
@@ -470,6 +488,17 @@ export interface PopoverModel {
    * page — where the plan's name arrives with the allowance instead.
    */
   forfait: PopoverForfait | null;
+  /**
+   * Why there is no figure, in one sentence. Empty whenever there is one.
+   *
+   * A line rather than a dialog or a thrown error: the app runs unattended in
+   * the menu bar, where there is nobody to dismiss a box and nowhere for an
+   * exception to go. Each cause gets its own wording, and each names what was
+   * actually observed — the HTTP status where there was one, the count of
+   * plans where the page parsed, the network name where the router gave one —
+   * because "it failed" tells the user nothing they can act on.
+   */
+  notice: string;
 }
 
 export interface PopoverInput {
@@ -492,7 +521,7 @@ export interface PopoverInput {
    * portal are two sources that fail on their own terms, and flattening them
    * into one "offline" would tell the user to fix the wrong thing.
    */
-  portal?: PortalStatus;
+  portal?: PortalStanding;
   /** Why the last typed plan size was refused, if one was. */
   planLimitProblem?: PlanLimitRefusal | undefined;
   /** Why the last typed plan length was refused, if one was. */
@@ -977,6 +1006,9 @@ function emptyModel(
     // No reading has named a carrier, so nothing has stood a control down.
     controls: ALL_CONTROLS,
     forfait: null,
+    // Nothing has been read, so nothing has gone wrong: the dial's own prompt
+    // already says the panel is waiting rather than failing.
+    notice: "",
   };
 }
 
@@ -1045,12 +1077,22 @@ interface AllowanceHalf {
   controls: PopoverControls;
   /** The plan the carrier's page named, or null where there is no such page. */
   forfait: PopoverForfait | null;
+  /** Why this half has no figure, or empty while it has one. */
+  notice: string;
 }
 
-/** The YAS half: the anchor, carried forward by the router's counter delta. */
+/**
+ * The YAS half: the anchor, carried forward by the router's counter delta.
+ *
+ * Also the half a carrier the app cannot place falls to, which is why the
+ * carrier reaches it. There is no second source to try there — the anchor is
+ * the only one this branch has — so the panel says which network the router
+ * named and that nothing is known about where its allowance lives.
+ */
 function anchoredHalf(
   config: AppConfig,
   month: RouterSnapshot["month"],
+  carrier: RouterSnapshot["carrier"],
   cap: number | null,
   capUnconfirmed: boolean,
   clock: Clock,
@@ -1058,6 +1100,7 @@ function anchoredHalf(
 ): AllowanceHalf {
   // The same derivation the menu bar reads, so the two cannot disagree.
   const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
+  const placed = carrier.id !== "unknown";
 
   return {
     // The plan figure, which is the only month the carrier stands behind. The
@@ -1088,19 +1131,145 @@ function anchoredHalf(
     // An anchor that can no longer carry the arithmetic is the one thing the
     // button has to call out: the figure on screen is the last honest one.
     syncAttention: allowance !== null && !allowance.trustworthy,
-    controls: ALL_CONTROLS,
+    controls: placed ? ALL_CONTROLS : UNPLACED_CONTROLS,
     // The plan's name arrives on the anchor here, and the allowance strip
     // already carries it — there is no second page to read one off.
     forfait: null,
+    notice: placed ? "" : unplacedCarrierNotice(carrier.carrier),
   };
 }
 
+/**
+ * Why the last attempt at the portal produced no page — the tagged result from
+ * `../orange/portal.js` with its one success removed.
+ */
+export type PortalFailure = Exclude<OrangePortalResult, { state: "read" }>;
+
+/**
+ * Where the portal stands, and why its last attempt failed.
+ *
+ * {@link PortalStatus} says whether the page answered; it does not say why it
+ * did not, because the poller republishes it on every settled fetch and the
+ * reason belongs to the attempt rather than to the standing. So the reason is
+ * carried alongside by whoever made the fetch. Absent means a caller that does
+ * not track one — the panel then says the page is out of reach and no more.
+ */
+export type PortalStanding = PortalStatus & {
+  failure?: PortalFailure | undefined;
+};
+
 /** Where the portal stands before anything has ever been fetched from it. */
-const NO_PORTAL: PortalStatus = { reading: null, live: false };
+const NO_PORTAL: PortalStanding = { reading: null, live: false };
 
 /** Why an Orange figure is marked, in the words the panel shows. */
 const PORTAL_STALE_NOTE =
   "The Orange portal is out of reach — this is the last figure it gave.";
+
+/**
+ * The page did not answer at all: a refused connection, or a name that does
+ * not resolve. The page only answers on the Orange network, so the remedy is
+ * the connection rather than anything about the plan.
+ */
+const PORTAL_OFFLINE_NOTICE =
+  "Orange's page did not answer — connect through the router to read your plan.";
+
+/** The same page, reached but silent. A different fault with the same remedy. */
+const PORTAL_TIMEOUT_NOTICE =
+  "Orange's page did not answer in time — connect through the router and it will be read again shortly.";
+
+/**
+ * Something answered `200` and it was not the subscriber's page.
+ *
+ * Kept apart from every "no plan" wording on purpose. A captive-portal
+ * middlebox sits in front of this page and is exactly the kind of thing that
+ * hands back someone else's `200`, which parses to no forfait at all — and
+ * reporting that as an expired plan would state something false about the
+ * account.
+ */
+const PORTAL_UNREADABLE_NOTICE =
+  "Orange's page answered with something we could not read — the page has changed, or a middlebox replied for it.";
+
+/** The remedy both unreachable wordings end on, and the one an HTTP code needs. */
+function portalHttpNotice(status: number): string {
+  return `Orange's page answered HTTP ${String(status)} — connect through the router to read your plan.`;
+}
+
+/** One failed attempt, in the words the panel shows. */
+function portalFailureNotice(failure: PortalFailure): string {
+  if (failure.state === "unreadable") {
+    return PORTAL_UNREADABLE_NOTICE;
+  }
+  if (failure.reason === "http") {
+    return portalHttpNotice(failure.status);
+  }
+
+  return failure.reason === "timeout"
+    ? PORTAL_TIMEOUT_NOTICE
+    : PORTAL_OFFLINE_NOTICE;
+}
+
+/**
+ * The page parsed, and none of what it listed is an Internet plan.
+ *
+ * The count is named because it is the one thing that separates this from a
+ * page that could not be read at all: forfaits were found and they were the
+ * wrong kind. Zero is the honest count when the page held nothing but voice,
+ * SMS or credit bundles — `selectForfait` never carries those forward — and it
+ * reads as an absence rather than as a figure.
+ */
+function noDataForfaitNotice(found: number): string {
+  const cause = "the plan may have expired, or the line may be voice-only";
+
+  if (found === 0) {
+    return `Orange's page listed no Internet plan — ${cause}.`;
+  }
+
+  return `Orange's page listed ${String(found)} plan${found === 1 ? "" : "s"} and none of them is an Internet plan — ${cause}.`;
+}
+
+/**
+ * The SIM is on a network no table covers.
+ *
+ * The name is carried to the surface exactly as the router spelled it, for the
+ * reason an unrecognised router error code keeps its number: it is the one
+ * thing the user cannot work out for themselves and the only thing that makes
+ * the gap reportable.
+ */
+function unplacedCarrierNotice(fullName: string): string {
+  const name = fullName.trim();
+
+  if (name === "") {
+    return "The router named no network, and no allowance source is known without one.";
+  }
+
+  return `The router reports ${name} — no allowance source is known for that network.`;
+}
+
+/**
+ * Why there is no figure from the portal, or empty while there is one.
+ *
+ * The reason is read before the standing, and only where the page did not
+ * answer: a stale reason surviving a successful fetch would report a fault
+ * that has already cleared. Where nothing has failed and nothing has been read
+ * there is nothing to say — the dial's own prompt already says the page has
+ * not answered yet, and a second line claiming a failure would be a claim
+ * about a fetch nobody made.
+ */
+function portalNotice(portal: PortalStanding): string {
+  const { reading, live, failure } = portal;
+
+  if (!live) {
+    if (failure !== undefined) {
+      return portalFailureNotice(failure);
+    }
+
+    return reading === null ? "" : PORTAL_OFFLINE_NOTICE;
+  }
+
+  return reading !== null && reading.forfait === null
+    ? noDataForfaitNotice(reading.candidates.length)
+    : "";
+}
 
 /**
  * The dial on Orange. The share comes from the portal's consumed volume against
@@ -1212,7 +1381,7 @@ function buildMonthlyPace(reading: MonthlyPaceReading): PopoverPace | null {
 
 /** The Orange half: one portal figure, measured against the calendar month. */
 function portalHalf(
-  portal: PortalStatus,
+  portal: PortalStanding,
   cap: number | null,
   warnThresholdPercent: number,
   clock: Clock,
@@ -1221,11 +1390,15 @@ function portalHalf(
   const read = portal.reading;
   const forfait = read?.forfait ?? null;
   const consumedBytes = forfait?.consumedBytes ?? null;
+  const notice = portalNotice(portal);
   // Built from the whole reading rather than from the measured figure: a page
   // that listed several plans is worth saying so about even when none of them
-  // carried a volume the dial could use.
+  // carried a volume the dial could use. The offer stands down wherever a
+  // notice does, which is the same row of the panel and the same 48px.
   const chosen =
-    read === null || read === undefined ? null : buildForfait(read);
+    read === null || read === undefined
+      ? null
+      : buildForfait(read, notice === "");
 
   // Nothing has been read, or the page listed no data forfait at all: the panel
   // shows the router's figures and says the allowance is not known yet.
@@ -1238,6 +1411,7 @@ function portalHalf(
       syncAttention: false,
       controls: PORTAL_CONTROLS,
       forfait: chosen,
+      notice,
     };
   }
 
@@ -1259,6 +1433,7 @@ function portalHalf(
     syncAttention: false,
     controls: PORTAL_CONTROLS,
     forfait: chosen,
+    notice,
   };
 }
 
@@ -1326,7 +1501,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
           clock,
           now,
         )
-      : anchoredHalf(config, month, cap, capUnconfirmed, clock, now);
+      : anchoredHalf(config, month, carrier, cap, capUnconfirmed, clock, now);
 
   return {
     monthTotal: half.monthTotal,
@@ -1352,5 +1527,6 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     sync: buildSync(syncState, half.syncAttention),
     controls: half.controls,
     forfait: half.forfait,
+    notice: half.notice,
   };
 }
