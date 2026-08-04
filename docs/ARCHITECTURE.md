@@ -393,7 +393,7 @@ src/
   config/       read and write the plan limit, router address and allowance anchor
   main/         Electron main process — tray, poll loop, popover window, login item,
                 keychain-backed router password
-  renderer/     popover UI (HTML + CSS + TS), and the connected-devices window
+  renderer/     popover UI (HTML + CSS + TS) — the Usage and Devices tabs are one page
 test/           mirrors src/, one .test.ts per source file
 assets/         icon sources — hand-written SVG, and the PNG/.icns rasterised from them
 scripts/        build-time scripts that are not part of the app — icon rasterisation
@@ -474,7 +474,7 @@ Append-only. One line each, always with the reason.
 - On Orange the plan period is the calendar month, derived, and only the cap is typed — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly
 - The router's month counter has no role at all on Orange — it read 51.1 Go against the portal's 7.37 Go on the same day, so the two count different traffic and joining them would produce a confident wrong number
 - An unreachable portal is rendered like an unreachable router, as a state and not an error — the portal only answers on the Orange network, so a laptop on any other Wi-Fi is an ordinary condition
-- The connected devices live in their own window, not in the popover — a device list is a table that grows with the household, and the panel is 320×520 with 497 px already spent and no room to scroll
+- **Reverses the separate-window decision this line used to state (T-72):** the connected devices are a second tab inside the popover, not a window of their own — a window was chosen because the panel had 497 of its 520 px spent, but a tab spends none of them: the two panes never draw at once, so the list gets the whole 320×520 and the app stays one screen with nothing to summon and nothing left open behind the menu bar
 - The device list is the one place text beats a drawing, despite the graphical-default rule — names, IP addresses and MAC addresses are identifiers with no magnitude, and the rule reserves text for exactly that
 - Devices are read on the ordinary poll, not on a timer of their own — `host-list` is an unauthenticated `GET` alongside the monitoring endpoints, so a second schedule would be a second thing to keep in step for no saving
 - Blocking is the router's WLAN MAC filter, not a per-device API — the device holds one list and the write replaces it whole, so every block reads the current filter first and never composes a write from a remembered one
@@ -484,7 +484,7 @@ Append-only. One line each, always with the reason.
 - **Corrects the poll line above (T-62):** devices are read only when a password is stored, because `host-list` answers `100003` on an unauthenticated session — it is not on the same footing as `/api/monitoring/status`, so the list rides the poll only once logged in, and "no password stored" is an empty state the window renders rather than an error
 - **Corrects the cap in the line above (T-62):** the filter holds ten entries per SSID, not 32, and the reply is four `<Ssid>` blocks rather than one list — a write carries all four or it silently clears the ones it omits
 - The devices window drops the 2.4/5 GHz column it was sketched with (T-62) — `host-list` carries no band, frequency or medium field, `/api/lan/HostInfo` does not exist on this firmware, and a column with no source is not worth inventing one for
-- **Narrows the "devices ride the poll" line above (T-66):** the host list is read only while the devices window is open — it is an authenticated request the menu bar never needs, so a window nobody has open must not cost one every 30 seconds
+- **Narrows the "devices ride the poll" line above (T-66, retargeted by T-75):** the host list is read only while the Devices tab is the visible one and the popover itself is open — it is an authenticated request the menu bar never needs, so a pane nobody is looking at must not cost one every 30 seconds; a hidden popover and a popover showing Usage stand it down identically
 - The device list is fetched inside the poll's own tick rather than beside it — a request started next to the poll could stack on the router, which is the one thing the settle-then-schedule cadence exists to prevent
 - A login taken out for the device list is attempted once and, if refused, stands the list down for the rest of the run — the list is read on every poll while the window is open, and a retry on that cadence would reach the five-failure lockout in minutes
 - An empty device list and an unreachable router are different states in the window, not one blank table — only the router can say that nothing is connected, and a router that did not answer has said nothing at all
@@ -512,6 +512,10 @@ Append-only. One line each, always with the reason.
 - The refusal the window states is the `DeviceBlockRefusal | RouterFailure` the domain and the router boundary already speak, joined and not re-invented (T-70) — a second vocabulary in the renderer would have to be kept in step with both, and the refusal it could not name is exactly the one whose number matters
 - An unrecognised router refusal reaches the devices window with its code and its endpoint intact (T-70) — the same rule the sync panel already keeps, because a bare "the change was refused" leaves nothing to act on and nothing to report
 - Every one of the five reasons the window has no list, or no change, is a sentence on the page and never a dialog (T-70) — the app runs unattended, so a modal nobody dismisses blocks it for as long as it is left alone; the block confirmation stays, being the one thing a person is standing there for
+- Both tabs exist in the DOM from first paint and selection only flips an attribute (T-72) — device rows are keyed by MAC and updated in place, and a pane rebuilt on every tab press would discard exactly the identity that keeps a row steady under a reader
+- The panel reopens on whichever tab was last shown (T-72) — someone who went looking for a device usually looks again, and the tray title already states the usage figure, so re-showing Usage on every open would cost a press to get back where they were
+- The Devices pane scrolls and the Usage pane does not (T-73) — the panel's no-scrolling rule exists because the usage figures are a fixed set that must all be readable at once, whereas a household's device count is unbounded and there is no layout that fits an unknown number of rows
+- The block control keeps its own preload channel, now on the popover's bridge rather than a second page's (T-74) — the channel is validated in the main process because it ends in an authenticated `POST`, and which window it arrived from was never what made it safe
 
 ## Conventions
 
