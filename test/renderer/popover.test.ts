@@ -2961,6 +2961,27 @@ describe("the panel's notice row", () => {
     expect(textOf("notice")).toContain("AIRTEL MG");
   });
 
+  it("stands on the panel with no line above it still claiming a wait", () => {
+    // The dial's prompt is the larger, earlier text: left waiting for a page
+    // that has already answered, it is what the reader takes first, and this
+    // line then reads as the contradiction rather than as the correction.
+    const models = [
+      orangeModel([UNPLACED]),
+      orangeFailingModel({ state: "unreadable" }, []),
+      orangeFailingModel(
+        { state: "unreachable", reason: "http", status: 503 },
+        [UNPLACED],
+      ),
+    ];
+
+    for (const model of models) {
+      apply(model);
+
+      expect(textOf("notice")).not.toBe("");
+      expect(textOf("prompt")).not.toMatch(/waiting/i);
+    }
+  });
+
   it("stands where the sync status line stood, at the foot of the main view", () => {
     apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
 
