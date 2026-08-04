@@ -1970,13 +1970,17 @@ describe("buildPopoverModel — the forfait the Orange panel names", () => {
     expect(model.allowance.planLabel).toBe("Pass Internet 5 Go");
   });
 
-  it("hands the renderer only strings and numbers it need not format", () => {
-    for (const leaf of leaves(orangeModel(portalOver([WIFIBER, TOP_UP])))) {
-      expect(
-        typeof leaf === "string" ||
-          typeof leaf === "number" ||
-          typeof leaf === "boolean",
-      ).toBe(true);
+  it("hands the renderer only strings it need not format", () => {
+    const model = orangeModel(portalOver([WIFIBER, TOP_UP]));
+
+    for (const leaf of leaves(model.forfait)) {
+      expect(typeof leaf).toBe("string");
+    }
+  });
+
+  it("hands the renderer plain flags for the control set", () => {
+    for (const leaf of leaves(orangeModel(portal(true)).controls)) {
+      expect(typeof leaf).toBe("boolean");
     }
   });
 });

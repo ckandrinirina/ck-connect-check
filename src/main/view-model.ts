@@ -39,7 +39,7 @@ import {
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
-import type { PortalStatus } from "./poller.js";
+import type { PortalReading, PortalStatus } from "./poller.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { RouterRefusal, SnapshotResult } from "../hilink/client.js";
@@ -318,6 +318,93 @@ export interface PopoverPlanCapPrompt {
   description: string;
 }
 
+/**
+ * Which of the panel's controls the carrier has anything behind.
+ *
+ * A control the user can reach but not use is worse than the space it costs: a
+ * Sync button that syncs nothing and a plan length the calendar overrules both
+ * invite an action that does nothing. So the panel does not draw them at all
+ * rather than greying them out — a disabled control still says the app might
+ * have done the thing, and a hidden one is still reachable by keyboard.
+ */
+export interface PopoverControls {
+  /** Whether the Sync button and its status line belong on the panel. */
+  sync: boolean;
+  /** Whether the plan-length field belongs in the settings view. */
+  planDays: boolean;
+}
+
+/** Every control the panel has — what an anchored carrier offers. */
+const ALL_CONTROLS: PopoverControls = { sync: true, planDays: true };
+
+/**
+ * What Orange offers. Neither absence is a limitation of the app: there is no
+ * dialogue to press for, since the portal answers a plain `GET`, and the
+ * calendar month states the period any typed length would contradict.
+ */
+const PORTAL_CONTROLS: PopoverControls = { sync: false, planDays: false };
+
+/** One forfait the meter could be pointed at instead of the current one. */
+export interface PopoverForfaitOption {
+  /** The label the portal gave it, which is also what the choice is stored as. */
+  label: string;
+  /** The control's accessible name — a sentence, not a bare name. */
+  description: string;
+}
+
+/**
+ * The plan the carrier's own page says it is measuring.
+ *
+ * The user asked for the app to detect the plan rather than be told it, so the
+ * detected name on the panel is the evidence detection worked. The
+ * alternatives are the one case where the name alone is not enough: a plan
+ * silently chosen from several is a guess presented as a decision unless the
+ * panel says so and offers the others.
+ */
+export interface PopoverForfait {
+  /** The plan being measured, as the portal names it. A dash when it named none. */
+  label: string;
+  /** Why a choice is being offered. Empty when none is. */
+  note: string;
+  /** The plans the meter could measure instead. Empty unless the app chose alone. */
+  alternatives: PopoverForfaitOption[];
+}
+
+/**
+ * What the panel says when it picked and the user did not. Short on purpose:
+ * the alternatives beneath it say the rest, and there are 320 px to say it in.
+ */
+const FORFAIT_PICKED_NOTE = "Picked for you from several plans.";
+
+/**
+ * The plan the portal named, and the ones it did not.
+ *
+ * The offer is gated on both halves of {@link ForfaitSelection}: several
+ * candidates, and a selection the app made rather than the user. Either alone
+ * is not worth a control — a single forfait has no alternative to offer, and a
+ * remembered one was already decided.
+ */
+function buildForfait(reading: PortalReading): PopoverForfait {
+  const { forfait, candidates, remembered } = reading;
+  const label =
+    forfait === null || forfait.label === "" ? NO_VALUE : forfait.label;
+
+  if (candidates.length <= 1 || remembered) {
+    return { label, note: "", alternatives: [] };
+  }
+
+  return {
+    label,
+    note: FORFAIT_PICKED_NOTE,
+    alternatives: candidates
+      .filter((candidate) => candidate.label !== forfait?.label)
+      .map((candidate) => ({
+        label: candidate.label,
+        description: `Measure ${candidate.label} instead`,
+      })),
+  };
+}
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   /**
@@ -376,6 +463,13 @@ export interface PopoverModel {
   pace: PopoverPace | null;
   /** The Sync button's state, and whatever the last press has to say. */
   sync: PopoverSync;
+  /** Which of those controls the panel should draw at all, on this carrier. */
+  controls: PopoverControls;
+  /**
+   * The plan the carrier's own page named, or null on a carrier with no such
+   * page — where the plan's name arrives with the allowance instead.
+   */
+  forfait: PopoverForfait | null;
 }
 
 export interface PopoverInput {
@@ -880,6 +974,9 @@ function emptyModel(
     planCapPrompt,
     pace,
     sync,
+    // No reading has named a carrier, so nothing has stood a control down.
+    controls: ALL_CONTROLS,
+    forfait: null,
   };
 }
 
@@ -944,6 +1041,10 @@ interface AllowanceHalf {
   pace: PopoverPace | null;
   /** Whether the Sync button should be calling for attention. */
   syncAttention: boolean;
+  /** Which controls this carrier leaves the panel anything to do with. */
+  controls: PopoverControls;
+  /** The plan the carrier's page named, or null where there is no such page. */
+  forfait: PopoverForfait | null;
 }
 
 /** The YAS half: the anchor, carried forward by the router's counter delta. */
@@ -987,6 +1088,10 @@ function anchoredHalf(
     // An anchor that can no longer carry the arithmetic is the one thing the
     // button has to call out: the figure on screen is the last honest one.
     syncAttention: allowance !== null && !allowance.trustworthy,
+    controls: ALL_CONTROLS,
+    // The plan's name arrives on the anchor here, and the allowance strip
+    // already carries it — there is no second page to read one off.
+    forfait: null,
   };
 }
 
@@ -1113,8 +1218,14 @@ function portalHalf(
   clock: Clock,
   now: Date,
 ): AllowanceHalf {
-  const forfait = portal.reading?.forfait ?? null;
+  const read = portal.reading;
+  const forfait = read?.forfait ?? null;
   const consumedBytes = forfait?.consumedBytes ?? null;
+  // Built from the whole reading rather than from the measured figure: a page
+  // that listed several plans is worth saying so about even when none of them
+  // carried a volume the dial could use.
+  const chosen =
+    read === null || read === undefined ? null : buildForfait(read);
 
   // Nothing has been read, or the page listed no data forfait at all: the panel
   // shows the router's figures and says the allowance is not known yet.
@@ -1125,6 +1236,8 @@ function portalHalf(
       allowance: noAllowance(),
       pace: null,
       syncAttention: false,
+      controls: PORTAL_CONTROLS,
+      forfait: chosen,
     };
   }
 
@@ -1142,8 +1255,10 @@ function portalHalf(
     allowance: buildPortalAllowance(forfait, reading, portal, now),
     pace: buildMonthlyPace(reading),
     // There is no dialogue to press for and no anchor to re-take: the Sync
-    // button has no work on Orange, and T-56 takes it off the panel.
+    // button has no work on Orange, and `controls` takes it off the panel.
     syncAttention: false,
+    controls: PORTAL_CONTROLS,
+    forfait: chosen,
   };
 }
 
@@ -1235,5 +1350,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     planCapPrompt,
     pace: half.pace,
     sync: buildSync(syncState, half.syncAttention),
+    controls: half.controls,
+    forfait: half.forfait,
   };
 }

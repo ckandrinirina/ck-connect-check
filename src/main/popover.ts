@@ -37,6 +37,9 @@ export const POPOVER_SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
 /** The plan-length field's submit, carrying the characters typed into it. */
 export const POPOVER_SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 
+/** An alternative forfait pressed, carrying the label the carrier gave it. */
+export const POPOVER_CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
+
 /**
  * The page, as the build leaves it. `npm run build` copies it and its stylesheet
  * into `dist/renderer/`, and that copy is the one the app loads: a packaged
@@ -77,6 +80,8 @@ export interface PopoverOptions {
   onSetPlanLimit?: (value: string) => void;
   /** The user submitted the plan-length field, on the same terms. */
   onSetPlanDays?: (value: string) => void;
+  /** The user picked one of the carrier's other forfaits, by its own label. */
+  onChooseForfait?: (label: string) => void;
 }
 
 /**
@@ -165,10 +170,17 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onChooseForfaitMessage(event: IpcMainEvent, payload: unknown): void {
+    if (fromThisPanel(event) && typeof payload === "string") {
+      options.onChooseForfait?.(payload);
+    }
+  }
+
   ipcMain.on(POPOVER_SYNC_CHANNEL, onSyncMessage);
   ipcMain.on(POPOVER_SAVE_PASSWORD_CHANNEL, onSavePasswordMessage);
   ipcMain.on(POPOVER_SET_PLAN_LIMIT_CHANNEL, onSetPlanLimitMessage);
   ipcMain.on(POPOVER_SET_PLAN_DAYS_CHANNEL, onSetPlanDaysMessage);
+  ipcMain.on(POPOVER_CHOOSE_FORFAIT_CHANNEL, onChooseForfaitMessage);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -314,6 +326,10 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       ipcMain.removeListener(
         POPOVER_SET_PLAN_DAYS_CHANNEL,
         onSetPlanDaysMessage,
+      );
+      ipcMain.removeListener(
+        POPOVER_CHOOSE_FORFAIT_CHANNEL,
+        onChooseForfaitMessage,
       );
       alive()?.destroy();
       window = null;

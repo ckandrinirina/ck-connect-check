@@ -208,6 +208,22 @@
           that can no longer be trusted has to say so out loud.
         -->
         <p class="allowance-note" data-field="allowanceNote"></p>
+
+        <!--
+          Which plan the figure above is about, when the app picked it from
+          several rather than the user. It sits here because it qualifies that
+          figure — the name itself is already on the line above, in the slot a
+          synced plan label holds on the other carrier.
+
+          Hidden through the `hidden` attribute, so it costs no height at all
+          on the ordinary panel: one plan, or a plan already chosen. The
+          buttons are built by `popover.ts` — there are as many as the carrier
+          listed, which is not a number this page can know.
+        -->
+        <div class="forfait-choice" data-forfait-choice hidden>
+          <p class="forfait-note" data-field="forfaitNote"></p>
+          <div class="forfait-alternatives" data-forfait-alternatives></div>
+        </div>
       </section>
 
       <!--
@@ -248,7 +264,7 @@
         proof the panel has not frozen. The button that starts it is in the
         header.
       -->
-      <footer class="sync">
+      <footer class="sync" data-sync-row>
         <p class="sync-status" data-field="syncStatus" role="status"></p>
       </footer>
     </div>

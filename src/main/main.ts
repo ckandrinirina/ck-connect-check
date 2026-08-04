@@ -91,6 +91,11 @@ export interface MenuBarApp {
   setPlanLimit(value: string): void;
   /** Stores a plan length the same way, and for the same reason. */
   setPlanDays(value: string): void;
+  /**
+   * Remembers which of the carrier's forfaits the meter measures, by the label
+   * the carrier gave it. Exposed for the same reason the two above are.
+   */
+  setForfait(label: string): void;
   /** Stops polling and releases the tray item. */
   stop(): void;
 }
@@ -138,6 +143,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       },
       onSetPlanDays: (value) => {
         setPlanDays(value);
+      },
+      onChooseForfait: (label) => {
+        setForfait(label);
       },
     });
 
@@ -247,6 +255,37 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       saveConfig(configPath, config);
     } catch (error) {
       console.warn(`could not record the plan length: ${String(error)}`);
+    }
+
+    refreshPopover();
+  }
+
+  /**
+   * Remembers which forfait the meter measures.
+   *
+   * The label is written onto the same config object the poller holds, so the
+   * next portal read selects against it — the choice is applied where every
+   * poll applies it, rather than being pushed into the panel from here.
+   *
+   * A blank label is dropped rather than stored. It could only arrive from a
+   * page that named no plan, and clearing the stored choice would put the
+   * meter back on whichever forfait the portal happens to list first.
+   */
+  function setForfait(label: string): void {
+    const wanted = label.trim();
+
+    if (wanted === "") {
+      return;
+    }
+
+    config.orangeForfaitLabel = wanted;
+
+    try {
+      saveConfig(configPath, config);
+    } catch (error) {
+      // The choice still governs this run; losing it on quit is better than
+      // refusing it outright, exactly as the two typed settings decide.
+      console.warn(`could not record the chosen forfait: ${String(error)}`);
     }
 
     refreshPopover();
@@ -459,6 +498,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     sync: () => sync.start(),
     setPlanLimit,
     setPlanDays,
+    setForfait,
     stop() {
       clearInterval(staleCheck);
       poller.stop();
