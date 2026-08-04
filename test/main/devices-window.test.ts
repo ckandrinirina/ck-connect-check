@@ -20,6 +20,7 @@ import {
   createDevicesWindow,
 } from "../../src/main/devices-window.js";
 import type { Device } from "../../src/hilink/devices.js";
+import type { MacFilter } from "../../src/hilink/macfilter.js";
 
 const electron = vi.hoisted(() => ({
   windows: [] as FakeWindow[],
@@ -300,6 +301,14 @@ function pushedScripts(): string[] {
   );
 }
 
+/** A filter in one mode, remembering the addresses given. */
+function macFilter(
+  mode: MacFilter["mode"],
+  ...entries: { mac: string; name: string }[]
+): MacFilter {
+  return { mode, entries, ssids: [] };
+}
+
 describe("buildDevicesModel", () => {
   it("spells one row per device, the way the window reads them", () => {
     const model = buildDevicesModel({ online: true, devices: [device()] });
@@ -313,6 +322,51 @@ describe("buildDevicesModel", () => {
           mac: "A2:00:5E:00:00:01",
           network: "HUAWEI-B310-XXXX",
           connectedFor: "5h 52m",
+          blocked: false,
+          present: true,
+        },
+      ],
+    });
+  });
+
+  it("reads every device as allowed when no filter has been read yet", () => {
+    // The filter needs the password and a second call; until one has landed the
+    // window states what it knows rather than guessing at a block.
+    const model = buildDevicesModel({ online: true, devices: [device()] });
+
+    expect(
+      model.state === "listed" ? model.devices.map((one) => one.blocked) : [],
+    ).toEqual([false]);
+  });
+
+  it("marks a blacklisted device blocked in the row it spells", () => {
+    const model = buildDevicesModel(
+      { online: true, devices: [device()] },
+      macFilter("blacklist", { mac: "a2-00-5e-00-00-01", name: "" }),
+    );
+
+    expect(
+      model.state === "listed" ? model.devices[0]?.blocked : undefined,
+    ).toBe(true);
+  });
+
+  it("spells a remembered but absent device as a row of its own", () => {
+    const model = buildDevicesModel(
+      { online: true, devices: [] },
+      macFilter("blacklist", { mac: "A6:00:5E:00:00:03", name: "iPad" }),
+    );
+
+    expect(model).toEqual({
+      state: "listed",
+      devices: [
+        {
+          name: "iPad",
+          ip: "",
+          mac: "A6:00:5E:00:00:03",
+          network: "",
+          connectedFor: "",
+          blocked: true,
+          present: false,
         },
       ],
     });

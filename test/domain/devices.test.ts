@@ -12,10 +12,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { Device } from "../../src/hilink/devices.js";
+import type { MacFilter } from "../../src/hilink/macfilter.js";
 import {
   compareDevices,
   deviceAssociatedFor,
   deviceDisplayName,
+  isDeviceBlocked,
+  listDevices,
+  normaliseMac,
   sortDevices,
 } from "../../src/domain/devices.js";
 
@@ -174,6 +178,243 @@ describe("compareDevices — the tiebreakers", () => {
     const a = device({ name: "Zeta", mac: "A2:00:5E:00:00:01" });
     const b = device({ name: "eta", mac: "A6:00:5E:00:00:03" });
     expect(compareDevices(a, b)).toBeGreaterThan(0);
+  });
+});
+
+/** A filter in one mode, remembering the addresses given. */
+function filter(
+  mode: MacFilter["mode"],
+  ...entries: (string | { mac: string; name: string })[]
+): MacFilter {
+  return {
+    mode,
+    entries: entries.map((entry) =>
+      typeof entry === "string" ? { mac: entry, name: "" } : entry,
+    ),
+    ssids: [],
+  };
+}
+
+const LAPTOP = "A2:00:5E:00:00:01";
+const PHONE = "00:1A:2B:00:00:02";
+
+describe("normaliseMac", () => {
+  it("reads the same address written two ways as one address", () => {
+    expect(normaliseMac("a2:00:5e:00:00:01")).toBe(
+      normaliseMac("A2-00-5E-00-00-01"),
+    );
+  });
+
+  it("ignores the separator style entirely", () => {
+    expect(normaliseMac("A2-00-5E-00-00-01")).toBe(normaliseMac(LAPTOP));
+    expect(normaliseMac("a2005e000001")).toBe(normaliseMac(LAPTOP));
+  });
+
+  it("tells two genuinely different addresses apart", () => {
+    expect(normaliseMac(LAPTOP)).not.toBe(normaliseMac(PHONE));
+  });
+});
+
+describe("isDeviceBlocked — the filter is off", () => {
+  it("reads a device the list names as allowed all the same", () => {
+    // The state the router is in today and the one every fresh install meets:
+    // the list is remembered, and it governs nothing.
+    expect(isDeviceBlocked(filter("off", LAPTOP), LAPTOP)).toBe(false);
+  });
+
+  it("reads a device the list does not name as allowed", () => {
+    expect(isDeviceBlocked(filter("off", LAPTOP), PHONE)).toBe(false);
+  });
+
+  it("blocks nothing whatever the list holds", () => {
+    const remembered = filter("off", LAPTOP, PHONE, "AE:00:5E:00:00:04");
+
+    for (const mac of [
+      LAPTOP,
+      PHONE,
+      "AE:00:5E:00:00:04",
+      "A6:00:5E:00:00:03",
+    ]) {
+      expect(isDeviceBlocked(remembered, mac)).toBe(false);
+    }
+  });
+});
+
+describe("isDeviceBlocked — a blacklist blocks what it names", () => {
+  const blacklist = filter("blacklist", LAPTOP);
+
+  it("reads a listed device as blocked", () => {
+    expect(isDeviceBlocked(blacklist, LAPTOP)).toBe(true);
+  });
+
+  it("reads an unlisted device as allowed", () => {
+    expect(isDeviceBlocked(blacklist, PHONE)).toBe(false);
+  });
+
+  it("blocks nobody when the list is empty", () => {
+    expect(isDeviceBlocked(filter("blacklist"), LAPTOP)).toBe(false);
+  });
+
+  it("matches a listed address written in another case and separator style", () => {
+    expect(
+      isDeviceBlocked(filter("blacklist", "a2-00-5e-00-00-01"), LAPTOP),
+    ).toBe(true);
+  });
+});
+
+describe("isDeviceBlocked — a whitelist blocks what it does not name", () => {
+  // Stated in its own right rather than as the blacklist's inverse: the whole
+  // point of reading the mode is that the same list means the opposite thing.
+  const whitelist = filter("whitelist", LAPTOP);
+
+  it("reads a listed device as allowed", () => {
+    expect(isDeviceBlocked(whitelist, LAPTOP)).toBe(false);
+  });
+
+  it("reads an unlisted device as blocked", () => {
+    expect(isDeviceBlocked(whitelist, PHONE)).toBe(true);
+  });
+
+  it("blocks everybody when the list is empty", () => {
+    expect(isDeviceBlocked(filter("whitelist"), LAPTOP)).toBe(true);
+  });
+
+  it("matches a listed address written in another case and separator style", () => {
+    expect(
+      isDeviceBlocked(filter("whitelist", "a2-00-5e-00-00-01"), LAPTOP),
+    ).toBe(false);
+  });
+});
+
+describe("isDeviceBlocked — the mode decides, never the list alone", () => {
+  it("gives opposite verdicts for one address under the two modes", () => {
+    expect(isDeviceBlocked(filter("blacklist", LAPTOP), LAPTOP)).toBe(true);
+    expect(isDeviceBlocked(filter("whitelist", LAPTOP), LAPTOP)).toBe(false);
+  });
+
+  it("gives opposite verdicts for an unlisted address under the two modes", () => {
+    expect(isDeviceBlocked(filter("blacklist", LAPTOP), PHONE)).toBe(false);
+    expect(isDeviceBlocked(filter("whitelist", LAPTOP), PHONE)).toBe(true);
+  });
+});
+
+describe("listDevices — the connected hosts", () => {
+  const connected = [
+    device({ name: "MacBookPro", mac: LAPTOP }),
+    device({ name: "galaxy-s10e", mac: PHONE }),
+  ];
+
+  it("marks a blacklisted host as blocked and the others as allowed", () => {
+    const listed = listDevices(connected, filter("blacklist", PHONE));
+
+    expect(listed.map((one) => [one.device.mac, one.blocked])).toEqual([
+      [PHONE, true],
+      [LAPTOP, false],
+    ]);
+  });
+
+  it("marks every connected host as present", () => {
+    const listed = listDevices(connected, filter("blacklist", PHONE));
+
+    expect(listed.every((one) => one.present)).toBe(true);
+  });
+
+  it("marks nothing blocked while the filter is off", () => {
+    const listed = listDevices(connected, filter("off", PHONE, LAPTOP));
+
+    expect(listed.some((one) => one.blocked)).toBe(false);
+  });
+
+  it("puts the devices in the domain's stable order", () => {
+    const listed = listDevices(connected, filter("off"));
+
+    expect(listed.map((one) => one.device.name)).toEqual([
+      "galaxy-s10e",
+      "MacBookPro",
+    ]);
+  });
+
+  it("leaves the caller's array untouched", () => {
+    const original = [...connected];
+    listDevices(connected, filter("blacklist", PHONE));
+
+    expect(connected).toEqual(original);
+  });
+
+  it("lists nothing when nothing is connected and nothing is filtered", () => {
+    expect(listDevices([], filter("off"))).toEqual([]);
+  });
+});
+
+describe("listDevices — a device the filter remembers and the router does not", () => {
+  const away = { mac: "A6:00:5E:00:00:03", name: "iPad" };
+
+  it("still lists it, marked blocked and absent", () => {
+    // It was blocked and has since gone away. Without a row it could only be
+    // unblocked by connecting first, which is exactly what it cannot do.
+    const listed = listDevices([], filter("blacklist", away));
+
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.blocked).toBe(true);
+    expect(listed[0]?.present).toBe(false);
+    expect(listed[0]?.device.mac).toBe("A6:00:5E:00:00:03");
+  });
+
+  it("shows it under the name the filter remembered", () => {
+    const listed = listDevices([], filter("blacklist", away));
+
+    expect(deviceDisplayName(listed[0]?.device as Device)).toBe("iPad");
+  });
+
+  it("falls back to the MAC when the filter remembered no name", () => {
+    const listed = listDevices([], filter("blacklist", "A6:00:5E:00:00:03"));
+
+    expect(deviceDisplayName(listed[0]?.device as Device)).toBe(
+      "A6:00:5E:00:00:03",
+    );
+  });
+
+  it("claims no address or association time the router never stated", () => {
+    const [only] = listDevices([], filter("blacklist", away));
+
+    expect(only?.device.ip).toBe("");
+    expect(only?.device.ssid).toBe("");
+    expect(only?.device.associatedSeconds).toBe(0);
+  });
+
+  it("orders it among the connected ones rather than appending it", () => {
+    const listed = listDevices(
+      [device({ name: "MacBookPro", mac: LAPTOP })],
+      filter("blacklist", away),
+    );
+
+    expect(listed.map((one) => one.device.name)).toEqual([
+      "iPad",
+      "MacBookPro",
+    ]);
+  });
+
+  it("does not list a remembered address that is also connected twice", () => {
+    const listed = listDevices(
+      [device({ name: "MacBookPro", mac: LAPTOP })],
+      filter("blacklist", { mac: "a2-00-5e-00-00-01", name: "stale name" }),
+    );
+
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.present).toBe(true);
+    expect(listed[0]?.device.name).toBe("MacBookPro");
+    expect(listed[0]?.blocked).toBe(true);
+  });
+
+  it("adds no row for a remembered address while the filter is off", () => {
+    // Nothing is blocked, so there is nothing to unblock, and a ghost row for
+    // a device that is neither here nor barred answers no question.
+    expect(listDevices([], filter("off", away))).toEqual([]);
+  });
+
+  it("adds no row for a whitelisted address that is merely away", () => {
+    // A whitelist entry names a device that is allowed, not one that is barred.
+    expect(listDevices([], filter("whitelist", away))).toEqual([]);
   });
 });
 

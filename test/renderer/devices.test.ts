@@ -102,6 +102,8 @@ function row(overrides: Partial<DeviceRow> = {}): DeviceRow {
     mac: "A2:00:5E:00:00:01",
     network: "HUAWEI-B310-XXXX",
     connectedFor: "5h 52m",
+    blocked: false,
+    present: true,
     ...overrides,
   };
 }
@@ -149,6 +151,7 @@ describe("the devices page", () => {
       "MAC address",
       "Network",
       "Connected for",
+      "Access",
     ]);
   });
 
@@ -194,6 +197,7 @@ describe("the devices table", () => {
       "00:1A:2B:00:00:02",
       "HUAWEI-B310-XXXX",
       "1h 0m",
+      "Allowed",
     ]);
     expect(cellsOfRow(1)).toEqual([
       "MacBookPro",
@@ -201,6 +205,7 @@ describe("the devices table", () => {
       "A2:00:5E:00:00:01",
       "HUAWEI-B310-XXXX",
       "5h 52m",
+      "Allowed",
     ]);
   });
 
@@ -268,6 +273,7 @@ describe("the devices table", () => {
       "00:1A:2B:00:00:02",
       "HUAWEI-B310-XXXX",
       "2h 0m",
+      "Allowed",
     ]);
   });
 
@@ -280,6 +286,98 @@ describe("the devices table", () => {
       "<img src=x onerror=alert(1)>",
     );
     expect(document.querySelector("table img")).toBeNull();
+  });
+});
+
+/** The last cell of a row — what the page says about the device's access. */
+function accessOfRow(index: number): string | null {
+  const cells = bodyRows()[index]?.cells;
+
+  return cells === undefined
+    ? null
+    : (cells[cells.length - 1]?.textContent ?? null);
+}
+
+/**
+ * What the router is already blocking. The window ships unstyled, so a colour
+ * would say nothing at all here — and once it is styled it would still say
+ * nothing to a colour-blind reader, which is why every assertion below is about
+ * a word or an attribute.
+ */
+describe("the devices table — the blocked state", () => {
+  it("states a blocked device in words rather than by a colour alone", async () => {
+    await apply(listed(row({ blocked: true })));
+
+    expect(accessOfRow(0)).toBe("Blocked");
+    expect(bodyRows()[0]?.textContent).toContain("Blocked");
+  });
+
+  it("states an allowed device as allowed", async () => {
+    await apply(listed(row({ blocked: false })));
+
+    expect(accessOfRow(0)).toBe("Allowed");
+  });
+
+  it("marks the row itself, so a style has something to hang on", async () => {
+    await apply(listed(row({ blocked: true }), PHONE));
+
+    expect(bodyRows()[0]?.dataset["blocked"]).toBe("true");
+    expect(bodyRows()[1]?.dataset["blocked"]).toBe("false");
+  });
+
+  it("shows a device the filter remembers but the router no longer reports", async () => {
+    await apply(
+      listed(
+        row({
+          name: "iPad",
+          ip: "",
+          mac: "A6:00:5E:00:00:03",
+          network: "",
+          connectedFor: "",
+          blocked: true,
+          present: false,
+        }),
+      ),
+    );
+
+    // Blocked and gone. Without the row, unblocking it would need it to connect
+    // first, which is the one thing a blocked device cannot do.
+    expect(accessOfRow(0)).toBe("Blocked");
+    expect(cellsOfRow(0)).toEqual([
+      "iPad",
+      "",
+      "A6:00:5E:00:00:03",
+      "",
+      "Not connected",
+      "Blocked",
+    ]);
+    expect(bodyRows()[0]?.dataset["present"]).toBe("false");
+  });
+
+  it("marks a connected device as present", async () => {
+    await apply(listed(row()));
+
+    expect(bodyRows()[0]?.dataset["present"]).toBe("true");
+  });
+
+  it("follows a verdict that changed between polls, in the row it already has", async () => {
+    await apply(listed(row({ blocked: false })));
+    const [before] = bodyRows();
+
+    await apply(listed(row({ blocked: true })));
+
+    // Keyed by MAC still: blocking a device must not pull its row out from
+    // under the click that blocked it.
+    expect(bodyRows()[0]).toBe(before);
+    expect(accessOfRow(0)).toBe("Blocked");
+    expect(bodyRows()[0]?.dataset["blocked"]).toBe("true");
+  });
+
+  it("writes the access as text, never as markup", async () => {
+    await apply(listed(row({ blocked: true })));
+
+    expect(document.querySelector("table img")).toBeNull();
+    expect(bodyRows()[0]?.cells).toHaveLength(6);
   });
 });
 
