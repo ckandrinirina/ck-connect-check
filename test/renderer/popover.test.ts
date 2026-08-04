@@ -69,7 +69,10 @@ function loadPage(): void {
 
   document.documentElement.innerHTML = inner;
 
-  for (const attribute of ["stale", "limit", "usage"]) {
+  // `data-tab` among them: it is the one root flag the renderer treats as
+  // memory rather than as a redraw of the model, so a test that left it set
+  // would hand the next one a panel already on the Devices tab.
+  for (const attribute of ["stale", "limit", "usage", "tab"]) {
     document.documentElement.removeAttribute(`data-${attribute}`);
   }
 }
@@ -3063,12 +3066,14 @@ describe("the panel's notice row", () => {
     }
   });
 
-  it("stands where the sync status line stood, at the foot of the main view", () => {
+  it("stands where the sync status line stood, at the foot of the Usage pane", () => {
     apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
 
     expect(noticeRow().closest("[data-main-view]")).toBe(mainView());
     expect(noticeRow().closest("[data-settings-view]")).toBeNull();
-    expect(mainView().lastElementChild).toBe(noticeRow());
+    // The foot it stands at is the pane's, not the view's: the Devices pane is
+    // the view's last child now, and it is not on the panel at the same time.
+    expect(pane("usage").lastElementChild).toBe(noticeRow());
   });
 
   it("draws the last figure the portal gave beside the line, not instead of it", () => {
@@ -3171,5 +3176,335 @@ describe("the panel's notice row", () => {
         true,
       );
     }
+  });
+});
+
+/** The tab strip, and the two controls on it, by the roles they claim. */
+function tabList(): HTMLElement {
+  const element = document.querySelector<HTMLElement>('[role="tablist"]');
+
+  if (element === null) {
+    throw new Error("the panel has no tab strip");
+  }
+
+  return element;
+}
+
+function tabs(): HTMLButtonElement[] {
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+}
+
+function tabFor(name: "usage" | "devices"): HTMLButtonElement {
+  const element = document.querySelector<HTMLButtonElement>(
+    `[role="tab"][data-tab="${name}"]`,
+  );
+
+  if (element === null) {
+    throw new Error(`the panel has no ${name} tab`);
+  }
+
+  return element;
+}
+
+function pane(name: "usage" | "devices"): HTMLElement {
+  const element = document.querySelector<HTMLElement>(`[data-pane="${name}"]`);
+
+  if (element === null) {
+    throw new Error(`the panel has no ${name} pane`);
+  }
+
+  return element;
+}
+
+/** Which tab the page says is showing, as the root element holds it. */
+function selectedTab(): string | undefined {
+  return document.documentElement.dataset["tab"];
+}
+
+/** An arrow press on the strip, as a keyboard user makes it. */
+function pressKey(on: HTMLElement, key: string): void {
+  on.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+}
+
+describe("the panel's tabs — the strip itself", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("renders exactly two tab controls, Usage and Devices", () => {
+    expect(tabs()).toHaveLength(2);
+    expect(tabs().map((tab) => tab.textContent?.trim())).toEqual([
+      "Usage",
+      "Devices",
+    ]);
+  });
+
+  it("carries them as real buttons, so nothing has to be taught to click", () => {
+    for (const tab of tabs()) {
+      expect(tab.tagName).toBe("BUTTON");
+      expect(tab.getAttribute("type")).toBe("button");
+    }
+  });
+
+  it("puts the strip inside the main view, behind the settings toggle", () => {
+    expect(tabList().closest("[data-main-view]")).toBe(mainView());
+    expect(tabList().closest("[data-settings-view]")).toBeNull();
+  });
+
+  it("opens on Usage, the figure the tray title already states", () => {
+    expect(selectedTab()).toBe("usage");
+    expect(pane("usage").hidden).toBe(false);
+    expect(pane("devices").hidden).toBe(true);
+  });
+
+  it("shows exactly one pane whichever tab is selected", () => {
+    for (const name of ["usage", "devices"] as const) {
+      tabFor(name).click();
+
+      const shown = [pane("usage"), pane("devices")].filter(
+        (element) => !element.hidden,
+      );
+
+      expect(shown).toEqual([pane(name)]);
+    }
+  });
+
+  it("keeps the usage figures on the Usage pane rather than loose in the view", () => {
+    for (const selector of [
+      "[data-dial]",
+      "[data-pace]",
+      ".allowance",
+      ".rates",
+      ".stats",
+    ]) {
+      const section = document.querySelector(selector);
+
+      if (section === null) {
+        throw new Error(`the panel has no ${selector}`);
+      }
+
+      expect(section.closest("[data-pane]")).toBe(pane("usage"));
+    }
+  });
+
+  it("costs no height at all for whichever pane is put away", () => {
+    // Asserted against the stylesheet, as the two views already are: jsdom
+    // lays nothing out, and the pane is given a `display` of its own, so the
+    // UA rule for `hidden` alone would not take it off the panel.
+    expect(POPOVER_CSS).toMatch(/\.pane\[hidden\]\s*\{[^}]*display:\s*none/);
+  });
+});
+
+describe("the panel's tabs — both panes exist from first paint", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("holds the Devices pane in the DOM before it has ever been selected", () => {
+    // Queried while it is the hidden one: a pane built on first press would
+    // discard the row identity that keeps a device steady under a reader.
+    expect(pane("devices").isConnected).toBe(true);
+    expect(pane("devices").hidden).toBe(true);
+    expect(pane("devices").closest("[data-main-view]")).toBe(mainView());
+  });
+
+  it("ships both panes in the markup rather than building either", () => {
+    expect(INDEX_HTML).toMatch(/data-pane="usage"/);
+    expect(INDEX_HTML).toMatch(/data-pane="devices"/);
+  });
+});
+
+describe("the panel's tabs — selecting one creates nothing", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("flips one attribute on the page root rather than swapping markup", () => {
+    expect(selectedTab()).toBe("usage");
+
+    tabFor("devices").click();
+
+    expect(selectedTab()).toBe("devices");
+  });
+
+  it("keeps the very same pane nodes across a switch and back", () => {
+    const before = { usage: pane("usage"), devices: pane("devices") };
+
+    tabFor("devices").click();
+    tabFor("usage").click();
+
+    expect(pane("usage")).toBe(before.usage);
+    expect(pane("devices")).toBe(before.devices);
+  });
+
+  it("keeps the very same tab nodes too", () => {
+    const before = tabs();
+
+    tabFor("devices").click();
+    tabFor("usage").click();
+
+    expect(tabs()).toEqual(before);
+  });
+
+  it("does not grow the panel a second pane on repeated presses", () => {
+    for (let press = 0; press < 4; press += 1) {
+      tabFor(press % 2 === 0 ? "devices" : "usage").click();
+    }
+
+    expect(document.querySelectorAll("[data-pane]")).toHaveLength(2);
+    expect(tabs()).toHaveLength(2);
+  });
+
+  it("leaves the tab alone when a poll lands", () => {
+    tabFor("devices").click();
+
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+
+    expect(selectedTab()).toBe("devices");
+    expect(pane("devices").hidden).toBe(false);
+  });
+});
+
+describe("the panel's tabs — reaching them without a mouse", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("says which tab is selected, to assistive tech as well as to the eye", () => {
+    expect(tabFor("usage").getAttribute("aria-selected")).toBe("true");
+    expect(tabFor("devices").getAttribute("aria-selected")).toBe("false");
+
+    tabFor("devices").click();
+
+    expect(tabFor("usage").getAttribute("aria-selected")).toBe("false");
+    expect(tabFor("devices").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("names the pane each tab governs, and the pane names it back", () => {
+    for (const name of ["usage", "devices"] as const) {
+      const controls = tabFor(name).getAttribute("aria-controls");
+
+      expect(controls).toBe(pane(name).id);
+      expect(pane(name).getAttribute("role")).toBe("tabpanel");
+      expect(pane(name).getAttribute("aria-labelledby")).toBe(tabFor(name).id);
+    }
+  });
+
+  it("keeps exactly one tab in the tab order, as a tablist should", () => {
+    // Roving tabindex: Tab reaches the strip once and the arrows move within
+    // it, rather than every tab being its own stop.
+    expect(tabFor("usage").tabIndex).toBe(0);
+    expect(tabFor("devices").tabIndex).toBe(-1);
+
+    tabFor("devices").click();
+
+    expect(tabFor("usage").tabIndex).toBe(-1);
+    expect(tabFor("devices").tabIndex).toBe(0);
+  });
+
+  it("moves to the next tab on a right arrow", () => {
+    pressKey(tabFor("usage"), "ArrowRight");
+
+    expect(selectedTab()).toBe("devices");
+    expect(document.activeElement).toBe(tabFor("devices"));
+  });
+
+  it("moves back on a left arrow", () => {
+    tabFor("devices").click();
+    pressKey(tabFor("devices"), "ArrowLeft");
+
+    expect(selectedTab()).toBe("usage");
+    expect(document.activeElement).toBe(tabFor("usage"));
+  });
+
+  it("wraps around the ends rather than stopping at them", () => {
+    pressKey(tabFor("usage"), "ArrowLeft");
+    expect(selectedTab()).toBe("devices");
+
+    pressKey(tabFor("devices"), "ArrowRight");
+    expect(selectedTab()).toBe("usage");
+  });
+
+  it("jumps to the first and last tab on Home and End", () => {
+    pressKey(tabFor("usage"), "End");
+    expect(selectedTab()).toBe("devices");
+
+    pressKey(tabFor("devices"), "Home");
+    expect(selectedTab()).toBe("usage");
+  });
+
+  it("ignores keys that are not the strip's own", () => {
+    pressKey(tabFor("usage"), "ArrowUp");
+    pressKey(tabFor("usage"), "a");
+
+    expect(selectedTab()).toBe("usage");
+  });
+
+  it("gives the strip an accessible name, so it is not an unlabelled group", () => {
+    const name =
+      tabList().getAttribute("aria-label") ??
+      tabList().getAttribute("aria-labelledby") ??
+      "";
+
+    expect(name.trim()).not.toBe("");
+  });
+});
+
+describe("the panel's tabs — what a reopen remembers", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+  });
+
+  it("comes back on the tab that was last shown", () => {
+    tabFor("devices").click();
+
+    // What `src/main/popover.ts` calls on every open. The window is hidden
+    // rather than destroyed between opens, so the tab is still where the user
+    // left it — and someone who went looking for a device usually looks again.
+    window.resetPopoverView();
+
+    expect(selectedTab()).toBe("devices");
+    expect(pane("devices").hidden).toBe(false);
+    expect(pane("usage").hidden).toBe(true);
+    expect(tabFor("devices").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("still puts the settings away on that reopen", () => {
+    tabFor("devices").click();
+    settingsToggle().click();
+
+    expect(settingsView().hidden).toBe(false);
+
+    window.resetPopoverView();
+
+    // The tab is memory; the settings view is not. It is entered a few times a
+    // year and the figures are what the panel is opened for.
+    expect(settingsView().hidden).toBe(true);
+    expect(mainView().hidden).toBe(false);
+    expect(selectedTab()).toBe("devices");
+  });
+
+  it("takes the whole strip away while the settings are showing", () => {
+    settingsToggle().click();
+
+    // The strip lives inside the main view, so the settings hide it with
+    // everything else — there is no third pane competing with the two tabs.
+    expect(mainView().hidden).toBe(true);
+    expect(tabList().closest("[data-main-view]")?.hidden).toBe(true);
+  });
+
+  it("survives a reopen that lands before any model has", () => {
+    tabFor("devices").click();
+
+    // `resetPopoverView` runs before the push on every open, so it must not
+    // need a model to know which tab it is putting back.
+    window.resetPopoverView();
+
+    expect(selectedTab()).toBe("devices");
   });
 });

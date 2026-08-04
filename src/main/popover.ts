@@ -209,6 +209,11 @@ export function createPopover(options: PopoverOptions = {}): Popover {
    * clicked. The figures are what the panel is opened for; the settings are
    * typed once a month.
    *
+   * The Usage/Devices tab is deliberately *not* part of that reset — the page
+   * keeps whichever pane was last shown. Someone who went looking for a device
+   * usually looks again, and the tray title states the usage figure without the
+   * panel being opened at all.
+   *
    * Rejects while the page is still loading, which is exactly the case where
    * there is nothing to reset — a freshly loaded page opens on the main view.
    */

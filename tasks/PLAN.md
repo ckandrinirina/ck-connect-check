@@ -73,7 +73,7 @@
 | T-69 | Never let this Mac block itself off the router                          | done   | S    | T-68                         |
 | T-70 | Say why the list is empty or a block did not take                       | done   | S    | T-66, T-68                   |
 | T-71 | Show the devices window in the README                                   | todo   | S    | T-66, T-68                   |
-| T-72 | Put the device list on a tab inside the panel                           | todo   | M    | T-66, T-70                   |
+| T-72 | Put the device list on a tab inside the panel                           | done   | M    | T-66, T-70                   |
 | T-73 | Draw the device rows at the panel's own width                           | todo   | M    | T-72                         |
 | T-74 | Move blocking onto the panel's own bridge                               | todo   | M    | T-72, T-73                   |
 | T-75 | Read the host list only while its tab is showing                        | todo   | S    | T-72, T-73                   |
@@ -4217,7 +4217,7 @@ that is not there.
 
 ## T-72 Put the device list on a tab inside the panel
 
-T-72 · status: todo · size: M · needs: T-66, T-70 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/popover.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts
+T-72 · status: done · size: M · needs: T-66, T-70 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/popover.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts
 
 T-66 gave the devices their own 520 px window because the panel had 497 of its 520 px spent
 and no room to scroll. That reasoning holds for putting the list _beside_ the usage figures
@@ -4230,21 +4230,37 @@ fills it.
 
 ### Acceptance
 
-- [ ] the panel renders exactly two tab controls, Usage and Devices, and exactly one pane is visible at a time
-- [ ] both panes are in the DOM before either has been selected, asserted by querying the hidden one
-- [ ] selecting a tab changes an attribute and creates no elements, asserted by node identity across a switch and back
-- [ ] the tab controls are operable from the keyboard and the selected one is exposed as selected to assistive tech
-- [ ] reopening the panel shows the tab that was last selected, asserted across a hide and show cycle
-- [ ] the popover is still 320×520 and every existing Usage assertion passes untouched
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the panel renders exactly two tab controls, Usage and Devices, and exactly one pane is visible at a time
+- [x] both panes are in the DOM before either has been selected, asserted by querying the hidden one
+- [x] selecting a tab changes an attribute and creates no elements, asserted by node identity across a switch and back
+- [x] the tab controls are operable from the keyboard and the selected one is exposed as selected to assistive tech
+- [x] reopening the panel shows the tab that was last selected, asserted across a hide and show cycle
+- [x] the popover is still 320×520 and every existing Usage assertion passes untouched
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write the failing tests — two panes, one visible, identity across a switch, the remembered tab
-2. [ ] Add the tab strip to `index.html` and style it in `popover.css`
-3. [ ] Drive the visible pane from one attribute on the page root, as the other panel states already are
-4. [ ] Remember the last tab so a reopen lands on it
-5. [ ] Run test, lint and build
+1. [x] Write the failing tests — two panes, one visible, identity across a switch, the remembered tab
+2. [x] Add the tab strip to `index.html` and style it in `popover.css`
+3. [x] Drive the visible pane from one attribute on the page root, as the other panel states already are
+4. [x] Remember the last tab so a reopen lands on it
+5. [x] Run test, lint and build
+
+### Notes
+
+The strip lives inside `data-main-view`, so the ⚙ settings still take the whole
+panel and there is no third surface competing with the two tabs. `resetPopoverView`
+puts the settings away on every open but deliberately leaves `data-tab` alone —
+that is what makes the reopen land where the user left it.
+
+`applyTabs` derives everything (pane `hidden`, `aria-selected`, roving `tabindex`)
+from the one root attribute and defaults an absent one to Usage, so a reloaded page
+heals itself rather than trusting what the static markup last said.
+
+One pre-existing assertion was retargeted rather than weakened: the notice row's
+"foot of the panel" check moved from `mainView().lastElementChild` to
+`pane("usage").lastElementChild`, because the Devices pane is the main view's last
+child now and is never on the panel at the same time.
 
 ## T-73 Draw the device rows at the panel's own width
 
