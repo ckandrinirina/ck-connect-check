@@ -175,7 +175,7 @@ function snapshot(usedBytes: number): RouterSnapshot {
       connectedDevices: 3,
       networkTypeCode: 101,
     },
-    carrier: { carrier: "Yas" },
+    carrier: { carrier: "Yas", id: "yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
   };
 }

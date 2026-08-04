@@ -63,7 +63,7 @@ function snapshot(overrides: Partial<RouterSnapshot> = {}): RouterSnapshot {
       // LTE, the code this device reports.
       networkTypeCode: 101,
     },
-    carrier: { carrier: "Yas" },
+    carrier: { carrier: "Yas", id: "yas" },
     billing: { startDay: 1, routerDataLimitBytes: 0, warnThresholdPercent: 90 },
     ...overrides,
   };

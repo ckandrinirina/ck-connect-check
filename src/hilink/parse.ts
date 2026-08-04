@@ -7,6 +7,8 @@
  * small scanner is enough and keeps the app free of an XML dependency.
  */
 
+import { carrierFrom } from "../domain/carrier.js";
+
 import type {
   BillingCycle,
   CarrierInfo,
@@ -305,7 +307,10 @@ export function parseStatus(xml: string): RouterStatus {
 export function parseCurrentPlmn(xml: string): CarrierInfo {
   const endpoint = "/api/net/current-plmn";
   const fields = readReply(xml, endpoint);
-  return { carrier: requireText(fields, "FullName", endpoint) };
+  // The only optional field on any endpoint: a router attached to nothing names
+  // no network, and that is a state to render rather than a reply to reject.
+  const carrier = fields.get("FullName") ?? "";
+  return { carrier, id: carrierFrom(carrier) };
 }
 
 export function parseStartDate(xml: string): BillingCycle {
