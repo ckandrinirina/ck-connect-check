@@ -31,6 +31,7 @@ import {
   buildPopoverModel,
   type PopoverModel,
   type PortalFailure,
+  type PortalStanding,
   type UsageReading,
 } from "../../src/main/view-model.js";
 
@@ -2320,5 +2321,121 @@ describe("buildPopoverModel — what a notice never does", () => {
       expect(model.notice).not.toBe("");
       expect(model.controls.sync).toBe(false);
     }
+  });
+});
+
+/** The words the dial says while the page has told it nothing. */
+const WAITING_PROMPT = "Waiting for the Orange portal to answer.";
+
+/** The claim the prompt must not make once the page has spoken. */
+const CLAIMS_WAITING = /waiting/i;
+
+/**
+ * What a notice states about the page having answered.
+ *
+ * Every wording the portal can produce states one or the other outright — "did
+ * not answer" on the two that never got a reply, "answered" or "listed" on the
+ * three that did — and the first test below holds that true, because a notice
+ * classified as neither would make every pairing under it vacuous.
+ */
+const NOTICE_SAYS_ANSWERED = /page (answered|listed)/i;
+const NOTICE_SAYS_NO_ANSWER = /did not answer/i;
+
+/**
+ * Every portal standing the panel can be handed, as a cross product rather
+ * than as a hand-written list of the interesting ones: the state nobody
+ * thought to write a case for is exactly the one a contradiction slips past.
+ */
+function portalStandings(): PortalStanding[] {
+  const failures: (PortalFailure | undefined)[] = [
+    undefined,
+    { state: "unreachable", reason: "offline" },
+    { state: "unreachable", reason: "timeout" },
+    { state: "unreachable", reason: "http", status: 503 },
+    { state: "unreadable" },
+  ];
+  const readings: PortalStatus["reading"][] = [
+    null,
+    portal(true).reading,
+    portalOver([UNPLACED, UNPLACED_TOO]).reading,
+    portalOver([VOICE]).reading,
+  ];
+
+  return failures.flatMap((failure) =>
+    readings.flatMap((reading) =>
+      [true, false].map((live) => ({ reading, live, failure })),
+    ),
+  );
+}
+
+/** The Orange panel for one whole standing, failure and all, against a 20 Go cap. */
+function standingModel(standing: PortalStanding): PopoverModel {
+  return buildPopoverModel({
+    result: ORANGE_ONLINE,
+    lastReading: null,
+    config: configWith(20_000_000_000),
+    portal: standing,
+    clock,
+  });
+}
+
+describe("buildPopoverModel — the dial's prompt beside the notice under it", () => {
+  const standings = portalStandings();
+
+  it("has every notice state outright whether the page answered", () => {
+    for (const standing of standings) {
+      const { notice } = standingModel(standing);
+
+      if (notice === "") continue;
+
+      expect(
+        NOTICE_SAYS_ANSWERED.test(notice) !==
+          NOTICE_SAYS_NO_ANSWER.test(notice),
+      ).toBe(true);
+    }
+  });
+
+  it("never leaves the dial waiting for a page the notice says answered", () => {
+    // The prompt is the larger, earlier text on the panel, so a reader takes
+    // it first: left claiming a wait, it makes the notice read as the
+    // contradiction rather than as the correction.
+    for (const standing of standings) {
+      const model = standingModel(standing);
+
+      if (!NOTICE_SAYS_ANSWERED.test(model.notice)) continue;
+
+      expect(model.progress.prompt).not.toMatch(CLAIMS_WAITING);
+    }
+  });
+
+  it("goes on waiting wherever nothing has come back from the page", () => {
+    for (const standing of standings) {
+      const model = standingModel(standing);
+
+      if (standing.reading !== null) continue;
+      if (NOTICE_SAYS_ANSWERED.test(model.notice)) continue;
+
+      expect(model.progress.prompt).toBe(WAITING_PROMPT);
+    }
+  });
+
+  it("waits in the same words before the portal has been asked once", () => {
+    expect(standingModel({ reading: null, live: false }).progress.prompt).toBe(
+      WAITING_PROMPT,
+    );
+  });
+
+  it("stops waiting once the page listed no Internet plan", () => {
+    const model = orangeModel(portalOver([UNPLACED, UNPLACED_TOO]));
+
+    expect(model.notice).not.toBe("");
+    expect(model.progress.prompt).not.toMatch(CLAIMS_WAITING);
+  });
+
+  it("stops waiting once the page answered with something unreadable", () => {
+    const model = orangeFailing({ state: "unreadable" }, null);
+
+    expect(model.notice).not.toBe("");
+    expect(model.progress.prompt).not.toMatch(CLAIMS_WAITING);
   });
 });
