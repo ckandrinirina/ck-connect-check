@@ -51,15 +51,16 @@
 | T-47 | Show the carrier's last valid day, not the midnight after it            | done   | S    | T-46                         |
 | T-48 | Say which daily figure is which                                         | done   | S    | T-47                         |
 | T-49 | Let the meter speak alone where it speaks                               | done   | S    | T-48                         |
-| T-50 | Know which carrier the SIM is on                                        | todo   | S    | T-03                         |
-| T-51 | Read Orange's forfaits out of the portal page                           | todo   | S    | T-01                         |
-| T-52 | Fetch the Orange portal without blocking the app                        | todo   | S    | T-51                         |
-| T-53 | Pick the Internet forfait when several are active                       | todo   | S    | T-51                         |
-| T-54 | Measure a Wifiber plan against the calendar month                       | todo   | M    | T-53                         |
-| T-55 | Feed the panel from whichever carrier the SIM is on                     | todo   | M    | T-50, T-52, T-54             |
-| T-56 | Show the forfait's name and hide what Orange cannot answer              | todo   | S    | T-55                         |
-| T-57 | Say when the portal cannot be reached or the forfait is unreadable      | todo   | S    | T-55                         |
-| T-58 | Bring the README and screenshots up to the Orange setup                 | todo   | S    | T-56, T-57                   |
+| T-50 | Know which carrier the SIM is on                                        | done   | S    | T-03                         |
+| T-51 | Read Orange's forfaits out of the portal page                           | done   | S    | T-01                         |
+| T-52 | Fetch the Orange portal without blocking the app                        | done   | S    | T-51                         |
+| T-53 | Pick the Internet forfait when several are active                       | done   | S    | T-51                         |
+| T-54 | Measure a Wifiber plan against the calendar month                       | done   | M    | T-53                         |
+| T-55 | Feed the panel from whichever carrier the SIM is on                     | done   | M    | T-50, T-52, T-54             |
+| T-56 | Show the forfait's name and hide what Orange cannot answer              | done   | S    | T-55                         |
+| T-57 | Say when the portal cannot be reached or the forfait is unreadable      | done   | S    | T-55                         |
+| T-58 | Bring the README and screenshots up to the Orange setup                 | todo   | S    | T-56, T-57, T-59             |
+| T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
 
 ## T-01 Set the project up so tests can run
 
@@ -2617,7 +2618,7 @@ T-48's labels are not wasted: `left to spend` is what makes the line legible at 
 
 ## T-50 Know which carrier the SIM is on
 
-T-50 · status: todo · size: S · needs: T-03 · files: src/domain/carrier.ts, src/hilink/parse.ts, src/main/view-model.ts, test/domain/carrier.test.ts, test/hilink/parse.test.ts
+T-50 · status: done · size: S · needs: T-03 · files: src/domain/carrier.ts, src/hilink/parse.ts, src/hilink/types.ts, test/domain/carrier.test.ts, test/hilink/parse.test.ts, test/main/main.test.ts, test/main/poller.test.ts, test/main/popover.test.ts, test/main/tray.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 The SIM moved from YAS to Orange MG on 2026-08-04 and the router noticed before we did:
 `/api/net/current-plmn` now answers `<FullName>ORANGE MG</FullName>` where it answered `Yas`.
@@ -2644,12 +2645,12 @@ same way an unrecognised network-type code is shown as its code rather than gues
 
 ### Acceptance
 
-- [ ] `ORANGE MG`, `Orange MG` and ` orange mg ` all resolve to `orange`
-- [ ] `Yas` and `YAS` resolve to `yas`
-- [ ] an unrecognised name resolves to `unknown` and the original string is retained for display
-- [ ] an empty or missing `FullName` resolves to `unknown` without throwing
-- [ ] the resolved carrier is exposed on the snapshot the view-model already receives
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `ORANGE MG`, `Orange MG` and `orange mg` all resolve to `orange`
+- [x] `Yas` and `YAS` resolve to `yas`
+- [x] an unrecognised name resolves to `unknown` and the original string is retained for display
+- [x] an empty or missing `FullName` resolves to `unknown` without throwing
+- [x] the resolved carrier is exposed on the snapshot the view-model already receives
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2659,12 +2660,31 @@ same way an unrecognised network-type code is shown as its code rather than gues
 4. Carry the carrier onto the snapshot type and through `src/main/view-model.ts`
 5. Run test, lint and build
 
+### Notes
+
+- `src/main/view-model.ts` was declared but needed no edit, and was dropped from `files:`.
+  `CarrierInfo.id` rides on the snapshot the view-model already destructures at
+  `view-model.ts:947`, so the criterion is met by the type and the parse site alone. Putting
+  the carrier on `PopoverModel` would be display work beyond these criteria; it belongs to
+  whichever of T-55..T-57 actually branches on it.
+- The name is resolved at the `src/hilink/` parse boundary, not in the view-model. This
+  differs from the `networkTypeCode` precedent, which stays a bare number and is labelled in
+  the view — justified because the carrier drives control flow (USSD on YAS against a web
+  page on Orange) rather than display, and `src/hilink/ussd.ts` already imports from
+  `src/domain/`, so the direction is not new.
+- `parseCurrentPlmn` is now the only parser with an optional field: it reads `FullName` with
+  `?? ""` instead of `requireText`, so a reply carrying no `<FullName>` resolves to `unknown`
+  rather than throwing. The pre-existing "never returns undefined fields instead of throwing"
+  test does not cover it.
+- Six existing test files gained `id: "yas"` on their snapshot fixtures. QA confirmed the
+  edits are purely additive — no assertion was weakened to keep the suite green.
+
 ## T-51 Read Orange's forfaits out of the portal page
 
-T-51 · status: todo · size: S · needs: T-01 · files: src/orange/parse.ts, src/orange/types.ts, test/orange/parse.test.ts, test/fixtures/orange/info-conso.html
+T-51 · status: done · size: S · needs: T-01 · files: src/orange/parse.ts, src/orange/types.ts, test/orange/parse.test.ts, test/fixtures/orange/info-conso.html
 
 `http://123.orange.mg/info-conso/` is server-rendered HTML with the figure in the markup —
-there is no JSON API behind it, so the parse *is* the integration. This task is the pure half:
+there is no JSON API behind it, so the parse _is_ the integration. This task is the pure half:
 HTML string in, typed forfaits out, no network.
 
 The live capture from 2026-08-04 contains one forfait:
@@ -2673,7 +2693,11 @@ The live capture from 2026-08-04 contains one forfait:
 <div class="bundle-item">
   <span class="item_title title">Wifiber Go+ SSE</span>
   <span class="title-da-nature title">Internet</span>
-  <p>Vous avez consommé <span class="color-orange text-bolder text-nowrap">7.37Go</span> sur votre forfait</p>
+  <p>
+    Vous avez consommé
+    <span class="color-orange text-bolder text-nowrap">7.37Go</span> sur votre
+    forfait
+  </p>
 </div>
 ```
 
@@ -2698,13 +2722,13 @@ in the main process, so it is unconstrained.
 
 ### Acceptance
 
-- [ ] the committed fixture yields exactly one forfait: label `Wifiber Go+ SSE`, nature `Internet`, consumed 7 370 000 000 bytes
-- [ ] `7.37Go`, `512Mo`, `1,5Go` and `800Ko` each parse to the right byte count on the 1000³ scale
-- [ ] a `.bundle-circlebar` carrying `data-bundle-type` and `data-bundle-pcvalue` is read into the forfait; absent attributes leave the fields undefined rather than zero
-- [ ] a page with no `Forfaits en cours de validité` section returns an empty list, not an error
-- [ ] markup that matches no known shape returns an empty list and never throws
-- [ ] the account-level lines (`WiFiber` offer, `0 Ar` balance) are parsed but kept separate from the forfait list
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the committed fixture yields exactly one forfait: label `Wifiber Go+ SSE`, nature `Internet`, with the consumed volume the captured page states
+- [x] `7.37Go`, `512Mo`, `1,5Go` and `800Ko` each parse to the right byte count on the 1000³ scale
+- [x] a `.bundle-circlebar` carrying `data-bundle-type` and `data-bundle-pcvalue` is read into the forfait; absent attributes leave the fields undefined rather than zero
+- [x] a page with no `Forfaits en cours de validité` section returns an empty list, not an error
+- [x] markup that matches no known shape returns an empty list and never throws
+- [x] the account-level lines (`WiFiber` offer, `0 Ar` balance) are parsed but kept separate from the forfait list
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2714,9 +2738,41 @@ in the main process, so it is unconstrained.
 4. Add `src/orange/parse.ts` — document parse, French-octet volume parse, tolerant of missing sections
 5. Run test, lint and build
 
+### Notes
+
+- **The consumed figure is a live counter, so no fixture can be pinned to a number.** The
+  first criterion originally named 7 370 000 000 bytes; across 2026-08-04 the same forfait
+  read 7.37 Go, then 7.96 Go (the committed capture), then 8.45, then 8.68. The criterion now
+  asks for the volume the captured page states, and the 1000³ arithmetic — 7.37 Go included —
+  stays pinned in the `parseOctets` criterion where it cannot drift. The fixture was never
+  hand-edited to match the plan.
+- **No dependency was added.** `src/orange/parse.ts` carries its own tolerant tokeniser rather
+  than promoting the dev-only `jsdom` to a runtime dependency: the app ships
+  `dependencies: {}`, this parse runs in Electron's main process, and jsdom would land a full
+  DOM implementation plus its transitive tree in the asar to read one 38 KB page. The cost is
+  ~527 lines to maintain across an Orange redesign. It builds a real element tree and every
+  read is a tree query, so it survives attribute reordering, re-indentation and added
+  wrappers — QA verified this rather than taking the claim on trust.
+- Robustness is structural, not a blanket `try`/`catch` — there are **zero** catch blocks in
+  the file. `MAX_DEPTH = 512` stops unclosed tags blowing the recursive readers' stack,
+  `String.fromCodePoint` is range-guarded, and stray `<`, mismatched closers and unterminated
+  attributes are absorbed. A real parse bug therefore still surfaces instead of being
+  swallowed into an empty list.
+- The unit scale is declared locally as `OCTET_UNIT_BYTES`. `src/domain/format.ts` exports no
+  scale constants, and the only exported table is `UNIT_BYTES` in `src/hilink/parse.ts`, keyed
+  to the router's English `KB`/`GB` wire spelling that a documented convention keeps inside
+  `src/hilink/`. Each boundary owning its own source's spelling matches that precedent.
+- `percent` is stored exactly as `data-bundle-pcvalue` states it and is deliberately not
+  reinterpreted — the page never says whether it counts consumed or remaining, and Wifiber
+  Go+ SSE carries no ring to check against. `bundleType` stays a `string` rather than a
+  `credit|data|voice|sms` union, so an unknown type reaches the surface instead of being
+  dropped.
+- Verified against the live portal after merge, not only against the fixture: the built
+  parser read `Wifiber Go+ SSE` / `Internet` / 8 680 000 000 bytes off the real page.
+
 ## T-52 Fetch the Orange portal without blocking the app
 
-T-52 · status: todo · size: S · needs: T-51 · files: src/orange/portal.ts, test/orange/portal.test.ts
+T-52 · status: done · size: S · needs: T-51 · files: src/orange/portal.ts, test/orange/portal.test.ts
 
 The fetch is the easy half and the one place a mistake stalls the menu bar. No session, no
 token, no password: a single `GET` to `http://123.orange.mg/info-conso/`, which the network
@@ -2728,20 +2784,20 @@ there is no unbounded await — and an unreachable host is a state, not an error
 only answers on the Orange network, so a laptop on café Wi-Fi gets nothing, and that is
 ordinary. It renders like an unreachable router.
 
-Also treat a `200` that parses to no forfaits as *reached but unreadable*, distinct from
-*unreachable*. The captive-portal interception in front of this page (`X-Header: intercepting
+Also treat a `200` that parses to no forfaits as _reached but unreadable_, distinct from
+_unreachable_. The captive-portal interception in front of this page (`X-Header: intercepting
 the request`) is exactly the kind of middlebox that returns someone else's `200`, and
 collapsing the two states would report "no plan" when the truth is "wrong network".
 
 ### Acceptance
 
-- [ ] a successful fetch returns the parsed account and forfaits from T-51
-- [ ] the request carries an explicit timeout and rejects to an unreachable state when it elapses
-- [ ] a connection refused or DNS failure yields the unreachable state, never a throw that reaches the poll loop
-- [ ] a non-200 status yields the unreachable state, carrying the status code for display
-- [ ] a 200 that parses to zero forfaits yields a distinct unreadable state, not the unreachable one
-- [ ] the base URL is a module constant, overridable in tests, and no test hits the real network
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] a successful fetch returns the parsed account and forfaits from T-51
+- [x] the request carries an explicit timeout and rejects to an unreachable state when it elapses
+- [x] a connection refused or DNS failure yields the unreachable state, never a throw that reaches the poll loop
+- [x] a non-200 status yields the unreachable state, carrying the status code for display
+- [x] a 200 that parses to zero forfaits yields a distinct unreadable state, not the unreachable one
+- [x] the base URL is a module constant, overridable in tests, and no test hits the real network
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2749,9 +2805,26 @@ collapsing the two states would report "no plan" when the truth is "wrong networ
 2. Add `src/orange/portal.ts` calling T-51's parse, returning a tagged result
 3. Run test, lint and build
 
+### Notes
+
+- `readInfoConso` returns a four-arm tagged union — `{ state: "read" }`, `{ state: "unreadable" }`,
+  and `{ state: "unreachable", reason: "timeout" | "offline" | "http" }` with `status` present
+  only on the `http` arm. It mirrors `SnapshotResult`'s shape rather than inventing a new one.
+  Default timeout 5 000 ms via `AbortController`, overridable through `options.timeoutMs`.
+- Tests stub at the HTTP layer with throwaway loopback servers, following
+  `test/hilink/client.test.ts`, rather than monkey-patching `fetch` as the task text suggested.
+  One test asserts unused stubs receive zero requests, so nothing can reach the real portal.
+  The DNS case targets `portal.invalid` — a reserved TLD that cannot resolve — under its own
+  2 s timeout.
+- `parseInfoConso` is called deliberately **outside** the try/catch. T-51 documents it as total
+  and QA verified that structurally, so wrapping it would swallow a real parse bug into a false
+  "offline". This is the one place T-52's correctness leans on T-51's totality claim.
+- Nothing calls `readInfoConso` yet — wiring it into the poll loop is T-55's work.
+- Verified against the live portal after merge: `state: read`, one forfait, 9 530 000 000 bytes.
+
 ## T-53 Pick the Internet forfait when several are active
 
-T-53 · status: todo · size: S · needs: T-51 · files: src/orange/select.ts, src/config/config.ts, test/orange/select.test.ts, test/config/config.test.ts
+T-53 · status: done · size: S · needs: T-51 · files: src/orange/select.ts, src/config/config.ts, src/config/defaults.ts, test/orange/select.test.ts, test/config/config.test.ts, test/readme.test.ts, README.md
 
 The portal lists every live bundle, and `full.infoconso.js` names four kinds — `credit`,
 `data`, `voice`, `sms`. Only one of them is what a menu bar data meter measures; the other
@@ -2774,13 +2847,13 @@ number.
 
 ### Acceptance
 
-- [ ] a single Internet forfait is selected with no configuration present
-- [ ] voice, SMS and credit bundles are never selected, even when they are the only ones present
-- [ ] with two data forfaits and a remembered label, the remembered one is selected regardless of list order
-- [ ] with two data forfaits and no remembered label, the first is selected and the result reports that the choice was not the user's
-- [ ] a remembered label that no longer appears on the page falls back to the first data forfait rather than selecting nothing
-- [ ] a forfait whose nature is unrecognised is returned in the list of candidates but never auto-selected
-- [ ] the remembered label round-trips through `config.json`, and a config file written before this task loads without error
+- [x] a single Internet forfait is selected with no configuration present
+- [x] voice, SMS and credit bundles are never selected, even when they are the only ones present
+- [x] with two data forfaits and a remembered label, the remembered one is selected regardless of list order
+- [x] with two data forfaits and no remembered label, the first is selected and the result reports that the choice was not the user's
+- [x] a remembered label that no longer appears on the page falls back to the first data forfait rather than selecting nothing
+- [x] a forfait whose nature is unrecognised is returned in the list of candidates but never auto-selected
+- [x] the remembered label round-trips through `config.json`, and a config file written before this task loads without error
 - [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
@@ -2791,12 +2864,36 @@ number.
 4. Extend `test/config/config.test.ts` for the round-trip and the older-file case
 5. Run test, lint and build
 
+### Notes
+
+- Config key is `orangeForfaitLabel`, namespaced by carrier the way `routerUsername` and
+  `routerPasswordBlob` are namespaced by device — `forfaitLabel` alone would not say whose,
+  and `src/domain/carrier.ts` already anticipates a second carrier.
+- Rather than invent a third config-loading policy, `readCredentialField` was **renamed** to
+  `readOptionalString` and its field union widened. QA verified the rename is
+  behaviour-preserving on the credential path it also guards: absent stays silent,
+  present-but-invalid still raises `ConfigValidationError`, and `loadConfig` still converts
+  that to defaults-plus-`problem` instead of crashing.
+- Three files beyond the declared list, all forced by the repo's own guards rather than chosen:
+  `src/config/defaults.ts` holds `AppConfig`, and `test/readme.test.ts` asserts a two-way
+  correspondence between parsed config keys and README settings rows, so the new key required
+  a README row to keep the suite green. Both edits are one row each.
+- `candidates` holds data forfaits plus unrecognised ones, but **excludes** voice/SMS/credit
+  entirely — stricter than the criterion, which only forbids auto-selecting an unknown. The
+  consequence is that T-56 cannot offer a voice bundle as a selectable alternative, which is
+  deliberate: offering one would be offering a mistake.
+- `remembered: false` whenever the app chose rather than the user, the single-forfait case
+  included, so T-56 can gate a "which plan?" prompt on `candidates.length > 1 && !remembered`.
+- Label matching folds case and accents so a hand-edited `config.json` still matches. `fold` is
+  declared locally in `select.ts` rather than exported from `parse.ts`, which was a sibling
+  task's merged work and could not be modified.
+
 ## T-54 Measure a Wifiber plan against the calendar month
 
-T-54 · status: todo · size: M · needs: T-53 · files: src/domain/quota.ts, src/domain/pace.ts, test/domain/quota.test.ts, test/domain/pace.test.ts
+T-54 · status: done · size: M · needs: T-53 · files: src/domain/quota.ts, src/domain/pace.ts, test/domain/quota.test.ts, test/domain/pace.test.ts
 
-Every figure the panel draws was built on a carrier that stated a *remaining* volume and an
-*expiry date*. Orange states neither. It states consumption, and the plan runs from the first
+Every figure the panel draws was built on a carrier that stated a _remaining_ volume and an
+_expiry date_. Orange states neither. It states consumption, and the plan runs from the first
 of the month to its last day. So the arithmetic inverts, and this task is where that lands —
 in `src/domain/`, which imports neither Electron nor the network and can be tested without a
 router or a portal present.
@@ -2831,16 +2928,16 @@ their inputs change.
 
 ### Acceptance
 
-- [ ] `usedBytes` on Orange equals the portal's consumed figure exactly, with no router counter in the expression
-- [ ] `remainingBytes` is `planLimitBytes − usedBytes`, clamped at zero
-- [ ] `planDays` is 31 in August, 30 in September, 28 in February 2026 and 29 in February 2028
-- [ ] on the first of the month `elapsedDays` is 1 and the pace ratio is finite
-- [ ] on the last day of a 31-day month `elapsedDays` is 31 and `elapsedShare` is 1
-- [ ] with a cap set, the dial share, the meter, `averagePerDay` and `affordedPerDay` are all produced from one portal reading
-- [ ] with no cap set, none of those four are produced and the consumed volume still is
-- [ ] the YAS path's existing quota and pace tests pass unchanged — this adds a mode, it does not rewrite the old one
-- [ ] the band boundaries stay exactly as T-44 left them: `safe` at or under 1.00, `warning` above 1.00 and under 1.20, `over` at 1.20 and above
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `usedBytes` on Orange equals the portal's consumed figure exactly, with no router counter in the expression
+- [x] `remainingBytes` is `planLimitBytes − usedBytes`, clamped at zero
+- [x] `planDays` is 31 in August, 30 in September, 28 in February 2026 and 29 in February 2028
+- [x] on the first of the month `elapsedDays` is 1 and the pace ratio is finite
+- [x] on the last day of a 31-day month `elapsedDays` is 31 and `elapsedShare` is 1
+- [x] with a cap set, the dial share, the meter, `averagePerDay` and `affordedPerDay` are all produced from one portal reading
+- [x] with no cap set, none of those four are produced and the consumed volume still is
+- [x] the YAS path's existing quota and pace tests pass unchanged — this adds a mode, it does not rewrite the old one
+- [x] the band boundaries stay exactly as T-44 left them: `safe` at or under 1.00, `warning` above 1.00 and under 1.20, `over` at 1.20 and above
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2851,9 +2948,36 @@ their inputs change.
 5. Confirm every pre-existing YAS test still passes untouched
 6. Run test, lint and build
 
+### Notes
+
+- **A separate `readMonthlyPace` entry point, not a widened `readPace`.** The Orange reading
+  has no tier ladder, no `daysUntilExpiry` and no `sustainablePerDay`; bending an
+  anchor-shaped input around a portal figure was the surest way to regress the YAS path. The
+  two modes share `bandFor` and the `PaceState` type and nothing else, and `bandFor` is reused
+  verbatim rather than reimplemented.
+- Criterion 8 was verified from the diff, not from a report: the **entire** 438-insertion
+  change removes exactly two lines, both `import` statements. No existing assertion,
+  expectation or test body was altered.
+- The router's month counter cannot enter the Orange expression even by accident —
+  `MonthlyPaceInput` carries only `consumedBytes`, `planLimitBytes` and `clock`. This matters
+  because the counter read 51.1 Go against the portal's 7.37 Go on the same day; the two count
+  different traffic.
+- Inclusive day counting matches T-46 rather than inventing a second convention:
+  `elapsedDays = now.getDate()`, so 1 on the first and 31 on the 31st, which is why
+  `elapsedShare` reaches exactly 1 on the last day where a fractional count never could.
+- **The YAS `MINIMUM_ELAPSED_DAYS` floor is deliberately not applied on Orange.** The count is
+  ≥ 1 by construction, so no floor is needed and no `state` is forced to `safe`. This is a real
+  behavioural difference between the two paths, chosen rather than overlooked.
+- Two supporting exports beyond the headline functions: `planCap` (a cap of 0 or non-finite
+  reads as "no cap", not "a limit of nothing" — needed identically by `readPortalUsage` and
+  `readMonthlyPace`) and `CalendarMonthPeriod.periodStart`, which the ARCHITECTURE pseudocode
+  names as the period's definition.
+- Nothing calls `readMonthlyPace` yet; the `carrierFrom(...) === "orange"` branch is T-55's
+  view-model wiring.
+
 ## T-55 Feed the panel from whichever carrier the SIM is on
 
-T-55 · status: todo · size: M · needs: T-50, T-52, T-54 · files: src/main/poller.ts, src/main/sync.ts, src/main/view-model.ts, test/main/poller.test.ts, test/main/view-model.test.ts
+T-55 · status: done · size: M · needs: T-50, T-52, T-54 · files: src/main/poller.ts, src/main/sync.ts, src/main/view-model.ts, src/main/main.ts, test/main/poller.test.ts, test/main/view-model.test.ts, test/main/sync.test.ts
 
 The pieces exist separately after T-50 to T-54; this is where the app actually stops being a
 YAS app. The poll loop learns a second source and chooses between them on the carrier the
@@ -2885,15 +3009,15 @@ exists for the throughput sparkline, which comes from the router.
 
 ### Acceptance
 
-- [ ] with the router reporting `ORANGE MG`, a poll fetches the portal and no USSD, login or anchor code path executes
-- [ ] with the router reporting `Yas`, the existing anchor and sync behaviour is byte-for-byte what it is today, asserted by the pre-existing tests passing unchanged
-- [ ] with an unknown carrier, router figures are still produced and no allowance source is contacted
-- [ ] the portal is fetched on the slow interval only, and opening the panel does not trigger an extra fetch
-- [ ] between portal fetches the last successful reading is reused rather than the allowance disappearing
-- [ ] a reachable router with an unreachable portal yields live throughput and signal alongside a flagged-stale allowance, not a blanket offline state
-- [ ] an unreachable router with a reachable portal yields the allowance and an offline connection state
-- [ ] no Keychain access is attempted anywhere on the Orange path
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] with the router reporting `ORANGE MG`, a poll fetches the portal and no USSD, login or anchor code path executes
+- [x] with the router reporting `Yas`, the existing anchor and sync behaviour is byte-for-byte what it is today, asserted by the pre-existing tests passing unchanged
+- [x] with an unknown carrier, router figures are still produced and no allowance source is contacted
+- [x] the portal is fetched on the slow interval only, and opening the panel does not trigger an extra fetch
+- [x] between portal fetches the last successful reading is reused rather than the allowance disappearing
+- [x] a reachable router with an unreachable portal yields live throughput and signal alongside a flagged-stale allowance, not a blanket offline state
+- [x] an unreachable router with a reachable portal yields the allowance and an offline connection state
+- [x] no Keychain access is attempted anywhere on the Orange path
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2904,9 +3028,104 @@ exists for the throughput sparkline, which comes from the router.
 5. Extend `test/main/view-model.test.ts` for the mixed-outage cases
 6. Run test, lint and build
 
+### Notes
+
+- **The menu bar was left showing a dash on Orange, and no planned task closed it.** The
+  portal reading reaches the panel through `portalHalf()` but never reaches the tray:
+  `buildTrayTitle()` reads only `config.allowanceAnchor`, which Orange never writes, so
+  `readPlanUsage()` returns null and the title renders `NO_TRAY_VALUE`. Feeding the tray was
+  in no T-55 criterion and no declared file, and `src/main/tray.ts` appears in no later task's
+  `files:` either. **T-59 was added to close it**, scheduled ahead of T-56 and T-57 so the
+  menu bar works before the panel polish lands.
+- The YAS path moved verbatim into `anchoredHalf()`, and `carrier()` defaults to `"yas"` in
+  `sync.ts`, so callers written before the branch behave identically. Criterion 2 was verified
+  from the diff as well as the suite: all three test files are pure additions with **zero**
+  deleted lines.
+- The Keychain proof is a counter, not an assurance: `forbiddenStore()` counts `load()` calls
+  and asserts 0 after both `start()` and `startAutomatic()`. The mechanism that prevents the
+  call is `dialable()` returning false for `orange`, so the assertion is not vacuous.
+- The portal runs on its **own** timer at `pollIntervalSeconds`; `setActive` never touches it,
+  so opening the panel cannot trigger a 38 KB fetch. The fast cadence stays the router's, for
+  the throughput sparkline.
+- **`unknown` keeps today's anchored path** rather than taking the Orange branch. Once the
+  poller and sync are gated nothing is contacted either way, and blanking the panel over an
+  unrecognised carrier spelling is worse than showing the last figure the anchor's own rules
+  still vouch for.
+- The staleness timer still ticks on Orange but `startAutomatic` refuses it, so the policy
+  lives in one place instead of being duplicated; nothing beyond a date comparison runs.
+- The Orange allowance row states no expiry and no days-until-expiry — the portal states
+  neither — and its age reads "Read Xm ago" rather than "Synced", since nothing was dialled.
+- `src/main/main.ts` was touched beyond the declared list: unavoidable wiring that passes the
+  real `readInfoConso` as the poller's portal source, injectable via `MenuBarOptions.portal`
+  so no test can reach `123.orange.mg`.
+
+## T-59 Show the Orange figure in the menu bar, not just the panel
+
+T-59 · status: done · size: S · needs: T-55 · files: src/main/tray.ts, src/main/poller.ts, test/main/tray.test.ts
+
+T-55 brought the Orange allowance as far as the panel and stopped there. `buildTrayTitle()`
+reads `config.allowanceAnchor`, Orange never writes an anchor, and so the menu bar — the
+surface this app exists to occupy — shows `NO_TRAY_VALUE` while the real figure sits one
+click away. A menu bar app whose menu bar says nothing is the one outcome the whole plan was
+meant to avoid.
+
+The fix is the same inversion T-54 already made in the domain: the tray's number comes from
+the portal reading on Orange and from the anchor on YAS. Both paths already exist and are
+tested; only the tray's source is missing a branch.
+
+What the tray can say on Orange is bounded by what the portal states. With a cap set there is
+a share and a remaining volume, so the title can read as it does on YAS. With no cap there is
+a consumed volume and nothing to measure it against — a bare consumed figure is honest and
+useful, a percentage would be invented.
+
+### Acceptance
+
+- [x] with an Orange reading and a cap set, the tray title shows the same shape it shows on YAS
+- [x] with an Orange reading and no cap set, the tray shows the consumed volume and no share
+- [x] with an Orange reading unavailable, the tray falls back to `NO_TRAY_VALUE` exactly as today
+- [x] on YAS the tray title is byte-for-byte what it is today, asserted by the pre-existing tray tests passing unchanged
+- [x] with an unknown carrier the tray behaves exactly as it does today
+- [x] the warning states that drive the tray's colour behave on Orange as they do on YAS
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend `test/main/tray.test.ts` for the Orange capped, Orange uncapped and Orange-unavailable cases
+2. Branch `buildTrayTitle()` on the carrier, reading the portal figure on Orange
+3. Confirm every pre-existing tray test still passes untouched
+4. Run test, lint and build
+
+### Notes
+
+- The menu bar now reads `7.4Go · 37%` capped, `7.4Go` uncapped, `18Go ⚠ 90%` warning, and the
+  unchanged `—` when there is no reading — the same `compactBytes` + separator + `formatPercent`
+  path YAS uses, so the two carriers are indistinguishable in the menu bar.
+- **The wiring was in `src/main/poller.ts`, not `main.ts` or `view-model.ts`.** `buildTrayTitle`
+  is called only from `UsagePoller.#apply`, so the call gained two appended optional parameters
+  (`clock`, `portal`). QA confirmed every existing positional call still compiles and behaves
+  identically, and that `clock` defaulting to `systemClock` shifts nothing.
+- **A real defect was surfaced rather than smoothed over.** On Orange the share can exceed 100%,
+  because the portal states consumption outright where YAS's carrier-remaining stopped at zero.
+  A cap mistyped an order of magnitude too small yields `111Go ⚠ 11100%` — 14 characters, past
+  `MAX_TRAY_TITLE_LENGTH`. The exact share was kept rather than clamped into a plausible-looking
+  lie; the boundary is pinned in a named test and the constant's doc states the exception. QA
+  measured the blast radius: every realistic pair (0 to 2× cap, for caps of 1, 20, 100 and
+  999 Go) stays within the limit, so only a typo can trigger it.
+- The title refreshes on the next router poll rather than being pushed from the portal loop, so
+  it lags at most one idle interval after the first portal read. QA confirmed the lag is bounded
+  and no permanently stale or blank menu bar is reachable. The alternative — keeping a
+  `#lastResult` in the poller — was more state for one call site.
+- A stale portal reading (`live: false`) still shows its figure, matching the panel, which shows
+  it marked. Only a genuinely absent figure yields the dash.
+- **Follow-up, deliberately out of scope:** the poller's `#setState` edge-triggered `onState`
+  callback still derives from `readPlanUsage`, so it stays `"unknown"` on Orange. Nothing
+  consumes it today — no notification, no icon colour — so the tray's visible warning is
+  entirely the `⚠` marker that criterion 6 covers. Worth a task if `onState` ever gets a
+  consumer.
+
 ## T-56 Show the forfait's name and hide what Orange cannot answer
 
-T-56 · status: todo · size: S · needs: T-55 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-56 · status: done · size: S · needs: T-55 · files: src/main/view-model.ts, src/main/popover.ts, src/main/main.ts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/renderer/preload.cts, test/main/view-model.test.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/main/main.test.ts
 
 The panel is 320×520 with no room to scroll, and on Orange several of its controls have
 nothing behind them. Leaving a Sync button that syncs nothing, and a plan-length field that
@@ -2929,14 +3148,14 @@ On YAS the panel is unchanged. This is a branch, not a redesign.
 
 ### Acceptance
 
-- [ ] on Orange the Sync button and its status line are absent from the rendered panel
-- [ ] on Orange the plan-length input is absent from the settings toggle and the plan cap input remains
-- [ ] on YAS every one of those controls is still present and behaves as it does today
-- [ ] the detected forfait label is rendered on the Orange panel
-- [ ] when several data forfaits are live and none was remembered, the panel names the chosen one and lists the alternatives as selectable
-- [ ] choosing an alternative writes the remembered label from T-53 and the dial follows it on the next poll
-- [ ] the Orange panel's total height still fits the 520 px budget, asserted the way T-45 asserts it
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] on Orange the Sync button and its status line are absent from the rendered panel
+- [x] on Orange the plan-length input is absent from the settings toggle and the plan cap input remains
+- [x] on YAS every one of those controls is still present and behaves as it does today
+- [x] the detected forfait label is rendered on the Orange panel
+- [x] when several data forfaits are live and none was remembered, the panel names the chosen one and lists the alternatives as selectable
+- [x] choosing an alternative writes the remembered label from T-53 and the dial follows it on the next poll
+- [x] the Orange panel's total height still fits the 520 px budget, asserted the way T-45 asserts it
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2947,9 +3166,36 @@ On YAS the panel is unchanged. This is a branch, not a redesign.
 5. Adjust `src/renderer/popover.css` for the reclaimed space
 6. Run test, lint and build
 
+### Notes
+
+- **The panel is nearly out of vertical room: 514 px of the 520 px budget, 6 px of slack**
+  (YAS sits at 504). Dropping the sync row gave back 38 px; the forfait-choice affordance took
+  48 px. QA confirmed 514 is the **worst case** — it includes the choice block at full height,
+  which appears only when several forfaits are live and none was remembered. Any future panel
+  row has to reclaim space rather than assume it.
+- **A new IPC channel was added**, `popover:choose-forfait`, the only change in this run that
+  crosses a trust boundary. It is validated at runtime (`typeof payload === "string"` in
+  `popover.ts:174`, not erased TypeScript types), scoped to the panel's own webContents
+  (`event.sender === open.webContents` at `popover.ts:138`), and follows the existing
+  `fromThisPanel` pattern rather than a looser one. Malformed payloads — `42`, `null`, objects,
+  wrong sender — are dropped in tests; an empty string is trimmed away by `setForfait`, so a
+  stored choice cannot be silently cleared.
+- Four files beyond the declared list, all needed for criterion 6 to be true **in the app**
+  rather than only in the renderer: `src/renderer/preload.cts` (a fifth send),
+  `src/main/popover.ts` (the channel), `src/main/main.ts` (`setForfait` writes the label into
+  the shared config the poller holds, so the next fetch selects against it), plus the two test
+  files for those. Without them the alternatives list would render and do nothing.
+- Controls are **detached from the DOM** and replaced by a comment marker, not hidden with
+  `display: none` — a hidden control is still focusable and still reachable by keyboard.
+  "Withdrawn" is keyed off `marker.isConnected`, so a wholesale page replacement cannot strand
+  a stale map entry. Re-attachment is exercised by pushing a YAS model after an Orange one.
+- `PopoverModel` gained `controls: { sync, planDays }` and `forfait: PopoverForfait | null`.
+  YAS and the pre-snapshot empty model get every control and a null forfait, so the branch is
+  one carrier fact rather than a redesign.
+
 ## T-57 Say when the portal cannot be reached or the forfait is unreadable
 
-T-57 · status: todo · size: S · needs: T-55 · files: src/main/view-model.ts, src/renderer/popover.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-57 · status: done · size: S · needs: T-55 · files: src/main/view-model.ts, src/main/main.ts, src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 Three failures are possible on the Orange path and they have three different remedies, so
 collapsing them into one message would make each of them undiagnosable — the same reason an
@@ -2976,13 +3222,13 @@ the router reported and that no allowance source is known for it, rather than sh
 
 ### Acceptance
 
-- [ ] an unreachable portal renders a distinct message from a portal that answered but parsed to nothing
-- [ ] a non-200 reply names its status code in the message
-- [ ] a page parsing to forfaits with no Internet one among them renders a third distinct message naming how many were found
-- [ ] an unknown carrier renders the raw `FullName` the router reported
-- [ ] none of the four states produces a dialog, a thrown error or an empty panel
-- [ ] a stale-but-present allowance is still drawn alongside the message rather than being replaced by it
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] an unreachable portal renders a distinct message from a portal that answered but parsed to nothing
+- [x] a non-200 reply names its status code in the message
+- [x] a page parsing to forfaits with no Internet one among them renders a third distinct message naming how many were found
+- [x] an unknown carrier renders the raw `FullName` the router reported
+- [x] none of the four states produces a dialog, a thrown error or an empty panel
+- [x] a stale-but-present allowance is still drawn alongside the message rather than being replaced by it
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -2992,9 +3238,42 @@ the router reported and that no allowance source is known for it, rather than sh
 4. Extend `test/renderer/popover.test.ts` for the rendered output of each state
 5. Run test, lint and build
 
+### Notes
+
+- **KNOWN CONTRADICTION, left unfixed and awaiting a decision.** In the "no Internet plan"
+  state the dial still prompts "Waiting for the Orange portal to answer"
+  (`view-model.ts:1297`) while the notice beneath reads "Orange's page listed 2 plans and none
+  of them is an Internet plan". Both render together. QA rates the visibility **moderate**: the
+  notice carries the correct information, but an attentive reader sees the panel say two
+  different things at once. It was left because fixing it means editing an existing assertion,
+  which every task in this run has been held back from doing. **This wants its own task.**
+- The worst-case panel height did **not** move: still 514 px of 520. The 38 px notice row takes
+  the space T-56 gave back, and the notice can never coincide with the sync row or the 48 px
+  forfait-choice block. Both exclusions are asserted rather than assumed —
+  `popover.test.ts:3050-3072` checks `[data-sync-row] === null` while each notice is visible.
+- On Orange the forfait-choice offer is **withdrawn while a notice stands**: every alternative
+  is a dead control when the page could not be read, and `selectForfait` only ever remembers a
+  data forfait.
+- **Undeclared behaviour change, verified benign:** the Sync button is now absent on an
+  `unknown` carrier (`UNPLACED_CONTROLS`), which is what pays for the notice row there. QA
+  confirmed the premise — `sync.ts:179-181` shows `dialable()` is true only for `yas`, so
+  `start()` and `startAutomatic()` already returned immediately and the button was a silent
+  no-op before this change.
+- `src/main/main.ts` was touched beyond the declared list because `PortalStatus` in the
+  off-limits `poller.ts` publishes only `{reading, live}` and drops the tagged
+  `OrangePortalResult`. `main.ts` wraps the `PortalSource` it already builds, remembers the
+  last non-`read` outcome and passes it as `portal.failure`; `PopoverInput.portal` widened to
+  `PortalStanding = PortalStatus & { failure?: PortalFailure }` so a plain `PortalStatus` still
+  assigns and `poller.ts` stays untouched. QA confirmed `main.ts:473` clears the remembered
+  failure on a successful read, so a message cannot linger beside a fresh figure. The tidier
+  home is `PortalStatus` itself — one line in `#applyPortal` — worth folding in if `poller.ts`
+  reopens.
+- No internal tag word (`unreachable`, `unreadable`, `timeout`, `http`) reaches the renderer as
+  a leaf value; asserted across every failure state.
+
 ## T-58 Bring the README and screenshots up to the Orange setup
 
-T-58 · status: todo · size: S · needs: T-56, T-57 · files: README.md, docs/media/, test/readme.test.ts
+T-58 · status: todo · size: S · needs: T-56, T-57, T-59 · files: README.md, docs/media/, test/readme.test.ts
 
 `test/readme.test.ts` already holds the README to the app's actual behaviour, and after T-50
 to T-57 it describes an app that no longer exists: a YAS meter driven by a USSD dialogue and
