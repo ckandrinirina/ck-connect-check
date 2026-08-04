@@ -5,6 +5,8 @@ import type { SnapshotResult } from "../../src/hilink/client.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
 import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 import type { UsageState } from "../../src/domain/quota.js";
+import type { OrangePortalResult } from "../../src/orange/portal.js";
+import type { OrangeInfoConso } from "../../src/orange/types.js";
 import { STARTUP_TRAY_TITLE, UsagePoller } from "../../src/main/poller.js";
 
 const GB = 1_000_000_000;
@@ -95,6 +97,72 @@ function stubClient(results: SnapshotResult[]) {
       return calls;
     },
     snapshot(): Promise<SnapshotResult> {
+      const result = results[Math.min(calls, results.length - 1)];
+      calls += 1;
+
+      return Promise.resolve(result);
+    },
+  };
+}
+
+/** The same router, with the SIM the app found on it on 2026-08-04. */
+const ORANGE: SnapshotResult = {
+  online: true,
+  snapshot: {
+    ...snapshot(5_830_718_387),
+    carrier: { carrier: "ORANGE MG", id: "orange" },
+  },
+};
+
+/** A network no table covers — the app knows the router and nothing else. */
+const UNKNOWN_CARRIER: SnapshotResult = {
+  online: true,
+  snapshot: {
+    ...snapshot(5_830_718_387),
+    carrier: { carrier: "Airtel", id: "unknown" },
+  },
+};
+
+/** The live capture's Wifiber plan: 7.37 Go consumed, no cap stated anywhere. */
+const WIFIBER = {
+  label: "Wifiber Go+ SSE",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 7_370_000_000,
+};
+
+/** A top-up beside it, so a remembered choice has something to choose between. */
+const TOP_UP = {
+  label: "Pass Internet 5 Go",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 1_000_000_000,
+};
+
+function page(...forfaits: OrangeInfoConso["forfaits"]): OrangeInfoConso {
+  return { account: { offer: "WiFiber", balanceAr: 0 }, forfaits };
+}
+
+const PORTAL_READ: OrangePortalResult = {
+  state: "read",
+  page: page(WIFIBER),
+};
+
+/** The off-network state: a laptop on some other Wi-Fi, which is ordinary. */
+const PORTAL_OFFLINE: OrangePortalResult = {
+  state: "unreachable",
+  reason: "offline",
+};
+
+/** Answers with `results[n]` for fetch `n`, repeating the last one thereafter. */
+function stubPortal(results: OrangePortalResult[]) {
+  let calls = 0;
+
+  return {
+    get calls(): number {
+      return calls;
+    },
+    read(): Promise<OrangePortalResult> {
       const result = results[Math.min(calls, results.length - 1)];
       calls += 1;
 
@@ -543,5 +611,208 @@ describe("UsagePoller — the usage state", () => {
     expect(states).toEqual(["warn"]);
 
     poller.stop();
+  });
+});
+
+describe("UsagePoller — the allowance source the carrier decides", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads the Orange portal once the router reports ORANGE MG", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(portal.calls).toBe(1);
+    expect(poller.portal.live).toBe(true);
+    expect(poller.portal.reading?.forfait?.consumedBytes).toBe(7_370_000_000);
+
+    poller.stop();
+  });
+
+  it("never reaches for the portal on Yas", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const poller = new UsagePoller({
+      client: stubClient([USED_5_8_GB]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+
+    expect(portal.calls).toBe(0);
+    expect(poller.portal.reading).toBeNull();
+    // The router's own figures are untouched by any of this.
+    expect(poller.title).toBe("5.8Go · 29%");
+
+    poller.stop();
+  });
+
+  it("contacts no allowance source at all on a carrier it cannot place", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const poller = new UsagePoller({
+      client: stubClient([UNKNOWN_CARRIER]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+
+    expect(portal.calls).toBe(0);
+    // Router figures are still produced: only the allowance has no source.
+    expect(poller.title).toBe("5.8Go · 29%");
+    expect(poller.state).toBe("ok");
+
+    poller.stop();
+  });
+
+  it("stops reading the portal when the SIM moves back to Yas", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE, USED_5_8_GB]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(portal.calls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+
+    expect(portal.calls).toBe(1);
+
+    poller.stop();
+  });
+
+  it("fetches the portal on the slow interval however fast the panel polls", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const client = stubClient([ORANGE]);
+    const poller = new UsagePoller({ client, config: CONFIG, portal });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(portal.calls).toBe(1);
+
+    // Opening the panel is a reason to ask the router more often. It is not a
+    // reason to ask for a 38 KB page again.
+    poller.setActive(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(portal.calls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_INTERVAL_MS * 3);
+    expect(client.calls).toBeGreaterThan(3);
+    expect(portal.calls).toBe(1);
+
+    // Only the slow interval coming round moves it.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(portal.calls).toBe(2);
+
+    poller.stop();
+  });
+
+  it("reuses the last reading rather than losing the allowance between fetches", async () => {
+    const portal = stubPortal([PORTAL_READ, PORTAL_OFFLINE]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+    expect(portal.calls).toBe(2);
+    expect(poller.portal.live).toBe(false);
+    expect(poller.portal.reading?.forfait?.consumedBytes).toBe(7_370_000_000);
+
+    poller.stop();
+  });
+
+  it("keeps reading the portal while the router is unreachable", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE, OFFLINE]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+
+    // The two outages are independent: a router that stopped answering says
+    // nothing about a portal that is still answering.
+    expect(poller.title).toBe("offline");
+    expect(portal.calls).toBe(3);
+    expect(poller.portal.live).toBe(true);
+
+    poller.stop();
+  });
+
+  it("keeps the router's figures while the portal is unreachable", async () => {
+    const portal = stubPortal([PORTAL_OFFLINE]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+
+    expect(poller.title).not.toBe("offline");
+    expect(poller.portal.live).toBe(false);
+    expect(poller.portal.reading).toBeNull();
+
+    poller.stop();
+  });
+
+  it("measures the forfait the user chose rather than the page's first", async () => {
+    const portal = stubPortal([{ state: "read", page: page(WIFIBER, TOP_UP) }]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE]),
+      config: { ...CONFIG, orangeForfaitLabel: "Pass Internet 5 Go" },
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(poller.portal.reading?.forfait?.label).toBe("Pass Internet 5 Go");
+    expect(poller.portal.reading?.remembered).toBe(true);
+
+    poller.stop();
+  });
+
+  it("stops fetching the portal once the poller is stopped", async () => {
+    const portal = stubPortal([PORTAL_READ]);
+    const poller = new UsagePoller({
+      client: stubClient([ORANGE]),
+      config: CONFIG,
+      portal,
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    poller.stop();
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 5);
+
+    expect(portal.calls).toBe(1);
   });
 });

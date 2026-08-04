@@ -578,3 +578,66 @@ describe("recordAnchor — writing down the anchor a sync produced", () => {
     expect(config.allowanceAnchor).toBeDefined();
   });
 });
+
+/**
+ * The dialogue exists for YAS. On Orange the figure comes from an
+ * unauthenticated page, so there is nothing to sign in to and nothing to ask
+ * the Keychain for — and a credential store that is never touched is the
+ * strongest form that statement takes.
+ */
+describe("createAllowanceSync — a carrier the dialogue is not for", () => {
+  /** A store that fails the test if anything asks it for a password. */
+  function forbiddenStore(): CredentialStore & { loads: number } {
+    const store = {
+      loads: 0,
+      load: (): RouterCredential | null => {
+        store.loads += 1;
+
+        return CREDENTIAL;
+      },
+      save: (): CredentialSaveResult => ({ ok: true }),
+    };
+
+    return store;
+  }
+
+  function syncOn(carrier: "orange" | "unknown", credentials: CredentialStore) {
+    const router = fakeRouter({ ok: true }, SUCCESS);
+    const states: SyncState[] = [];
+    const sync = createAllowanceSync({
+      router,
+      credentials,
+      carrier: () => carrier,
+      onAllowance: () => undefined,
+      onStateChange: (state) => states.push(state),
+    });
+
+    return { router, states, sync };
+  }
+
+  it("never reaches for the Keychain on Orange, however it is asked", async () => {
+    const credentials = forbiddenStore();
+    const { router, states, sync } = syncOn("orange", credentials);
+
+    await sync.start();
+    const automatic = await sync.startAutomatic();
+
+    expect(credentials.loads).toBe(0);
+    expect(automatic).toBe(false);
+    expect(router.logins).toBe(0);
+    expect(router.dialogues).toBe(0);
+    expect(states).toEqual([]);
+    expect(sync.state()).toEqual({ phase: "idle" });
+  });
+
+  it("never dials a carrier it cannot place either", async () => {
+    const credentials = forbiddenStore();
+    const { router, sync } = syncOn("unknown", credentials);
+
+    await sync.start();
+    await sync.startAutomatic();
+
+    expect(credentials.loads).toBe(0);
+    expect(router.logins).toBe(0);
+  });
+});
