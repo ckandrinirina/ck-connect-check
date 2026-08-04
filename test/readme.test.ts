@@ -117,8 +117,10 @@ function owningHeading(lineIndex: number): string {
  * plain `GET`, so there is no admin password in the Orange path at all.
  */
 const CARRIER_ONLY_INSTRUCTIONS = [
-  /press \*\*Sync\*\*/i,
-  /\bpress Sync\b/,
+  // Every emphasis the page might dress the button in — `Press **Sync**`,
+  // `**Press Sync**`, `press `Sync``. Matching only one spelling would let the
+  // instruction escape the guard by being written the other way.
+  /\bpress\s+(?:\*\*|`)?sync\b/i,
   /\basks for the router's admin password\b/i,
   /\benter the router's admin password\b/i,
 ];
