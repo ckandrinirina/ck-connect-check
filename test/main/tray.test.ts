@@ -457,17 +457,40 @@ describe("buildTrayTitle — Orange", () => {
     ).toBe("7.4Go · 37%");
   });
 
-  it("stays inside the width limit across the range", () => {
-    for (const cap of [1 * GB, 20 * GB, 100 * GB, 999 * GB, null]) {
-      for (let usedGb = 0; usedGb <= 999; usedGb += 37) {
-        const title = orangeTitle({ cap }, consuming(usedGb * GB));
+  it("stays inside the width limit across the range, overruns included", () => {
+    // Up to twice the cap: Orange states consumption outright, so unlike Yas —
+    // where the carrier's remaining stops at zero — the share can pass 100%.
+    for (const cap of [1 * GB, 20 * GB, 100 * GB, 999 * GB]) {
+      for (let used = 0; used <= 2 * cap; used += cap / 8) {
+        const title = orangeTitle({ cap }, consuming(used));
 
         expect(
           title.length,
-          `"${title}" for ${String(usedGb)} Go consumed`,
+          `"${title}" for ${String(used)} bytes consumed`,
         ).toBeLessThanOrEqual(MAX_TRAY_TITLE_LENGTH);
       }
     }
+  });
+
+  it("stays inside the width limit with no cap at all", () => {
+    for (let usedGb = 0; usedGb <= 999; usedGb += 37) {
+      const title = orangeTitle({ cap: null }, consuming(usedGb * GB));
+
+      expect(
+        title.length,
+        `"${title}" for ${String(usedGb)} Go consumed`,
+      ).toBeLessThanOrEqual(MAX_TRAY_TITLE_LENGTH);
+    }
+  });
+
+  it("keeps the share exact where a mistyped cap outgrows the width budget", () => {
+    // A cap a hundred times smaller than what has been spent is a typo, not a
+    // plan. The share stays exactly what the panel shows rather than being
+    // rounded into a figure that would read as plausible; the width budget is
+    // the thing that gives, and this is the only case where it does.
+    expect(orangeTitle({ cap: 1 * GB }, consuming(111 * GB))).toBe(
+      `111Go ${TRAY_WARN_MARKER} 11100%`,
+    );
   });
 });
 

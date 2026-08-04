@@ -258,7 +258,13 @@ export class UsagePoller {
       // Which allowance source is the right one is a fact about the SIM, and
       // the router states it on an endpoint the poll already reads.
       this.#followCarrier(result.snapshot.carrier.id);
-      this.#setTitle(buildTrayTitle(result, this.#config));
+      // The portal goes with it: on Orange it holds the only figure there is,
+      // and the title would otherwise be a dash on the one network this app was
+      // extended for. It is read here rather than pushed from the portal loop
+      // so the menu bar is written from one place, on the poll's own cadence.
+      this.#setTitle(
+        buildTrayTitle(result, this.#config, this.#clock, this.#portal),
+      );
 
       // The same reading the title and the panel's dial are built from, so the
       // notification can never fire against a figure neither of them shows.
