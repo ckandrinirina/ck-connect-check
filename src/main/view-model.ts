@@ -20,8 +20,12 @@ import {
 } from "../domain/format.js";
 import { peak, type RateSample } from "../domain/history.js";
 import { networkTypeLabel } from "../domain/network-type.js";
-import { readPace } from "../domain/pace.js";
-import type { PaceReading, PaceState } from "../domain/pace.js";
+import { readMonthlyPace, readPace } from "../domain/pace.js";
+import type {
+  MonthlyPaceReading,
+  PaceReading,
+  PaceState,
+} from "../domain/pace.js";
 import {
   systemClock,
   usageState,
@@ -35,10 +39,12 @@ import {
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
+import type { PortalStatus } from "./poller.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { RouterRefusal, SnapshotResult } from "../hilink/client.js";
 import type { RouterSnapshot } from "../hilink/types.js";
+import type { OrangeForfait } from "../orange/types.js";
 
 /**
  * Shown wherever there is nothing to show — no reading yet, or no plan limit.
@@ -385,6 +391,14 @@ export interface PopoverInput {
   history?: readonly RateSample[];
   /** Where the Sync button has got to. Idle when the caller has no sync running. */
   sync?: SyncState;
+  /**
+   * Where the Orange portal stands, read only when the SIM is on Orange.
+   *
+   * Deliberately separate from {@link PopoverInput.result}: the router and the
+   * portal are two sources that fail on their own terms, and flattening them
+   * into one "offline" would tell the user to fix the wrong thing.
+   */
+  portal?: PortalStatus;
   /** Why the last typed plan size was refused, if one was. */
   planLimitProblem?: PlanLimitRefusal | undefined;
   /** Why the last typed plan length was refused, if one was. */
@@ -421,6 +435,16 @@ function signalDescription(bars: number, maxBars: number): string {
 const PLAN_CAP_PROMPT = "This looks like a new plan — confirm its size.";
 
 /**
+ * The one thing a share always needs, in the words the panel shows. Spelled
+ * once because both carriers reach it: the cap is the figure neither a USSD
+ * reply nor the portal ever states.
+ */
+const SET_LIMIT_PROMPT = "Set a plan limit to see how much of it is left.";
+
+/** The same, for a screen reader. */
+const NO_LIMIT_DESCRIPTION = "No plan limit set, so the share used is unknown";
+
+/**
  * Why there is no dial, in the words the panel shows. Each case names the one
  * thing the user can do about it — an "unavailable" ring with no instruction is
  * just a hole in the panel.
@@ -441,7 +465,7 @@ function dialPrompt(
     return PLAN_CAP_PROMPT;
   }
   if (limitBytes === null) {
-    return "Set a plan limit to see how much of it is left.";
+    return SET_LIMIT_PROMPT;
   }
 
   return "That figure is out of date — sync to refresh the dial.";
@@ -460,7 +484,7 @@ function dialDescription(
     return "The plan size needs confirming before the share can be shown";
   }
   if (limitBytes === null) {
-    return "No plan limit set, so the share used is unknown";
+    return NO_LIMIT_DESCRIPTION;
   }
 
   return "The last synced figure can no longer be trusted";
@@ -730,6 +754,16 @@ const PACE_BAND_TEXT: Record<PaceState, string> = {
 const PACE_METER_SPAN = 2;
 
 /**
+ * The four figures a meter is drawn from, whichever carrier stated them. YAS
+ * reaches them at tier 3 and Orange from the calendar month, and the bar is the
+ * same bar either way — the bands are the one thing the two readings share.
+ */
+type PaceBands = Pick<
+  PaceReading,
+  "pace" | "averagePerDay" | "affordedPerDay" | "state"
+>;
+
+/**
  * The band drawn as a bar, or null below tier 3.
  *
  * Every tier 3 field is read together rather than trusting {@link
@@ -737,7 +771,7 @@ const PACE_METER_SPAN = 2;
  * of them is the same absence, and reading them is what convinces the compiler
  * as well as the reader.
  */
-function buildPaceMeter(reading: PaceReading): PopoverPaceMeter | null {
+function buildPaceMeter(reading: PaceBands): PopoverPaceMeter | null {
   const { pace, averagePerDay, affordedPerDay, state } = reading;
 
   if (
@@ -894,6 +928,226 @@ function buildDial(
 }
 
 /**
+ * The half of the panel the carrier decides: what the plan has left, and how
+ * fast it is going. Everything else — throughput, signal, devices, the network
+ * name — comes from the router and reads the same on every network.
+ *
+ * The two carriers fill it from opposite directions. YAS carries a remaining
+ * volume forward from an anchor; Orange is handed a consumed volume on every
+ * fetch and derives the remainder. Naming the shape they share is what keeps
+ * the branch to one line at the bottom of this file.
+ */
+interface AllowanceHalf {
+  monthTotal: string;
+  progress: PopoverProgress;
+  allowance: PopoverAllowance;
+  pace: PopoverPace | null;
+  /** Whether the Sync button should be calling for attention. */
+  syncAttention: boolean;
+}
+
+/** The YAS half: the anchor, carried forward by the router's counter delta. */
+function anchoredHalf(
+  config: AppConfig,
+  month: RouterSnapshot["month"],
+  cap: number | null,
+  capUnconfirmed: boolean,
+  clock: Clock,
+  now: Date,
+): AllowanceHalf {
+  // The same derivation the menu bar reads, so the two cannot disagree.
+  const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
+
+  return {
+    // The plan figure, which is the only month the carrier stands behind. The
+    // router's own download and upload counters are still read — the anchor is
+    // carried forward with them — but they are not shown: they measure a
+    // different month from this one, and the panel has no room to explain that.
+    monthTotal:
+      allowance?.usedBytes === undefined || allowance.usedBytes === null
+        ? NO_VALUE
+        : formatBytes(allowance.usedBytes),
+    progress: buildDial(
+      allowance,
+      cap,
+      config.warnThresholdPercent,
+      capUnconfirmed,
+    ),
+    allowance: buildAllowance(allowance, now),
+    pace: buildPace(
+      readPace({
+        anchor: config.allowanceAnchor,
+        month,
+        planLimitBytes: cap,
+        planDays: config.planDays,
+        clock,
+      }),
+      allowance?.expiresAt ?? null,
+    ),
+    // An anchor that can no longer carry the arithmetic is the one thing the
+    // button has to call out: the figure on screen is the last honest one.
+    syncAttention: allowance !== null && !allowance.trustworthy,
+  };
+}
+
+/** Where the portal stands before anything has ever been fetched from it. */
+const NO_PORTAL: PortalStatus = { reading: null, live: false };
+
+/** Why an Orange figure is marked, in the words the panel shows. */
+const PORTAL_STALE_NOTE =
+  "The Orange portal is out of reach — this is the last figure it gave.";
+
+/**
+ * The dial on Orange. The share comes from the portal's consumed volume against
+ * the typed cap, and there is no anchor anywhere in it: the portal states
+ * consumption outright on every fetch, so nothing is carried forward and
+ * nothing can go untrustworthy.
+ */
+function buildMonthlyDial(
+  reading: MonthlyPaceReading | null,
+  warnThresholdPercent: number,
+): PopoverProgress {
+  const usedShare = reading?.usedShare ?? null;
+  const percent = usedShare === null ? null : usedShare * 100;
+  const state = usageState(percent, warnThresholdPercent);
+
+  if (percent === null || reading === null) {
+    return {
+      available: false,
+      label: NO_VALUE,
+      sweep: 0,
+      // Two absences, and they call for different things: a page that has not
+      // answered will answer by itself, whereas a missing cap will not.
+      prompt:
+        reading === null
+          ? "Waiting for the Orange portal to answer."
+          : SET_LIMIT_PROMPT,
+      description:
+        reading === null
+          ? "No reading from the Orange portal yet"
+          : NO_LIMIT_DESCRIPTION,
+      state,
+    };
+  }
+
+  const used = formatBytes(reading.usedBytes);
+
+  return {
+    available: true,
+    label: formatPercent(percent),
+    sweep: Math.min(Math.max(percent, 0), 100) / 100,
+    prompt: "",
+    description: `${formatPercent(percent)} of the plan used, ${used} so far`,
+    state,
+  };
+}
+
+/**
+ * The allowance row on Orange.
+ *
+ * `stale` is the portal's own reachability and nothing else — never the
+ * router's. A laptop on some other Wi-Fi cannot reach the page while the
+ * connection it is measuring is perfectly healthy, and the panel has to be able
+ * to say exactly that.
+ */
+function buildPortalAllowance(
+  forfait: OrangeForfait,
+  reading: MonthlyPaceReading,
+  portal: PortalStatus,
+  now: Date,
+): PopoverAllowance {
+  const at = portal.reading?.at;
+
+  return {
+    available: true,
+    planLabel: forfait.label === "" ? NO_VALUE : forfait.label,
+    remaining:
+      reading.remainingBytes === null
+        ? NO_VALUE
+        : formatBytes(reading.remainingBytes),
+    // The page carries neither for this plan, and inventing one from the
+    // calendar would be stating a carrier fact the carrier never stated.
+    expires: NO_VALUE,
+    daysUntilExpiry: NO_VALUE,
+    stale: !portal.live,
+    note: portal.live ? "" : PORTAL_STALE_NOTE,
+    exhausted: reading.remainingBytes === 0,
+    // Read, not synced: nothing was dialled and nothing was anchored.
+    syncedAgo:
+      at === undefined
+        ? NO_VALUE
+        : `Read ${formatDuration(
+            (now.getTime() - at.getTime()) / MILLISECONDS_PER_SECOND,
+          )} ago`,
+  };
+}
+
+/**
+ * The pace on Orange, or null with no cap.
+ *
+ * The tiers collapse here. Tier 1 existed because a carrier-stated remaining
+ * and expiry arrived together, and the portal supplies neither; the calendar
+ * supplies the period for free. So the cap is the single gate — with it the
+ * whole reading, without it no meter, no per-day figure and therefore no row.
+ */
+function buildMonthlyPace(reading: MonthlyPaceReading): PopoverPace | null {
+  const meter = buildPaceMeter(reading);
+
+  if (meter === null) return null;
+
+  return {
+    tier: 3,
+    // The prescription needs a date to run to, and the portal states none.
+    sustainable: "",
+    state: reading.state ?? "",
+    hint: "",
+    meter,
+  };
+}
+
+/** The Orange half: one portal figure, measured against the calendar month. */
+function portalHalf(
+  portal: PortalStatus,
+  cap: number | null,
+  warnThresholdPercent: number,
+  clock: Clock,
+  now: Date,
+): AllowanceHalf {
+  const forfait = portal.reading?.forfait ?? null;
+  const consumedBytes = forfait?.consumedBytes ?? null;
+
+  // Nothing has been read, or the page listed no data forfait at all: the panel
+  // shows the router's figures and says the allowance is not known yet.
+  if (forfait === null || consumedBytes === null) {
+    return {
+      monthTotal: NO_VALUE,
+      progress: buildMonthlyDial(null, warnThresholdPercent),
+      allowance: noAllowance(),
+      pace: null,
+      syncAttention: false,
+    };
+  }
+
+  const reading = readMonthlyPace({
+    consumedBytes,
+    planLimitBytes: cap,
+    clock,
+  });
+
+  return {
+    // Stated by the carrier rather than derived, and available with no cap —
+    // which is the one thing Orange can always answer.
+    monthTotal: formatBytes(reading.usedBytes),
+    progress: buildMonthlyDial(reading, warnThresholdPercent),
+    allowance: buildPortalAllowance(forfait, reading, portal, now),
+    pace: buildMonthlyPace(reading),
+    // There is no dialogue to press for and no anchor to re-take: the Sync
+    // button has no work on Orange, and T-56 takes it off the panel.
+    syncAttention: false,
+  };
+}
+
+/**
  * The popover's contents for one poll result.
  *
  * A live result renders itself. An offline result — or no result at all yet —
@@ -945,24 +1199,23 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   }
 
   const { month, traffic, status, carrier } = snapshot;
-  // The same derivation the menu bar reads, so the two cannot disagree.
-  const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
+  // The one branch in the file, and it is a fact about the SIM rather than a
+  // display decision: on Orange the figure comes from a page fetched on the
+  // poll, and everywhere else from the anchor a dialogue left behind.
+  const half =
+    carrier.id === "orange"
+      ? portalHalf(
+          input.portal ?? NO_PORTAL,
+          cap,
+          config.warnThresholdPercent,
+          clock,
+          now,
+        )
+      : anchoredHalf(config, month, cap, capUnconfirmed, clock, now);
 
   return {
-    // The plan figure, which is the only month the carrier stands behind. The
-    // router's own download and upload counters are still read — the anchor is
-    // carried forward with them — but they are not shown: they measure a
-    // different month from this one, and the panel has no room to explain that.
-    monthTotal:
-      allowance?.usedBytes === undefined || allowance.usedBytes === null
-        ? NO_VALUE
-        : formatBytes(allowance.usedBytes),
-    progress: buildDial(
-      allowance,
-      cap,
-      config.warnThresholdPercent,
-      capUnconfirmed,
-    ),
+    monthTotal: half.monthTotal,
+    progress: half.progress,
     downloadRate: formatRate(traffic.downloadRateBps),
     uploadRate: formatRate(traffic.uploadRateBps),
     connectedDevices: String(status.connectedDevices),
@@ -976,22 +1229,11 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     networkType: networkTypeLabel(status.networkTypeCode),
     freshness,
     history,
-    allowance: buildAllowance(allowance, now),
+    allowance: half.allowance,
     planLimit,
     planDays,
     planCapPrompt,
-    pace: buildPace(
-      readPace({
-        anchor: config.allowanceAnchor,
-        month,
-        planLimitBytes: cap,
-        planDays: config.planDays,
-        clock,
-      }),
-      allowance?.expiresAt ?? null,
-    ),
-    // An anchor that can no longer carry the arithmetic is the one thing the
-    // button has to call out: the figure on screen is the last honest one.
-    sync: buildSync(syncState, allowance !== null && !allowance.trustworthy),
+    pace: half.pace,
+    sync: buildSync(syncState, half.syncAttention),
   };
 }

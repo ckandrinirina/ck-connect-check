@@ -24,6 +24,7 @@
  */
 
 import { anchorFrom, isNewPlan } from "../domain/allowance.js";
+import type { Carrier } from "../domain/carrier.js";
 import { systemClock, type Clock } from "../domain/quota.js";
 import type { AppConfig } from "../config/defaults.js";
 import type { AllowanceResult, UssdFailure } from "../hilink/client.js";
@@ -86,6 +87,15 @@ export interface CredentialStore {
 export interface AllowanceSyncOptions {
   router: AllowanceSource;
   credentials: CredentialStore;
+  /**
+   * Which network the SIM is on, read at the moment of each attempt rather than
+   * once at construction — the SIM can be swapped without the app restarting.
+   *
+   * Defaults to YAS, the only carrier this dialogue was ever for: everything
+   * below is the `#359#` sequence, and a caller that says nothing about the
+   * carrier is a caller from before there was a second one.
+   */
+  carrier?(): Carrier;
   /** The carrier's figure, for the caller to anchor against the router's counter. */
   onAllowance(allowance: Allowance): void;
   /** Every state change, so the panel can be re-pushed as the dialogue moves. */
@@ -154,7 +164,21 @@ export function createAllowanceSync(
   options: AllowanceSyncOptions,
 ): AllowanceSync {
   const { router, credentials, onAllowance } = options;
+  const carrier = options.carrier ?? ((): Carrier => "yas");
   let current: SyncState = { phase: "idle" };
+
+  /**
+   * Whether the SIM's carrier keeps its allowance behind a USSD dialogue.
+   *
+   * Checked before the credential store is touched, not after: on Orange the
+   * figure comes from an unauthenticated page, so there is nothing to sign in
+   * to and no reason to ask the Keychain for a password — and a carrier the app
+   * cannot place has no allowance source at all, which is not a reason to dial
+   * a menu the network may not even offer.
+   */
+  function dialable(): boolean {
+    return carrier() === "yas";
+  }
 
   /**
    * Whether automatic syncing has been stood down after a failure. Set by any
@@ -222,7 +246,7 @@ export function createAllowanceSync(
   async function start(): Promise<void> {
     // The guard and the flag it reads are both synchronous, so two presses in
     // the same tick cannot both get past here.
-    if (current.phase === "running") {
+    if (current.phase === "running" || !dialable()) {
       return;
     }
 
@@ -238,7 +262,7 @@ export function createAllowanceSync(
   }
 
   async function startAutomatic(): Promise<boolean> {
-    if (parked || current.phase === "running") {
+    if (parked || current.phase === "running" || !dialable()) {
       return false;
     }
 
