@@ -62,6 +62,13 @@ export interface AppConfig {
    */
   routerPasswordBlob?: string;
   /**
+   * The label of the Orange forfait the user chose to measure, when several
+   * data forfaits are live at once. Absent until they choose — and the reason
+   * the dial tracks the same plan across polls instead of following whichever
+   * one the portal happens to list first.
+   */
+  orangeForfaitLabel?: string;
+  /**
    * The last USSD reading, pinned to the router's counter at that instant.
    * Absent until the first sync — and the reason the exact remaining volume
    * survives a quit, since the router keeps counting while the app is closed.

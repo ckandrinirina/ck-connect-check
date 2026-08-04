@@ -96,6 +96,7 @@ function parsedConfigKeys(): string[] {
       syncStaleAfterMinutes: 30,
       routerUsername: "admin",
       routerPasswordBlob: "AAAA",
+      orangeForfaitLabel: "Wifiber Go+ SSE",
       allowanceAnchor: {
         planLabel: "NET MONTH 150",
         remainingBytes: 90_000_000_000,

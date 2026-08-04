@@ -895,6 +895,89 @@ describe("the stored allowance anchor", () => {
   });
 });
 
+describe("the remembered Orange forfait", () => {
+  const LABEL = "Wifiber Go+ SSE";
+
+  it("accepts a config carrying no remembered forfait at all", () => {
+    const parsed = parseConfig({ host: "10.0.0.1" });
+
+    expect(parsed).not.toHaveProperty("orangeForfaitLabel");
+  });
+
+  it("loads a config file written before the portal was ever read", () => {
+    // Written key by key rather than spread from `defaultConfig()`, so the file
+    // genuinely lacks the field instead of carrying it as `undefined`. A config
+    // the app itself wrote must never become one it refuses to start from.
+    writeFileSync(
+      path(),
+      JSON.stringify({
+        host: "10.0.0.1",
+        pollIntervalSeconds: 60,
+        activePollIntervalSeconds: 3,
+        warnThresholdPercent: 75,
+        planLimitBytes: 20_000_000_000,
+        planDays: 30,
+        planCapConfirmed: true,
+        syncStaleAfterMinutes: 45,
+      }),
+    );
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.problem).toBeUndefined();
+    expect(loaded.config).not.toHaveProperty("orangeForfaitLabel");
+    expect(loaded.config.host).toBe("10.0.0.1");
+  });
+
+  it("round-trips the remembered label through save and load", () => {
+    const written: AppConfig = {
+      ...defaultConfig(),
+      orangeForfaitLabel: LABEL,
+    };
+
+    saveConfig(path(), written);
+
+    expect(loadConfig(path()).config).toEqual(written);
+  });
+
+  it("writes no key when no forfait has been remembered", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(readFileSync(path(), "utf8")).not.toContain("orangeForfaitLabel");
+  });
+
+  it("rejects a remembered label that is not a non-empty string", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), orangeForfaitLabel: 42 }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({ ...defaultConfig(), orangeForfaitLabel: "   " }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("names orangeForfaitLabel on the rejection", () => {
+    try {
+      parseConfig({ ...defaultConfig(), orangeForfaitLabel: 42 });
+      expect.unreachable("expected a ConfigValidationError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).field).toBe("orangeForfaitLabel");
+    }
+  });
+
+  it("falls back to the defaults when a stored label is invalid", () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({ ...defaultConfig(), orangeForfaitLabel: 42 }),
+    );
+
+    const result = loadConfig(path());
+
+    expect(result.config).toEqual(defaultConfig());
+    expect(result.problem).toContain("orangeForfaitLabel");
+  });
+});
+
 describe("injected config path", () => {
   it("reads and writes only the path it is given", () => {
     const real = defaultConfigPath();
