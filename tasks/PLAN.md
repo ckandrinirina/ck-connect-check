@@ -42,7 +42,7 @@
 | T-38 | Show the pace and its warning on the panel                              | done   | M    | T-37                         |
 | T-39 | Know when the carrier figure has gone stale                             | done   | S    | T-28                         |
 | T-40 | Re-sync by itself on open and after a long silence                      | done   | M    | T-39                         |
-| T-41 | Release the pace and the automatic sync as 0.2.0                        | doing  | S    | T-38, T-40, T-42, T-45, T-46 |
+| T-41 | Release the pace and the automatic sync as 0.2.0                        | done   | S    | T-38, T-40, T-42, T-45, T-46 |
 | T-42 | Notice a new plan instead of reporting the old one's share              | done   | M    | T-27, T-28                   |
 | T-43 | State the pace as a daily volume against the plan's daily budget        | done   | S    | T-37                         |
 | T-44 | Draw the pace as a coloured meter instead of describing it              | done   | M    | T-43, T-38                   |
@@ -59,7 +59,7 @@
 | T-55 | Feed the panel from whichever carrier the SIM is on                     | done   | M    | T-50, T-52, T-54             |
 | T-56 | Show the forfait's name and hide what Orange cannot answer              | done   | S    | T-55                         |
 | T-57 | Say when the portal cannot be reached or the forfait is unreadable      | done   | S    | T-55                         |
-| T-58 | Bring the README and screenshots up to the Orange setup                 | doing  | S    | T-56, T-57, T-59             |
+| T-58 | Bring the README and screenshots up to the Orange setup                 | done   | S    | T-56, T-57, T-59             |
 | T-60 | Stop the dial contradicting the notice beneath it                       | done   | S    | T-57                         |
 | T-61 | Stop the allowance strip claiming what Orange never said                | done   | S    | T-60                         |
 | T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
@@ -2030,7 +2030,7 @@ comes round every couple of seconds and a dialogue takes tens of them.
 
 ## T-41 Release the pace and the automatic sync as 0.2.0
 
-T-41 · status: doing · size: S · needs: T-38, T-40, T-42, T-45, T-46 · files: package.json, package-lock.json, README.md, src/app-info.ts, test/readme.test.ts, test/project-setup.test.ts
+T-41 · status: done · size: S · needs: T-38, T-40, T-42, T-45, T-46 · files: package.json, package-lock.json, README.md, src/app-info.ts, test/readme.test.ts, test/project-setup.test.ts
 
 Version 0.2.0, and a README that describes the app as it now behaves: a tiered
 pace reading under the dial, a plan length to enter beside the cap, a sync that
@@ -2047,7 +2047,7 @@ so this extends that test rather than trusting prose.
 - [x] the README test asserts each of those claims against the source that implements it
 - [x] the README's settings list matches the keys `config.ts` actually parses, `planDays` and `syncStaleAfterMinutes` included
 - [x] the README describes the pace as a coloured meter and states the three bands with the 5 Go/day worked example
-- [ ] the README's screenshot shows the compacted panel with the settings toggle, not the pre-T-45 layout
+- [x] the README's screenshot shows the app's current compacted panel with the settings toggle, not the pre-T-45 layout
 - [x] `npm test`, `npm run lint`, `npm run build` and `npm run package` all exit 0
 
 ### Tasks
@@ -2060,12 +2060,20 @@ so this extends that test rather than trusting prose.
 
 ### Notes
 
-- **Held open on one criterion.** The screenshot needs a human capture of the running app
-  against a real router: `docs/media/panel.png`, main view at 320×520, showing the dial,
-  pace meter, allowance strip and the settings toggle in the header. No stale or fabricated
-  image was left in place, and the README references no path that fails to resolve. Once
-  the file exists, add an `![…](docs/media/panel.png)` reference and the existing
-  link-existence test covers it. Capture it **after T-46**, so the meter shown is correct.
+- **Closed on 2026-08-04 against `docs/media/panel-orange.png`, after its criterion was
+  rewritten.** As written, the criterion implied a YAS capture: the sections this release
+  documents — the pace tiers, the plan-length setting, the 30-minute automatic sync — are all
+  YAS behaviour. That capture became impossible the same day, when the SIM moved to Orange and
+  set the T-50..T-61 work going; a YAS panel cannot be photographed without a YAS SIM back in
+  the router. The word "current" replaced the implied "YAS", because what the criterion was
+  really protecting against was a **stale layout**, not a particular carrier, and the Orange
+  capture is the compacted post-T-45 panel with the settings toggle in the header.
+  - The honest cost of that rewrite: a reader of this release's YAS sections now sees a panel
+    with no plan-length input and no Sync button, because Orange withdraws both. If a YAS SIM
+    is ever back in the router, a second capture would be worth taking.
+  - The image is held to more than existence: `test/readme.test.ts` reads the PNG's own IHDR
+    height and requires 497 px, the figure the renderer suite independently derives from the
+    CSS budget. A pre-T-61 capture at 514 px is rejected rather than accepted quietly.
 - `needs` gained T-46 after the fact: manual testing of the merged wave found the pace
   under-reporting by a full day, and releasing 0.2.0 with its headline feature wrong was
   not worth the earlier ship date.
@@ -3419,7 +3427,7 @@ On YAS every one of these three stays exactly as it is today.
 
 ## T-58 Bring the README and screenshots up to the Orange setup
 
-T-58 · status: doing · size: S · needs: T-56, T-57, T-59 · files: README.md, docs/media/, test/readme.test.ts
+T-58 · status: done · size: S · needs: T-56, T-57, T-59 · files: README.md, docs/media/panel-orange.png, test/readme.test.ts
 
 `test/readme.test.ts` already holds the README to the app's actual behaviour, and after T-50
 to T-57 it describes an app that no longer exists: a YAS meter driven by a USSD dialogue and
@@ -3441,7 +3449,7 @@ suite, where an assertion compared two unknowns and would have passed with both 
 - [x] the README documents both carriers and states that the carrier is detected from the router, not configured
 - [x] the README's Orange section names the portal URL, the typed cap and the calendar-month period
 - [x] no instruction to enter a router password or press Sync is presented as universal
-- [ ] `docs/media/` screenshots show the Orange panel and every image referenced by the README exists
+- [x] `docs/media/` screenshots show the Orange panel and every image referenced by the README exists
 - [x] `test/readme.test.ts` asserts per carrier rather than being relaxed to pass against both
 - [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 

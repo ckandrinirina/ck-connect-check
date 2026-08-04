@@ -107,6 +107,9 @@ way. Everything below applies only to the network it names.
 
 ### On Orange — the info-conso portal
 
+![The panel on an Orange SIM: the dial, the pace meter, the named forfait and no
+Sync row](docs/media/panel-orange.png)
+
 The exact figure comes from Orange's own self-care page:
 
 ```

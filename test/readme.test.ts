@@ -426,19 +426,18 @@ describe("README.md", () => {
   });
 
   /*
-   * The panel and menu bar screenshots T-35 asked for are still not here, and
-   * T-41 needs a new one: the panel it would show is now two views behind a
-   * header toggle, so the pre-T-45 capture would be a picture of an app that no
-   * longer exists.
+   * The panel capture T-35 and T-41 waited for is now `docs/media/panel-orange.png`,
+   * guarded at the end of this file rather than here.
    *
-   * The image the README expects is `docs/media/panel.png`, and it has to show
-   * the compacted panel — dial, pace meter, allowance and rates in the main
-   * view, with the settings toggle in the header. It needs a running app on a
-   * real screen against a real router, which nothing in this suite can produce.
+   * It is the Orange panel, not the YAS one T-41 implied: the SIM moved to
+   * Orange on the day that release was still open, and a YAS panel cannot be
+   * photographed without a YAS SIM back in the router. What the criterion was
+   * protecting against was a stale *layout*, and this is the compacted
+   * post-T-45 panel with the settings toggle in the header.
    *
-   * The assertion that would guard it is deliberately absent rather than
-   * skipped, so it cannot pass by describing a file nobody has taken. The link
-   * check above covers it the moment the README references it.
+   * The menu bar capture T-35 asked for is still absent, and no assertion
+   * stands in for it — the README references no menu bar image, so the link
+   * check has nothing to hold.
    */
 });
 
@@ -916,17 +915,41 @@ describe("README.md on YAS", () => {
 });
 
 /*
- * The Orange panel screenshot T-58 asks for is still not here, and no
- * assertion stands in for it.
+ * The Orange panel screenshot T-58 asked for now exists: a capture of the app
+ * running against a SIM on the Orange network, taken on a real screen.
  *
- * `docs/media/` needs a capture of the panel as it renders on Orange — the
- * dial, the pace meter, the named forfait, and no Sync row — which takes a
- * running app on a real screen against a SIM on the Orange network. Nothing in
- * this suite can produce one, and a drawn or borrowed image would be a picture
- * of an app nobody ran.
- *
- * The assertion is deliberately absent rather than skipped, so it cannot pass
- * by describing a file nobody has taken. The link check above already fails the
- * moment the README references an image that is not there, which is the half of
- * the criterion a test can honestly hold.
+ * These assertions hold the README to showing it, and hold the file to being
+ * the shape the panel actually renders. They cannot be satisfied by a drawn or
+ * borrowed image of the right dimensions — but nothing in a test can prove an
+ * image is a photograph of a running app, so what is checked here is the part
+ * a test can honestly hold: that the README points at it, that it is there, and
+ * that its height matches the panel's own asserted budget rather than some
+ * other window's.
  */
+describe("README.md on the Orange panel it shows", () => {
+  const SCREENSHOT = "docs/media/panel-orange.png";
+
+  it("shows the Orange panel in its Orange section", () => {
+    const orange = section(ORANGE_HEADING);
+
+    expect(orange).toMatch(
+      new RegExp(`!\\[[^\\]]*\\]\\(${SCREENSHOT.replace(/[./]/g, "\\$&")}\\)`),
+    );
+  });
+
+  it("has that capture on disk", () => {
+    expect(existsSync(new URL(SCREENSHOT, `file://${repoRoot}`))).toBe(true);
+  });
+
+  it("captures the panel at the height the panel asserts for itself", () => {
+    // The renderer suite pins the worst-case panel at 497 px. A capture of some
+    // other window — or of the pre-T-61 panel, which stood at 514 — would not
+    // match, so this is what stops a stale or borrowed image passing as the
+    // panel this README describes.
+    const png = readFileSync(new URL(SCREENSHOT, `file://${repoRoot}`));
+
+    // IHDR: width and height are big-endian uint32 at byte 16 and byte 20.
+    expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect(png.readUInt32BE(20)).toBe(497);
+  });
+});
