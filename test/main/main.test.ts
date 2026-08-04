@@ -1848,6 +1848,18 @@ const LAPTOP: Device = {
   associatedSeconds: 21_125,
 };
 
+/**
+ * The panel's model without its sparkline — the one part of it that is *meant*
+ * to differ between two polls, because a second sample has arrived.
+ */
+function panelReading(popover: RecordingPopover): Partial<PopoverModel> {
+  const reading: Partial<PopoverModel> = { ...latest(popover) };
+
+  delete reading.history;
+
+  return reading;
+}
+
 /** A host list that answers, and counts how often it was asked. */
 function countingHosts(result?: HostListResult): {
   hosts: () => Promise<HostListResult>;
@@ -1945,16 +1957,12 @@ describe("startMenuBarApp — the device list behind that window", () => {
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
-    // The sparkline is the one part of the model that is *meant* to differ
-    // between two polls; everything else is the reading itself.
-    const { history: _before, ...reading } = latest(popover);
+    const reading = panelReading(popover);
 
     refuse = true;
     await vi.advanceTimersByTimeAsync(POLL_MS);
 
-    const { history: _after, ...afterFailure } = latest(popover);
-
-    expect(afterFailure).toEqual(reading);
+    expect(panelReading(popover)).toEqual(reading);
     // And the window is told, rather than being left showing a stale list.
     expect(devices.models.at(-1)).toEqual({ state: "offline" });
 

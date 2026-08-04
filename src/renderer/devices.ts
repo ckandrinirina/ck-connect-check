@@ -1,53 +1,128 @@
 /**
  * The devices window's renderer. Like the panel's, it does one thing: put the
- * strings it is handed into the DOM. There is no arithmetic here and no
- * knowledge of the router.
+ * strings it is handed into the DOM. There is no arithmetic here, no knowledge
+ * of the router, and no ordering — the model arrives already spelled and
+ * already sorted.
  *
- * The page ships the table and its column headers; this fills the body. The
- * shell renders an empty list on load, through the same path a full one will
- * take, so the window is never a table that only exists once data arrives.
+ * Rows are keyed by MAC, so a poll landing every 30 seconds updates the row a
+ * device already has instead of building the table again. The MAC is the only
+ * field that can key on: a name may be absent or duplicated and an IP is a
+ * lease that moves.
+ *
+ * The main process pushes updates by calling {@link Window.applyDevicesModel}.
  */
 
-/** One line of the table, already spelled the way it appears on screen. */
-export interface DeviceRow {
-  name: string;
-  ipAddress: string;
-  macAddress: string;
+import type { DeviceRow, DevicesModel } from "../main/devices-window.js";
+
+declare global {
+  interface Window {
+    /** The one entry point the main process calls. */
+    applyDevicesModel(model: DevicesModel): void;
+  }
 }
 
 /** The cells of one row, in the order `devices.html` declares its columns. */
 function cellsOf(device: DeviceRow): string[] {
-  return [device.name, device.ipAddress, device.macAddress];
+  return [
+    device.name,
+    device.ip,
+    device.mac,
+    device.network,
+    device.connectedFor,
+  ];
 }
 
-function rowFor(device: DeviceRow): HTMLTableRowElement {
-  const row = document.createElement("tr");
+/** The row elements already on the page, by the MAC each one belongs to. */
+let rowsByMac = new Map<string, HTMLTableRowElement>();
 
-  for (const value of cellsOf(device)) {
-    const cell = document.createElement("td");
-    // `textContent`, never `innerHTML`: a device names itself, and a name is
-    // the one string on this page that the user did not write.
-    cell.textContent = value;
-    row.append(cell);
+/**
+ * Brings one row up to date, creating its cells the first time.
+ *
+ * `textContent`, never `innerHTML`: a device names itself, and its name is the
+ * one string on this page that the user did not write.
+ */
+function fill(row: HTMLTableRowElement, device: DeviceRow): void {
+  const values = cellsOf(device);
+
+  while (row.cells.length < values.length) {
+    row.append(document.createElement("td"));
   }
 
-  return row;
+  values.forEach((value, index) => {
+    const cell = row.cells[index];
+
+    if (cell !== undefined && cell.textContent !== value) {
+      cell.textContent = value;
+    }
+  });
 }
 
 /**
- * Replaces every row with the list given. An empty list leaves an empty body
- * rather than a placeholder row — the table says how many devices there are by
- * showing exactly that many.
+ * Writes the list into the table body, reusing the row each device already
+ * has. A device that left takes exactly its own row with it, and one that
+ * arrived lands in the position the model gives it without the rows around it
+ * being replaced.
  */
-export function renderDevices(devices: readonly DeviceRow[]): void {
+function renderRows(devices: readonly DeviceRow[]): void {
   const body = document.querySelector("[data-devices]");
 
   if (body === null) {
     return;
   }
 
-  body.replaceChildren(...devices.map(rowFor));
+  const next = new Map<string, HTMLTableRowElement>();
+  const ordered = devices.map((device) => {
+    const row = rowsByMac.get(device.mac) ?? document.createElement("tr");
+
+    fill(row, device);
+    next.set(device.mac, row);
+
+    return row;
+  });
+
+  rowsByMac = next;
+  body.replaceChildren(...ordered);
 }
 
-// Nothing has been pushed yet, so the list starts empty. T-66 gives it a source.
-renderDevices([]);
+/** Shows or hides one of the page's fixed regions. */
+function show(selector: string, visible: boolean): void {
+  const element = document.querySelector<HTMLElement>(selector);
+
+  if (element !== null) {
+    element.hidden = !visible;
+  }
+}
+
+/**
+ * Puts a pushed model on screen.
+ *
+ * Three states, and the point of the middle one is that it is not the last: a
+ * router that is not answering has not said that nothing is connected to it, so
+ * "no devices" is only ever printed when the router itself said so.
+ */
+export function renderDevices(model: DevicesModel): void {
+  if (model.state === "listed") {
+    renderRows(model.devices);
+  }
+
+  const state =
+    model.state === "offline"
+      ? "offline"
+      : model.devices.length === 0
+        ? "empty"
+        : "listed";
+
+  // Deliberately not `data-devices`, which is the table body's own marker: the
+  // page would then have two elements answering to the selector that finds the
+  // rows, and the first one is the document itself.
+  document.documentElement.dataset["devicesState"] = state;
+  show("[data-devices-table]", state === "listed");
+  show("[data-devices-empty]", state === "empty");
+  show("[data-devices-offline]", state === "offline");
+}
+
+window.applyDevicesModel = renderDevices;
+
+// Nothing has been pushed yet, so nothing is known: the page waits for the
+// router rather than claiming an empty household.
+renderDevices({ state: "offline" });

@@ -994,13 +994,11 @@ describe("UsagePoller — the connected devices", () => {
     poller.stop();
   });
 
-  it("publishes the devices in the order the domain sorts them", async () => {
+  it("publishes the router's list as it arrived, ordering it nowhere near here", async () => {
     const published: HostListResult[] = [];
     const poller = new UsagePoller({
       client: stubClient([USED_5_8_GB]),
       config: CONFIG,
-      // The router lists them in its own order; the window reads them in the
-      // stable one `sortDevices` states.
       hosts: stubHosts([{ online: true, devices: [hostDevice(), PHONE] }]),
       wantsDevices: () => true,
       onDevices: (result) => published.push(result),
@@ -1009,7 +1007,9 @@ describe("UsagePoller — the connected devices", () => {
     poller.start();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(publishedNames(published)).toEqual(["galaxy-s10e", "MacBookPro"]);
+    // The order the window reads is a display rule, settled in the model the
+    // window is built from — not in the loop that fetches.
+    expect(publishedNames(published)).toEqual(["MacBookPro", "galaxy-s10e"]);
 
     poller.stop();
   });

@@ -7,12 +7,22 @@
  * button that closes the list rather than quitting an app that lives in the
  * menu bar.
  *
- * This file owns the window and nothing else. What the list *says* is the
- * renderer's business, and where the list comes from is T-66's.
+ * This file owns the window and the strings that reach it. Where the list comes
+ * from is the poll's business (`poller.ts`), and how it is laid out is the
+ * page's — exactly the division `popover.ts` and `view-model.ts` keep, with the
+ * model small enough to live here rather than in a file of its own.
  */
 
 import { BrowserWindow } from "electron";
 import { fileURLToPath } from "node:url";
+
+import {
+  deviceAssociatedFor,
+  deviceDisplayName,
+  sortDevices,
+} from "../domain/devices.js";
+import type { HostListResult } from "../hilink/client.js";
+import type { Device } from "../hilink/devices.js";
 
 /** Wide enough for a name, an address and a MAC on one line. */
 export const DEVICES_WINDOW_WIDTH = 520;
@@ -41,6 +51,64 @@ function defaultHtmlPath(): string {
   );
 }
 
+/**
+ * One line of the table, already spelled the way it appears on screen.
+ *
+ * There is no medium column and no active dot, which the window was sketched
+ * with: T-62's probe found no band, frequency or medium element in `host-list`
+ * and no `Active` element either, and the endpoint reports only the hosts
+ * currently associated — so an active dot would be lit on every row it drew.
+ * {@link DeviceRow.network} is `AssociatedSsid` shown as itself, which is the
+ * one network field the router really sends.
+ */
+export interface DeviceRow {
+  name: string;
+  ip: string;
+  mac: string;
+  network: string;
+  connectedFor: string;
+}
+
+/**
+ * What the window shows, in the two shapes it can be in.
+ *
+ * `listed` with no devices is a genuine answer — the router says nothing is
+ * connected — and the page states it as such. `offline` is the router not
+ * having answered at all, which is a normal state rendered like the panel's,
+ * never an error dialog: the app runs unattended.
+ *
+ * The offline *reason* deliberately does not travel, exactly as it does not
+ * reach the panel.
+ */
+export type DevicesModel =
+  { state: "listed"; devices: DeviceRow[] } | { state: "offline" };
+
+/** One device, spelled for the table. */
+function rowFor(device: Device): DeviceRow {
+  return {
+    name: deviceDisplayName(device),
+    ip: device.ip,
+    mac: device.mac,
+    network: device.ssid,
+    connectedFor: deviceAssociatedFor(device),
+  };
+}
+
+/**
+ * The window's contents for one reading of the host list.
+ *
+ * The ordering is the domain's — stable across polls, so a row cannot move
+ * under a click — and the naming and the duration are the domain's too. This
+ * function only routes between them.
+ */
+export function buildDevicesModel(result: HostListResult): DevicesModel {
+  if (!result.online) {
+    return { state: "offline" };
+  }
+
+  return { state: "listed", devices: sortDevices(result.devices).map(rowFor) };
+}
+
 export interface DevicesWindowOptions {
   /** Path to the page. Injected so tests never touch the filesystem. */
   htmlPath?: string;
@@ -53,6 +121,8 @@ export interface DevicesWindow {
   open(): void;
   close(): void;
   isOpen(): boolean;
+  /** Hands the page a new list; safe before the window exists and after it goes. */
+  setDevices(model: DevicesModel): void;
   destroy(): void;
 }
 
@@ -64,9 +134,28 @@ export function createDevicesWindow(
   const htmlPath = options.htmlPath ?? defaultHtmlPath();
 
   let window: BrowserWindow | null = null;
+  let model: DevicesModel | null = null;
 
   function alive(): BrowserWindow | null {
     return window !== null && !window.isDestroyed() ? window : null;
+  }
+
+  /**
+   * Pushes the current list into the page. The renderer exposes a single global
+   * entry point rather than an IPC channel, for the reason the panel's does:
+   * there is one message and it only ever flows main → renderer.
+   */
+  function push(): void {
+    const open = alive();
+
+    if (open === null || model === null) {
+      return;
+    }
+
+    // Rejects if the page is still loading; `did-finish-load` pushes again.
+    void open.webContents
+      .executeJavaScript(`window.applyDevicesModel(${JSON.stringify(model)})`)
+      .catch(() => undefined);
   }
 
   function create(): BrowserWindow {
@@ -96,6 +185,11 @@ export function createDevicesWindow(
     created.on("closed", () => {
       window = null;
     });
+    // The first push lands while the page is still loading and is rejected, so
+    // a freshly opened window would otherwise sit empty until the next poll.
+    created.webContents.on("did-finish-load", () => {
+      push();
+    });
 
     void created.loadFile(htmlPath);
     window = created;
@@ -112,9 +206,16 @@ export function createDevicesWindow(
       // reopens at whatever size it was last left is a setting nobody asked
       // for, so every open starts at the stated default.
       open.setSize(width, height);
+      // Before the window is shown, so it appears holding whatever the last
+      // poll found rather than filling in a moment later.
+      push();
       open.show();
       // A second open is the same window brought forward, never another one.
       open.focus();
+    },
+    setDevices(next: DevicesModel): void {
+      model = next;
+      push();
     },
     close(): void {
       alive()?.close();

@@ -11,6 +11,7 @@
  * anonymous one, which the protected `POST` endpoints need.
  */
 
+import { HOST_LIST_ENDPOINT, parseHostList, type Device } from "./devices.js";
 import {
   LOGIN_ENDPOINT,
   LOGOUT_ENDPOINT,
@@ -76,6 +77,18 @@ export type {
 
 export type SnapshotResult =
   | { online: true; snapshot: RouterSnapshot }
+  | { online: false; reason: OfflineReason };
+
+/**
+ * One reading of the connected devices. Shaped like {@link SnapshotResult} and
+ * for the same reason: a router that did not answer is a state the window
+ * renders, never a rejection someone has to catch.
+ *
+ * An empty `devices` is a genuine answer — nothing is connected — and is
+ * deliberately not the same thing as an offline result.
+ */
+export type HostListResult =
+  | { online: true; devices: Device[] }
   | { online: false; reason: OfflineReason };
 
 export interface RouterClientOptions {
@@ -266,6 +279,31 @@ export class RouterClient {
       // A refused or unanswered logout changes nothing: the session goes anyway.
     } finally {
       this.#session.clear();
+    }
+  }
+
+  /**
+   * The devices currently associated with the router's Wi-Fi. Resolves to an
+   * offline result rather than rejecting, exactly like
+   * {@link RouterClient.snapshot}.
+   *
+   * Unlike the monitoring endpoints, `host-list` needs a session: without one
+   * the router answers `100003`, which arrives here as an ordinary refusal and
+   * leaves the window saying the list is unavailable rather than saying nothing
+   * is connected. Signing in is the caller's business — a client that logged in
+   * by itself on a poll would walk the account towards its five-failure lockout
+   * with nobody having asked for anything.
+   */
+  async hosts(): Promise<HostListResult> {
+    try {
+      const headers = sessionHeaders(await this.#session.current());
+
+      return {
+        online: true,
+        devices: parseHostList(await this.#get(HOST_LIST_ENDPOINT, headers)),
+      };
+    } catch (error) {
+      return { online: false, reason: offlineReason(error, "session") };
     }
   }
 

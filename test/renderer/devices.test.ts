@@ -126,7 +126,7 @@ function listed(...devices: DeviceRow[]): DevicesModel {
 
 /** What the page says it is showing, for the states that show no rows. */
 function pageState(): string | undefined {
-  return document.documentElement.dataset["devices"];
+  return document.documentElement.dataset["devicesState"];
 }
 
 function emptyNotice(): HTMLElement | null {
