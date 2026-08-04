@@ -2399,6 +2399,48 @@ describe("startMenuBarApp — blocking a device", () => {
     app.stop();
   });
 
+  it("tells the window which row is this machine, so the control can be withheld", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app, devices } = launchWithFilter(access, [
+      LAPTOP,
+      { ...LAPTOP, mac: THIS_MAC, name: "this-mac" },
+    ]);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Read from the interfaces this run was given, never matched by IP: the two
+    // rows below share one lease in the fixture.
+    expect(rowFor(devices, THIS_MAC)?.local).toBe(true);
+    expect(rowFor(devices, LAPTOP.mac)?.local).toBe(false);
+
+    app.stop();
+  });
+
+  it("marks no row as this machine when none of its interfaces is listed", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      hosts: countingHosts({ online: true, devices: [LAPTOP] }),
+      access,
+      credentials: storeHolding(CREDENTIAL),
+      // On Ethernet, with only Wi-Fi hosts reported. Every row keeps its
+      // control, which is the correct outcome rather than a fallback.
+      localMacs: () => [],
+    });
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(rowFor(devices, LAPTOP.mac)?.local).toBe(false);
+
+    app.stop();
+  });
+
   it("shows the row as the router re-reads it, not as the click assumed", async () => {
     const access = recordingAccess(macFilter("off"));
     const { app, devices } = launchWithFilter(access);
