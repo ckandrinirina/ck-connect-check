@@ -360,11 +360,21 @@ describe("macFilterRequestXml", () => {
   });
 
   it("escapes a name the router stored, which is the one string we did not write", () => {
-    const body = macFilterRequestXml(
-      everySsid(BLACKLIST, [["A2:00:5E:00:00:01", "Bill & Ben's <box>"]]),
-    );
+    // Built directly rather than parsed back: a reply carrying these characters
+    // raw is not XML, which is the whole reason the write escapes them.
+    const named: MacFilter = {
+      mode: "blacklist",
+      entries: [{ mac: "A2:00:5E:00:00:01", name: "Bill & Ben's <box>" }],
+      ssids: [
+        {
+          index: 0,
+          mode: "blacklist",
+          entries: [{ mac: "A2:00:5E:00:00:01", name: "Bill & Ben's <box>" }],
+        },
+      ],
+    };
 
-    expect(body).toContain(
+    expect(macFilterRequestXml(named)).toContain(
       "<wifihostname0>Bill &amp; Ben&apos;s &lt;box&gt;</wifihostname0>",
     );
   });

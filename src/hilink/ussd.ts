@@ -21,6 +21,7 @@ import { systemClock, type Clock } from "../domain/quota.js";
 import {
   HilinkApiError,
   HilinkParseError,
+  NO_RIGHTS_CODE,
   readReply,
   requireText,
 } from "./parse.js";
@@ -41,9 +42,6 @@ export const ALLOWANCE_CODE = "#359#";
 
 /** The only `codeType` this device was ever observed to accept. */
 const CODE_TYPE = "CodeType";
-
-/** The router's answer to a `POST` made without a login — "no rights". */
-const NO_RIGHTS_CODE = 100003;
 
 /** The `<result>` value meaning no dialogue is in flight on the device. */
 const IDLE_RESULT = 0;
@@ -101,14 +99,21 @@ export function isRouterRefusal(
 }
 
 /**
- * Why a dialogue produced no allowance. `busy` and `not-logged-in` are the two
- * the user can act on — wait, or sign in; `unreadable` means the carrier
- * answered something we could not turn into a figure. A refusal we have no name
- * for arrives as a {@link RouterRefusal} rather than as a word. The rest mirror
- * {@link OfflineReason}, so the panel renders them the way it already does.
+ * Why a request to the router produced nothing, in the vocabulary every caller
+ * shares. `not-logged-in` is the one the user can act on; a refusal nobody has
+ * named arrives as a {@link RouterRefusal} rather than as a word; the rest
+ * mirror {@link OfflineReason}, so the panel renders them the way it already
+ * does.
  */
-export type UssdFailure =
-  OfflineReason | "busy" | "not-logged-in" | "unreadable" | RouterRefusal;
+export type RouterFailure = OfflineReason | "not-logged-in" | RouterRefusal;
+
+/**
+ * Why a dialogue produced no allowance: the shared vocabulary above, plus the
+ * two only a dialogue has. `busy` is the modem's single USSD channel already in
+ * use, and `unreadable` is the carrier answering something we could not turn
+ * into a figure.
+ */
+export type UssdFailure = RouterFailure | "busy" | "unreadable";
 
 export type AllowanceResult =
   { ok: true; allowance: Allowance } | { ok: false; reason: UssdFailure };

@@ -10,6 +10,7 @@ import type {
 } from "../../src/hilink/client.js";
 import type {
   Allowance,
+  LoginResult,
   RouterCredential,
   RouterSnapshot,
 } from "../../src/hilink/types.js";
@@ -2037,6 +2038,8 @@ interface RecordingAccess extends DeviceAccessSource {
   signInSucceeds: boolean;
   /** Whether the read answers before a sign-in, as the real router does not. */
   readsBeforeLogin: boolean;
+  /** Whether a sign-in has actually been accepted. A refused one grants nothing. */
+  authenticated: boolean;
   /** What the write answers. */
   writeResult: MacFilterWriteResult;
 }
@@ -2054,6 +2057,7 @@ function recordingAccess(
     held,
     signInSucceeds: overrides.signInSucceeds ?? true,
     readsBeforeLogin: overrides.readsBeforeLogin ?? true,
+    authenticated: false,
     writeResult: overrides.writeResult ?? { ok: true },
     macFilter: () => {
       access.reads += 1;
@@ -2061,7 +2065,9 @@ function recordingAccess(
       if (access.held === null) {
         return Promise.resolve({ online: false as const, reason: "error" });
       }
-      if (!access.readsBeforeLogin && access.logins === 0) {
+      // A refused sign-in grants nothing, so the read goes on being refused —
+      // which is what makes "one login per press" a claim worth asserting.
+      if (!access.readsBeforeLogin && !access.authenticated) {
         return Promise.resolve({ online: false as const, reason: "session" });
       }
 
@@ -2078,11 +2084,14 @@ function recordingAccess(
     },
     login: () => {
       access.logins += 1;
+      access.authenticated ||= access.signInSucceeds;
 
-      return Promise.resolve(
+      // A wrong password, which is the refusal that walks an account towards
+      // the router's five-failure lockout if anything retries it.
+      return Promise.resolve<LoginResult>(
         access.signInSucceeds
-          ? { ok: true as const }
-          : { ok: false as const, reason: "refused" as const },
+          ? { ok: true }
+          : { ok: false, reason: "wrong-credential" },
       );
     },
   };
