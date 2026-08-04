@@ -24,7 +24,11 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { DeviceRow, DevicesModel } from "../../src/main/devices-window.js";
+import type {
+  DeviceRefusal,
+  DeviceRow,
+  DevicesModel,
+} from "../../src/main/devices-window.js";
 
 /**
  * `import.meta.url` is turned into a path before anything is resolved against
@@ -146,6 +150,42 @@ function emptyNotice(): HTMLElement | null {
 
 function offlineNotice(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-devices-offline]");
+}
+
+function noPasswordNotice(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-devices-no-password]");
+}
+
+function refusalNotice(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-devices-refusal]");
+}
+
+/** The list, plus why the last press changed nothing. */
+function refused(
+  refusal: DeviceRefusal,
+  ...devices: DeviceRow[]
+): DevicesModel {
+  return { state: "listed", devices, refusal };
+}
+
+/** Whatever notice the page is currently showing, or "" when it shows none. */
+function shownNotice(): string {
+  const notices = [
+    emptyNotice(),
+    offlineNotice(),
+    noPasswordNotice(),
+    refusalNotice(),
+  ];
+
+  const said: string[] = [];
+
+  for (const notice of notices) {
+    if (notice !== null && !notice.hidden) {
+      said.push(notice.textContent?.trim() ?? "");
+    }
+  }
+
+  return said.join(" ").trim();
 }
 
 describe("the devices page", () => {
@@ -761,5 +801,240 @@ describe("the devices page with nothing to list", () => {
     await apply(listed());
 
     expect(errors).toEqual([]);
+  });
+});
+
+/**
+ * The cap the firmware actually enforces. Ten entries per SSID, established
+ * against the live router in T-62 — the architecture's original 32 was wrong,
+ * and a message quoting the wrong number is worse than none.
+ */
+const CAP = 10;
+
+/**
+ * A router error code nobody here has a name for, at the endpoint a filter
+ * write goes to.
+ *
+ * Deliberately not one of the codes this codebase does name — 100002, 100003,
+ * 108006, 108007, 111019, 125002, 125003 — so what is asserted below is the
+ * general "carry it whole" path and not a second branch spelled out by hand.
+ */
+const UNNAMED_REFUSAL: DeviceRefusal = {
+  kind: "error",
+  source: "api",
+  code: 100004,
+  endpoint: "/api/wlan/multi-macfilter-settings",
+};
+
+/**
+ * The five conditions that are not a populated list, each named and each with
+ * the model that produces it.
+ *
+ * They are held in one table because the claim being made is about all five
+ * together: that each reads as itself, and that none of them is a bare table
+ * with nothing said. The individual assertions follow one per condition.
+ */
+const CONDITIONS: { name: string; model: DevicesModel }[] = [
+  { name: "the router is unreachable", model: { state: "offline" } },
+  { name: "the router says nothing is connected", model: listed() },
+  { name: "no router password is stored", model: { state: "no-password" } },
+  {
+    name: "the router refused the write",
+    model: refused(UNNAMED_REFUSAL, PHONE),
+  },
+  {
+    name: "the filter is full",
+    model: refused({ kind: "full", cap: CAP }, PHONE),
+  },
+];
+
+/**
+ * Why there is no list, or why a change did not take.
+ *
+ * Five conditions that would otherwise look alike — and looking alike is the
+ * whole failure, because a window that answers "nothing here" to five different
+ * questions has answered none of them. Every assertion is about words: the page
+ * ships unstyled, so a colour or an icon would say nothing at all, and once it
+ * is styled it would still say nothing in greyscale.
+ *
+ * None of them is a dialog. The app runs unattended, and a modal nobody
+ * dismisses blocks it for as long as it is left alone.
+ */
+describe("the devices page — why there is no list, or why a press changed nothing", () => {
+  it("states a missing password as a missing password, not as a router failure", async () => {
+    await apply({ state: "no-password" });
+
+    const said = noPasswordNotice();
+
+    // Its own state in the DOM, so it cannot be mistaken for the router being
+    // unreachable — which is exactly what it used to degrade into.
+    expect(pageState()).toBe("no-password");
+    expect(said?.hidden).toBe(false);
+    expect(said?.textContent?.trim()).not.toBe("");
+    expect(said?.textContent?.toLowerCase()).toContain("password");
+    expect(offlineNotice()?.hidden).toBe(true);
+    expect(emptyNotice()?.hidden).toBe(true);
+  });
+
+  it("says where the password is set rather than leaving it to be found", async () => {
+    await apply({ state: "no-password" });
+
+    // Nothing in this window can take a password, so the sentence has to point
+    // at the one place that can, or it states a problem with no way out of it.
+    expect(noPasswordNotice()?.textContent).toMatch(/menu bar/i);
+  });
+
+  it("states a refusal the router answered with a number, code and endpoint and all", async () => {
+    await apply(refused(UNNAMED_REFUSAL, PHONE));
+
+    const said = refusalNotice();
+
+    // 100004 has no name here on purpose. The number and the endpoint are the
+    // only evidence of *why* the router refused, so they are carried whole
+    // rather than flattened into "it failed".
+    expect(said?.hidden).toBe(false);
+    expect(said?.textContent).toContain("100004");
+    expect(said?.textContent).toContain("/api/wlan/multi-macfilter-settings");
+  });
+
+  it("states a full filter with the cap in it, rather than as a write that failed", async () => {
+    await apply(refused({ kind: "full", cap: CAP }, PHONE));
+
+    const said = refusalNotice();
+
+    // A household that has filled the firmware's list has done nothing wrong,
+    // so the cap is stated and the number is the actionable part of it.
+    expect(said?.hidden).toBe(false);
+    expect(said?.textContent).toContain("10");
+    expect(said?.textContent?.toLowerCase()).toContain("full");
+  });
+
+  it("gives each of the five conditions a message of its own", async () => {
+    const said: string[] = [];
+
+    for (const condition of CONDITIONS) {
+      await apply(condition.model);
+      said.push(shownNotice());
+    }
+
+    expect(said).toHaveLength(5);
+    expect(said.filter((text) => text === "")).toEqual([]);
+    // Five conditions, five different sentences: no two of them collapse into
+    // the same "there is nothing to show".
+    expect(new Set(said).size).toBe(5);
+  });
+
+  it("never shows a table with no rows and nothing said about why", async () => {
+    for (const condition of CONDITIONS) {
+      await apply(condition.model);
+
+      const explained = shownNotice() !== "";
+
+      expect({ [condition.name]: explained }).toEqual({
+        [condition.name]: true,
+      });
+    }
+  });
+
+  it("raises no dialog for any of them, the app being unattended", async () => {
+    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const alerted = vi
+      .spyOn(window, "alert")
+      .mockImplementation(() => undefined);
+
+    for (const condition of CONDITIONS) {
+      await apply(condition.model);
+    }
+
+    expect(confirmed).not.toHaveBeenCalled();
+    expect(alerted).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
+  });
+
+  it("keeps every device row when a write is refused", async () => {
+    await apply(listed(PHONE, row(), TABLET));
+    const before = bodyRows().length;
+
+    await apply(refused(UNNAMED_REFUSAL, PHONE, row(), TABLET));
+
+    // The devices are still there. A list that vanished because a toggle failed
+    // would throw away the very thing the window exists to show.
+    expect(before).toBe(3);
+    expect(bodyRows()).toHaveLength(before);
+    expect(shownNames()).toEqual(["galaxy-s10e", "MacBookPro", "iPad"]);
+    expect(pageState()).toBe("listed");
+  });
+
+  it("keeps the rows themselves, not merely their number", async () => {
+    await apply(listed(PHONE, row()));
+    const [phone, laptop] = bodyRows();
+
+    await apply(refused({ kind: "full", cap: CAP }, PHONE, row()));
+
+    expect(bodyRows()[0]).toBe(phone);
+    expect(bodyRows()[1]).toBe(laptop);
+    expect(controlOfRow(0)?.textContent).toBe("Block");
+  });
+
+  it("takes the complaint back down once a press is not refused", async () => {
+    await apply(refused(UNNAMED_REFUSAL, PHONE));
+    await apply(listed(PHONE));
+
+    expect(refusalNotice()?.hidden).toBe(true);
+    expect(pageState()).toBe("listed");
+  });
+
+  it("states a whitelist filter as itself rather than as an unexplained refusal", async () => {
+    await apply(refused({ kind: "whitelist" }, PHONE));
+
+    // The router is set to allow only a named list, which this app never
+    // writes. Saying so is the only thing that makes the row's inaction sensible.
+    expect(refusalNotice()?.hidden).toBe(false);
+    expect(refusalNotice()?.textContent?.toLowerCase()).toContain("whitelist");
+  });
+
+  it("states an unreadable filter as its own reason", async () => {
+    await apply(refused({ kind: "unreadable" }, PHONE));
+
+    expect(refusalNotice()?.hidden).toBe(false);
+    expect(refusalNotice()?.textContent?.trim()).not.toBe("");
+  });
+
+  it("gives every word-shaped router failure a sentence of its own", async () => {
+    const said: string[] = [];
+
+    for (const reason of [
+      "unreachable",
+      "timeout",
+      "session",
+      "error",
+      "not-logged-in",
+    ] as const) {
+      await apply(refused(reason, PHONE));
+      said.push(refusalNotice()?.textContent?.trim() ?? "");
+    }
+
+    expect(said.filter((text) => text === "")).toEqual([]);
+    expect(new Set(said).size).toBe(said.length);
+  });
+
+  it("writes the refusal as text, never as markup", async () => {
+    await apply(
+      refused(
+        { ...UNNAMED_REFUSAL, endpoint: "<img src=x onerror=alert(1)>" },
+        PHONE,
+      ),
+    );
+
+    expect(refusalNotice()?.querySelector("*")).toBeNull();
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("still says nothing is connected when a refusal lands on an empty list", async () => {
+    await apply(refused({ kind: "full", cap: CAP }));
+
+    expect(pageState()).toBe("empty");
+    expect(emptyNotice()?.hidden).toBe(false);
+    expect(refusalNotice()?.hidden).toBe(false);
   });
 });

@@ -22,9 +22,10 @@ import {
   deviceAssociatedFor,
   deviceDisplayName,
   listDevices,
+  type DeviceBlockRefusal,
   type ListedDevice,
 } from "../domain/devices.js";
-import type { HostListResult } from "../hilink/client.js";
+import type { HostListResult, RouterFailure } from "../hilink/client.js";
 import { MAC_FILTER_OFF, type MacFilter } from "../hilink/macfilter.js";
 
 /** Wide enough for a name, an address and a MAC on one line. */
@@ -134,18 +135,49 @@ export interface DeviceRow {
 }
 
 /**
- * What the window shows, in the two shapes it can be in.
+ * Why a block or unblock changed nothing.
  *
- * `listed` with no devices is a genuine answer — the router says nothing is
- * connected — and the page states it as such. `offline` is the router not
- * having answered at all, which is a normal state rendered like the panel's,
- * never an error dialog: the app runs unattended.
+ * The two halves are the vocabularies that already exist, joined rather than
+ * replaced: a {@link DeviceBlockRefusal} is settled here before any request
+ * goes out, and a {@link RouterFailure} is the router's own word on one that
+ * did — including a numeric code nobody has named, carried whole as a
+ * `RouterRefusal` with the endpoint that produced it.
+ *
+ * Every member is either a word or an object with a `kind`, so one `typeof`
+ * and one `kind` tell all of them apart. There is deliberately no third
+ * vocabulary and no "something went wrong" catch-all: a refusal the window
+ * cannot name is exactly the one whose number matters most.
+ */
+export type DeviceRefusal = DeviceBlockRefusal | RouterFailure;
+
+/**
+ * What the window shows, in the three shapes it can be in.
+ *
+ * One discriminated state rather than a set of flags, because the states are
+ * mutually exclusive and a pair of booleans could represent combinations that
+ * are not answers to anything:
+ *
+ * - `listed` with devices is the list. `listed` with none is a genuine answer —
+ *   the router says nothing is connected — and the page states it as such.
+ * - `offline` is the router not having answered at all, which is a normal state
+ *   rendered like the panel's, never an error dialog: the app runs unattended.
+ * - `no-password` is nothing having been asked of the router, because there is
+ *   nothing to sign in with. It used to arrive as `offline`, which blamed the
+ *   router for something the user settles in the panel in ten seconds.
+ *
+ * {@link DevicesModel.refusal} rides the list rather than replacing it, and
+ * that is the point: a write that failed says nothing about which devices are
+ * connected, so emptying the table over one would throw away the very thing the
+ * window exists to show.
  *
  * The offline *reason* deliberately does not travel, exactly as it does not
- * reach the panel.
+ * reach the panel — an unreachable router is one state however it is
+ * unreachable. A refusal is not, because someone pressed something.
  */
 export type DevicesModel =
-  { state: "listed"; devices: DeviceRow[] } | { state: "offline" };
+  | { state: "listed"; devices: DeviceRow[]; refusal?: DeviceRefusal }
+  | { state: "offline" }
+  | { state: "no-password" };
 
 /** One device, spelled for the table. */
 function rowFor(listed: ListedDevice): DeviceRow {
@@ -181,20 +213,30 @@ function rowFor(listed: ListedDevice): DeviceRow {
  * `localMacs` defaults to none for the same kind of reason, and marks no row as
  * this machine. Reading the interfaces belongs to the process that has them —
  * this only routes what it is handed.
+ *
+ * `refusal` is why the last press changed nothing, and it is attached to the
+ * list rather than shown instead of it. A refusal reaching an unreachable
+ * router is dropped: "the router is not answering" is the larger and truer
+ * statement, and stacking a second complaint on top of it says nothing more.
  */
 export function buildDevicesModel(
   result: HostListResult,
   filter: MacFilter = MAC_FILTER_OFF,
   localMacs: readonly string[] = [],
+  refusal?: DeviceRefusal,
 ): DevicesModel {
   if (!result.online) {
     return { state: "offline" };
   }
 
-  return {
-    state: "listed",
-    devices: listDevices(result.devices, filter, localMacs).map(rowFor),
-  };
+  const devices = listDevices(result.devices, filter, localMacs).map(rowFor);
+
+  // Written only when there is one, so a model with nothing to complain about
+  // is the same object it has always been — and every existing assertion about
+  // it goes on meaning what it meant.
+  return refusal === undefined
+    ? { state: "listed", devices }
+    : { state: "listed", devices, refusal };
 }
 
 export interface DevicesWindowOptions {

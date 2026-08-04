@@ -28,7 +28,6 @@ import {
   refuseDeviceBlock,
   withDeviceBlocked,
   withDeviceUnblocked,
-  type DeviceBlockRefusal,
 } from "../domain/devices.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
@@ -37,7 +36,6 @@ import {
   type HostListResult,
   type MacFilterResult,
   type MacFilterWriteResult,
-  type RouterFailure,
   type SnapshotResult,
 } from "../hilink/client.js";
 import { MAC_FILTER_OFF, type MacFilter } from "../hilink/macfilter.js";
@@ -55,6 +53,7 @@ import {
   buildDevicesModel,
   createDevicesWindow,
   type DeviceBlockRequest,
+  type DeviceRefusal,
   type DevicesWindow,
 } from "./devices-window.js";
 import {
@@ -121,11 +120,13 @@ export interface DeviceAccessSource {
 /**
  * What became of a press.
  *
- * A refusal decided here is a {@link DeviceBlockRefusal} and cost no request at
- * all; anything else is the router's own word on a request that was made.
+ * A refusal decided here cost no request at all; anything else is the router's
+ * own word on a request that was made. Both halves are {@link DeviceRefusal},
+ * which is the vocabulary the window states them in — the reason travels to the
+ * page whole rather than stopping at this return value.
  */
 export type DeviceBlockOutcome =
-  { ok: true } | { ok: false; reason: DeviceBlockRefusal | RouterFailure };
+  { ok: true } | { ok: false; reason: DeviceRefusal };
 
 export interface MenuBarOptions {
   /** Where the config lives. Injected so tests never touch the user directory. */
@@ -300,6 +301,8 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     createDevicesWindow({
       // The page has already confirmed it; what it costs the router is settled
       // in `setDeviceBlocked`, and a refusal there costs no request at all.
+      // Nothing is awaited here because nothing is dropped: `setDeviceBlocked`
+      // puts the outcome on the window itself before it returns one.
       onSetBlocked: (request) => void setDeviceBlocked(request),
     });
 
@@ -599,8 +602,12 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     const credential = credentials.load();
 
     if (credential === null) {
+      devicesNeedPassword = true;
+
       return { online: false, reason: "session" };
     }
+
+    devicesNeedPassword = false;
 
     const listed = await routerClient.hosts();
 
@@ -635,14 +642,43 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   let lastHosts: HostListResult = { online: false, reason: "session" };
 
   /**
+   * Whether the reason there is no list is that nothing has been asked.
+   *
+   * One bit, set by the two places that actually discover it — the poll's read
+   * and a press — rather than recomputed wherever a model is built: with a
+   * `hosts` source injected, this process is not the one holding the question,
+   * and asking the Keychain on every render to guess at it would be both a lie
+   * and a cost. It is not a router failure, and until now it arrived as one.
+   */
+  let devicesNeedPassword = false;
+
+  /**
+   * Why the last press changed nothing, if it did.
+   *
+   * Held here for the reason the sync state and the portal failure are: a poll
+   * landing afterwards rebuilds the model, and the complaint has to survive that
+   * or it would flash for one render and go. It is cleared by the next press —
+   * a press is the only thing that can answer it.
+   */
+  let lastRefusal: DeviceRefusal | undefined;
+
+  /**
    * Pushes the window whatever the last list and the last filter add up to,
    * with this machine's own interfaces named so its row can withhold the block
    * control. The interfaces are read on each refresh rather than once at start:
    * an adapter that comes up after launch is one this app must still recognise
    * as its own before offering to block it.
+   *
+   * No password stored is its own state and not an unreachable router. The
+   * router is fine; it has not been asked anything, and the window says so and
+   * names where the password is set.
    */
   function refreshDevices(): void {
-    devices.setDevices(buildDevicesModel(lastHosts, lastFilter, localMacs()));
+    devices.setDevices(
+      devicesNeedPassword
+        ? { state: "no-password" }
+        : buildDevicesModel(lastHosts, lastFilter, localMacs(), lastRefusal),
+    );
   }
 
   /**
@@ -692,13 +728,36 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
    *
    * Whatever happens, the filter is read again afterwards and the row is drawn
    * from that. The click's assumption is never what the window shows.
+   *
+   * The outcome is put on the window as well as returned. It used to stop at
+   * this return value and reach nobody, which left a refused press looking
+   * exactly like one that worked — and a router code nobody has a name for is
+   * the one thing here the user cannot work out for themselves.
    */
   async function setDeviceBlocked(
+    request: DeviceBlockRequest,
+  ): Promise<DeviceBlockOutcome> {
+    const outcome = await attemptDeviceBlock(request);
+
+    lastRefusal = outcome.ok ? undefined : outcome.reason;
+    // After the attempt's own re-read, so the rows are the router's latest word
+    // and the complaint sits beside them rather than in place of them.
+    refreshDevices();
+
+    return outcome;
+  }
+
+  /** The press itself, from the read it composes the write from to the write. */
+  async function attemptDeviceBlock(
     request: DeviceBlockRequest,
   ): Promise<DeviceBlockOutcome> {
     const credential = credentials.load();
 
     if (credential === null) {
+      // The same discovery `readHostList` makes, made here because a press can
+      // happen before the first poll has asked anything.
+      devicesNeedPassword = true;
+
       return { ok: false, reason: "not-logged-in" };
     }
 

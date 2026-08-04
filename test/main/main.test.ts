@@ -25,7 +25,11 @@ import type {
   MacFilterWriteResult,
 } from "../../src/hilink/client.js";
 import type { Device } from "../../src/hilink/devices.js";
-import { MAC_FILTER_CAP, type MacFilter } from "../../src/hilink/macfilter.js";
+import {
+  MAC_FILTER_CAP,
+  MAC_FILTER_ENDPOINT,
+  type MacFilter,
+} from "../../src/hilink/macfilter.js";
 import {
   startMenuBarApp,
   type DeviceAccessSource,
@@ -2519,6 +2523,156 @@ describe("startMenuBarApp — blocking a device", () => {
     expect(outcome).toEqual({ ok: false, reason: "timeout" });
     // The router still refuses it, and the row still says so.
     expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+
+    app.stop();
+  });
+});
+
+/** The last model the window was handed, whatever state it is in. */
+function lastModel(devices: {
+  models: DevicesModel[];
+}): DevicesModel | undefined {
+  return devices.models.at(-1);
+}
+
+/** How many rows the last pushed model would draw. */
+function rowCount(devices: { models: DevicesModel[] }): number {
+  const model = lastModel(devices);
+
+  return model?.state === "listed" ? model.devices.length : 0;
+}
+
+/**
+ * A router error code this codebase names nowhere, at the endpoint a filter
+ * write actually goes to. Carried whole rather than flattened, because the
+ * number and the endpoint are the only evidence of why the router refused.
+ */
+const UNNAMED_CODE = 100004;
+
+/**
+ * What the window is told when there is no list, or when a press changed
+ * nothing.
+ *
+ * The outcome of a write used to stop at `setDeviceBlocked`'s return value and
+ * reach nobody. These assert that it reaches the window instead — and that a
+ * refused write leaves the rows exactly where they were, because a list that
+ * vanished when a toggle failed would throw away what the window is for.
+ */
+describe("startMenuBarApp — saying why the list is empty or a press did not take", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("tells the window there is no password, rather than that the router is unreachable", async () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      // No `hosts` stub: the real gate is exercised, and with no credential
+      // stored it answers without a request ever leaving the process.
+      credentials: storeHolding(null),
+      localMacs: () => [],
+    });
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    // This used to degrade into the offline state, which said the router was
+    // at fault for something the user can fix in the panel.
+    expect(lastModel(devices)).toEqual({ state: "no-password" });
+
+    app.stop();
+  });
+
+  it("carries a router refusal nobody has named to the window, code and endpoint intact", async () => {
+    const access = recordingAccess(macFilter("off"), {
+      writeResult: {
+        ok: false,
+        reason: {
+          kind: "error",
+          source: "api",
+          code: UNNAMED_CODE,
+          endpoint: MAC_FILTER_ENDPOINT,
+        },
+      },
+    });
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+    const before = rowCount(devices);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    expect(lastModel(devices)).toEqual({
+      state: "listed",
+      devices: expect.anything(),
+      refusal: {
+        kind: "error",
+        source: "api",
+        code: UNNAMED_CODE,
+        endpoint: MAC_FILTER_ENDPOINT,
+      },
+    });
+    // The write failed; the devices did not go anywhere.
+    expect(before).toBe(1);
+    expect(rowCount(devices)).toBe(before);
+
+    app.stop();
+  });
+
+  it("carries the cap refusal to the window with the cap on it", async () => {
+    const full = macFilter(
+      "blacklist",
+      ...Array.from(
+        { length: MAC_FILTER_CAP },
+        (_unused, slot) => `A2:00:5E:00:00:1${slot}`,
+      ),
+    );
+    const access = recordingAccess(full);
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+    const before = rowCount(devices);
+
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    const model = lastModel(devices);
+
+    expect(model?.state).toBe("listed");
+    expect(model?.state === "listed" ? model.refusal : undefined).toEqual({
+      kind: "full",
+      cap: MAC_FILTER_CAP,
+    });
+    expect(rowCount(devices)).toBe(before);
+
+    app.stop();
+  });
+
+  it("takes the complaint back down when a press goes through", async () => {
+    const access = recordingAccess(macFilter("off"), {
+      writeResult: { ok: false, reason: "timeout" },
+    });
+    const { app, devices } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    access.writeResult = { ok: true };
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    const model = lastModel(devices);
+
+    expect(model?.state === "listed" ? model.refusal : "unset").toBeUndefined();
 
     app.stop();
   });
