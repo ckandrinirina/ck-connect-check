@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GET /api/lan/HostInfo, captured from the B310s-22 on 21.333.01.00.00 (T-62).
+
+  This is the whole reply. The endpoint the architecture expected to carry wired
+  clients and the connection medium is NOT IMPLEMENTED on this firmware: it
+  answers 100002 ("no such API") on an authenticated session, not only on an
+  anonymous one, so the refusal is not a rights problem that a login would fix.
+  /api/lan/hostinfo and /api/wlan/station-information answer 100002 as well.
+
+  Kept as a fixture so the claim is evidence rather than a note: if a later
+  firmware implements the endpoint, this test fails and the decision to read
+  host-list alone gets revisited.
+
+  Nothing is redacted — an error reply carries no identifying data.
+-->
+<error>
+<code>100002</code>
+<message></message>
+</error>

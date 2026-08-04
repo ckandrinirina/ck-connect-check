@@ -115,34 +115,51 @@ The `#359#` path to the exact allowance, as captured from the device:
 The final line is the ground truth the app is after: an exact remaining volume and an
 exact expiry date, neither of which any `/api/monitoring/` endpoint knows.
 
-### LAN device API — provisional
+### LAN device API
 
-**Not yet verified against the device.** Everything in this subsection is the expected shape
-on HiLink firmware, drawn from the router's own `/html/statistic.html`, and T-62 replaces it
-with what the B310s-22 on `21.333.01.00.00` actually answers. Nothing may be built on it
-until then.
+Verified live against the B310s-22 on `21.333.01.00.00` (T-62), read-only. Every reply below
+is committed under `test/fixtures/hilink/`, and `test/hilink/device-fixtures.test.ts` holds
+this section to those captures — including the absences, which are findings in their own
+right.
 
-| Endpoint                             | Method | Expected to carry                                                                                                   |
-| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------- |
-| `/api/wlan/host-list`                | GET    | one `<Host>` per Wi-Fi client — `HostName`, `IpAddress`, `MacAddress`, `AssociatedTime`, `AssociatedSsid`, `Active` |
-| `/api/lan/HostInfo`                  | GET    | the same clients plus wired ones, with the connection medium                                                        |
-| `/api/wlan/multi-macfilter-settings` | GET    | the WLAN MAC filter — a mode (off / whitelist / blacklist) and its entries                                          |
-| `/api/wlan/multi-macfilter-settings` | POST   | writes the whole filter back; authenticated, like every other `POST`                                                |
+| Endpoint                             | Method | Auth  | What it actually answers                                                                                          |
+| ------------------------------------ | ------ | ----- | ----------------------------------------------------------------------------------------------------------------- |
+| `/api/wlan/host-list`                | GET    | login | one `<Host>` per Wi-Fi client — `ID`, `MacAddress`, `IpAddress`, `HostName`, `AssociatedTime`, `AssociatedSsid`   |
+| `/api/lan/HostInfo`                  | GET    | —     | **not implemented**: `100002`, even on an authenticated session                                                   |
+| `/api/wlan/multi-macfilter-settings` | GET    | login | `<Ssids>` → four `<Ssid>` blocks, each `Index`, `WifiMacFilterStatus`, `WifiMacFilterMac0..9`, `wifihostname0..9` |
+| `/api/wlan/multi-macfilter-settings` | POST   | login | writes the whole filter back — not yet exercised; T-68 is the first write                                         |
 
-Three things follow from this being the mechanism, whatever the exact field names turn out
-to be:
+**`host-list` is the only device source, and the app reads nothing else.** `/api/lan/HostInfo`
+was expected to add wired clients and the connection medium; it does not exist on this
+firmware, answering `100002` even when logged in, and so do `/api/lan/hostinfo` and
+`/api/wlan/station-information`. `host-list` is the Wi-Fi association table alone: there are no
+wired clients in it, there is no `Active` element, and there is **no band or frequency field**
+— the 2.4 GHz / 5 GHz column the devices window was sketched around has no source and is not
+built. `AssociatedSsid` is the nearest thing, and on this device all four SSIDs share one name.
 
-- Blocking is a **filter write, not a per-device call**. The router holds one list; blocking
-  one device means sending the list with that device added, so a stale read followed by a
-  write would silently unblock everyone else. Every write reads the filter first.
-- The list is **bounded** — HiLink firmware caps MAC filter entries (32 on comparable
-  devices), so a full list is an ordinary state the UI has to state, not an error.
+Four things follow, each observed rather than assumed:
+
+- **Reading the device list needs the stored password.** Both `host-list` and the filter `GET`
+  answer `100003` on a plain `SesTokInfo` session and only yield after `/api/user/login`. This
+  is the correction that matters most: devices cannot ride the unauthenticated poll the way
+  `/api/monitoring/status` does, so the whole feature sits behind the credential, and "no
+  password stored" is a first-class empty state the window has to render.
+- **The filter is per-SSID and capped at ten, not 32.** The reply carries one block per SSID
+  (`Index` 0–3) with exactly `WifiMacFilterMac0..9` slots each — ten entries per SSID. A full
+  list is an ordinary state to report, not an error.
+- **Blocking is a filter write, not a per-device call**, and the write must carry _all four_
+  `<Ssid>` blocks. The router replaces what it is sent, so a write built from a stale read — or
+  one that omits the other three SSIDs — silently unblocks everyone else. Every write reads the
+  filter first.
 - The write is a `POST`, so it inherits the entire authenticated path above: a login, a
-  single-use rotating token, the `125003` refresh-and-retry-once rule, and the
-  five-failure account lockout that forbids automatic retries.
+  single-use rotating token, the `125003` refresh-and-retry-once rule, and the five-failure
+  account lockout that forbids automatic retries.
 
-The list is read on the ordinary poll — it is an unauthenticated `GET` on the same footing
-as `/api/monitoring/status`, so it costs no more than the fields already fetched.
+One parsing trap, and it is the router's own: the MAC slots are `WifiMacFilterMacN` but the
+name slots are `wifihostnameN`, lower-case. A write has to reproduce both spellings exactly.
+
+At rest the filter is off — `WifiMacFilterStatus` is `0` on all four SSIDs — and that is the
+shape a write has to start from.
 
 ## Orange portal
 
@@ -447,6 +464,9 @@ Append-only. One line each, always with the reason.
 - A block or unblock is only ever an explicit press and is never retried automatically — the write is an authenticated `POST`, and the same five-failure lockout that forbids a USSD retry loop forbids this one
 - The machine running the app can never be blocked from its own device list — cutting the app off from the router it is talking to is unrecoverable from inside the app, and no confirmation dialog makes that a reasonable thing to allow
 - A full MAC filter is a stated condition, not an error — the firmware caps the list, and a household reaching that cap has done nothing wrong
+- **Corrects the poll line above (T-62):** devices are read only when a password is stored, because `host-list` answers `100003` on an unauthenticated session — it is not on the same footing as `/api/monitoring/status`, so the list rides the poll only once logged in, and "no password stored" is an empty state the window renders rather than an error
+- **Corrects the cap in the line above (T-62):** the filter holds ten entries per SSID, not 32, and the reply is four `<Ssid>` blocks rather than one list — a write carries all four or it silently clears the ones it omits
+- The devices window drops the 2.4/5 GHz column it was sketched with (T-62) — `host-list` carries no band, frequency or medium field, `/api/lan/HostInfo` does not exist on this firmware, and a column with no source is not worth inventing one for
 
 ## Conventions
 

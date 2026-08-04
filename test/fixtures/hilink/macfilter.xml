@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  GET /api/wlan/multi-macfilter-settings, captured from the B310s-22 on
+  21.333.01.00.00 (T-62). Requires an authenticated session: without one the
+  router answers 100003, so even READING the blocked state needs the password.
+
+  The filter is off across all four SSIDs (WifiMacFilterStatus 0), which is its
+  state at rest and the shape a write has to reproduce.
+
+  Two things the architecture guessed wrong and this reply settles:
+    - the cap is TEN entries per SSID (WifiMacFilterMac0..9), not 32
+    - the reply is per-SSID: four <Ssid> blocks, Index 0..3, and a write must
+      carry all four or it rewrites the ones it omits
+
+  Note the deliberate casing split, which is the router's and not a typo:
+  WifiMacFilterMacN is capitalised, wifihostnameN is not.
+
+  Nothing is redacted — every filter slot is empty, so the reply carries no
+  identifying data.
+-->
+<response>
+<Ssids>
+<Ssid>
+<Index>0</Index>
+<WifiMacFilterStatus>0</WifiMacFilterStatus>
+<WifiMacFilterMac0></WifiMacFilterMac0>
+<wifihostname0></wifihostname0>
+<WifiMacFilterMac1></WifiMacFilterMac1>
+<wifihostname1></wifihostname1>
+<WifiMacFilterMac2></WifiMacFilterMac2>
+<wifihostname2></wifihostname2>
+<WifiMacFilterMac3></WifiMacFilterMac3>
+<wifihostname3></wifihostname3>
+<WifiMacFilterMac4></WifiMacFilterMac4>
+<wifihostname4></wifihostname4>
+<WifiMacFilterMac5></WifiMacFilterMac5>
+<wifihostname5></wifihostname5>
+<WifiMacFilterMac6></WifiMacFilterMac6>
+<wifihostname6></wifihostname6>
+<WifiMacFilterMac7></WifiMacFilterMac7>
+<wifihostname7></wifihostname7>
+<WifiMacFilterMac8></WifiMacFilterMac8>
+<wifihostname8></wifihostname8>
+<WifiMacFilterMac9></WifiMacFilterMac9>
+<wifihostname9></wifihostname9>
+</Ssid>
+<Ssid>
+<Index>1</Index>
+<WifiMacFilterStatus>0</WifiMacFilterStatus>
+<WifiMacFilterMac0></WifiMacFilterMac0>
+<wifihostname0></wifihostname0>
+<WifiMacFilterMac1></WifiMacFilterMac1>
+<wifihostname1></wifihostname1>
+<WifiMacFilterMac2></WifiMacFilterMac2>
+<wifihostname2></wifihostname2>
+<WifiMacFilterMac3></WifiMacFilterMac3>
+<wifihostname3></wifihostname3>
+<WifiMacFilterMac4></WifiMacFilterMac4>
+<wifihostname4></wifihostname4>
+<WifiMacFilterMac5></WifiMacFilterMac5>
+<wifihostname5></wifihostname5>
+<WifiMacFilterMac6></WifiMacFilterMac6>
+<wifihostname6></wifihostname6>
+<WifiMacFilterMac7></WifiMacFilterMac7>
+<wifihostname7></wifihostname7>
+<WifiMacFilterMac8></WifiMacFilterMac8>
+<wifihostname8></wifihostname8>
+<WifiMacFilterMac9></WifiMacFilterMac9>
+<wifihostname9></wifihostname9>
+</Ssid>
+<Ssid>
+<Index>2</Index>
+<WifiMacFilterStatus>0</WifiMacFilterStatus>
+<WifiMacFilterMac0></WifiMacFilterMac0>
+<wifihostname0></wifihostname0>
+<WifiMacFilterMac1></WifiMacFilterMac1>
+<wifihostname1></wifihostname1>
+<WifiMacFilterMac2></WifiMacFilterMac2>
+<wifihostname2></wifihostname2>
+<WifiMacFilterMac3></WifiMacFilterMac3>
+<wifihostname3></wifihostname3>
+<WifiMacFilterMac4></WifiMacFilterMac4>
+<wifihostname4></wifihostname4>
+<WifiMacFilterMac5></WifiMacFilterMac5>
+<wifihostname5></wifihostname5>
+<WifiMacFilterMac6></WifiMacFilterMac6>
+<wifihostname6></wifihostname6>
+<WifiMacFilterMac7></WifiMacFilterMac7>
+<wifihostname7></wifihostname7>
+<WifiMacFilterMac8></WifiMacFilterMac8>
+<wifihostname8></wifihostname8>
+<WifiMacFilterMac9></WifiMacFilterMac9>
+<wifihostname9></wifihostname9>
+</Ssid>
+<Ssid>
+<Index>3</Index>
+<WifiMacFilterStatus>0</WifiMacFilterStatus>
+<WifiMacFilterMac0></WifiMacFilterMac0>
+<wifihostname0></wifihostname0>
+<WifiMacFilterMac1></WifiMacFilterMac1>
+<wifihostname1></wifihostname1>
+<WifiMacFilterMac2></WifiMacFilterMac2>
+<wifihostname2></wifihostname2>
+<WifiMacFilterMac3></WifiMacFilterMac3>
+<wifihostname3></wifihostname3>
+<WifiMacFilterMac4></WifiMacFilterMac4>
+<wifihostname4></wifihostname4>
+<WifiMacFilterMac5></WifiMacFilterMac5>
+<wifihostname5></wifihostname5>
+<WifiMacFilterMac6></WifiMacFilterMac6>
+<wifihostname6></wifihostname6>
+<WifiMacFilterMac7></WifiMacFilterMac7>
+<wifihostname7></wifihostname7>
+<WifiMacFilterMac8></WifiMacFilterMac8>
+<wifihostname8></wifihostname8>
+<WifiMacFilterMac9></WifiMacFilterMac9>
+<wifihostname9></wifihostname9>
+</Ssid>
+</Ssids>
+</response>

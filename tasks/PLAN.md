@@ -63,10 +63,10 @@
 | T-60 | Stop the dial contradicting the notice beneath it                       | done   | S    | T-57                         |
 | T-61 | Stop the allowance strip claiming what Orange never said                | done   | S    | T-60                         |
 | T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
-| T-62 | Find out what the router actually says about connected devices          | todo   | M    | —                            |
+| T-62 | Find out what the router actually says about connected devices          | done   | M    | —                            |
 | T-63 | Turn the router's host list into typed devices                          | todo   | M    | T-62                         |
 | T-64 | Name, label and order the devices for reading                           | todo   | S    | T-63                         |
-| T-65 | Open a window for the connected devices                                 | todo   | M    | —                            |
+| T-65 | Open a window for the connected devices                                 | done   | M    | —                            |
 | T-66 | Fill the devices window from the live router                            | todo   | M    | T-64, T-65                   |
 | T-67 | Know which devices the router is already blocking                       | todo   | M    | T-62, T-63                   |
 | T-68 | Block and unblock a device from the list                                | todo   | M    | T-67                         |
@@ -3508,7 +3508,7 @@ suite, where an assertion compared two unknowns and would have passed with both 
 
 ## T-62 Find out what the router actually says about connected devices
 
-T-62 · status: todo · size: M · needs: — · files: test/fixtures/hilink/host-list.xml, test/fixtures/hilink/host-info.xml, test/fixtures/hilink/macfilter.xml, docs/ARCHITECTURE.md
+T-62 · status: done · size: M · needs: — · files: test/fixtures/hilink/host-list.xml, test/fixtures/hilink/host-info.xml, test/fixtures/hilink/macfilter.xml, docs/ARCHITECTURE.md, test/hilink/device-fixtures.test.ts
 
 `docs/ARCHITECTURE.md`'s **LAN device API — provisional** subsection is guesswork from the
 router's own `/html/statistic.html` and from what HiLink firmware generally does. Every other
@@ -3539,13 +3539,13 @@ write here is the household losing Wi-Fi, and there is no test that justifies it
 
 ### Acceptance
 
-- [ ] a real reply from each probed endpoint is committed under `test/fixtures/hilink/`, with any MSISDN or password redacted and the redaction noted in the file
-- [ ] every fixture is well-formed XML and loads in a test, so a truncated capture cannot pass
-- [ ] `docs/ARCHITECTURE.md`'s LAN device subsection no longer says "provisional" and each row states a field name that appears verbatim in a committed fixture
-- [ ] the document states which endpoint the app will read, which it will ignore, and why
-- [ ] the document states the filter's entry cap and whether its `GET` needs authentication, as observed
+- [x] a real reply from each probed endpoint is committed under `test/fixtures/hilink/`, with any MSISDN or password redacted and the redaction noted in the file
+- [x] every fixture is well-formed XML and loads in a test, so a truncated capture cannot pass
+- [x] `docs/ARCHITECTURE.md`'s LAN device subsection no longer says "provisional" and each row states a field name that appears verbatim in a committed fixture
+- [x] the document states which endpoint the app will read, which it will ignore, and why
+- [x] the document states the filter's entry cap and whether its `GET` needs authentication, as observed
 - [ ] no `POST` is made to the router in this task, and no fixture is a write reply
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -3556,6 +3556,35 @@ write here is the household losing Wi-Fi, and there is no test that justifies it
 5. Record in that subsection which endpoint wins and what the filter's cap is
 6. Run test, lint and build
 
+### Notes
+
+- **Acceptance 6 is deliberately left unticked.** Its second clause holds — no fixture is a
+  write reply, and nothing was written to the MAC filter — but its first clause does not: two
+  `POST`s were made. The probe found that `host-list` and the filter `GET` both answer `100003`
+  without a login, so the bodies this task exists to capture were unreachable under the
+  no-`POST` rule. The user was shown that finding and explicitly authorised a login; the run
+  made exactly one `POST /api/user/login` (succeeded first attempt, never retried, so the
+  five-failure lockout was never approached) and one `POST /api/user/logout` to avoid leaving an
+  authenticated session open. The criterion is recorded as an authorised shortfall rather than
+  ticked, because rewriting it to match what was done would erase the constraint.
+- The login ran through the app's own `password_type: 4` path with the password decrypted from
+  `safeStorage`; the plaintext never entered the transcript, the shell, or any file.
+- **Three planned assumptions were falsified, and the tasks after this one are now mis-specified:**
+  - `/api/lan/HostInfo` does not exist on this firmware (`100002`, even authenticated), as do
+    `/api/lan/hostinfo` and `/api/wlan/station-information`. `host-list` is the only source.
+  - `host-list` is **not** an unauthenticated `GET`. Devices cannot ride the ordinary poll, so
+    the feature sits behind the stored password and "no password stored" becomes a real empty
+    state — this affects **T-66**, **T-67** and **T-70**.
+  - The filter caps at **ten entries per SSID across four `<Ssid>` blocks**, not 32 in one list.
+    A write must carry all four blocks or it clears the ones it omits — this affects **T-68**.
+- **T-64 loses a column.** `host-list` carries no band, frequency or medium field, so the
+  2.4/5 GHz column the devices window was designed around has no source at all.
+- `AssociatedSsid` is the only SSID-ish field and all four SSIDs share one name on this device,
+  so it cannot stand in for the band either.
+- One host came back with an empty `<HostName></HostName>`. That is kept verbatim in the fixture
+  as the edge case T-64 has to name.
+- Parsing trap preserved in the fixture: the router spells the MAC slots `WifiMacFilterMacN` but
+  the name slots `wifihostnameN`, lower-case.
 ## T-63 Turn the router's host list into typed devices
 
 T-63 · status: todo · size: M · needs: T-62 · files: src/hilink/devices.ts, src/hilink/parse.ts, test/hilink/devices.test.ts
@@ -3640,7 +3669,7 @@ formatted with the same French-facing units the rest of the app uses.
 
 ## T-65 Open a window for the connected devices
 
-T-65 · status: todo · size: M · needs: — · files: src/main/devices-window.ts, src/renderer/devices.html, src/renderer/devices.ts, src/main/tray.ts, forge.config.ts, test/main/devices-window.test.ts
+T-65 · status: done · size: M · needs: — · files: src/main/devices-window.ts, src/renderer/devices.html, src/renderer/devices.ts, src/main/main.ts, package.json, test/main/devices-window.test.ts, test/renderer/devices.test.ts, test/main/main.test.ts, test/project-setup.test.ts
 
 The popover is 320×520 with 497 px already spent and no scrolling, so the device list gets its
 own window rather than a section inside it. This task builds the shell only — the window opens,
@@ -3657,13 +3686,13 @@ second window is exactly the kind of thing that works in development and 404s in
 
 ### Acceptance
 
-- [ ] a menu item opens the window, and the window is created with the app's CSP and `backgroundThrottling: false`
-- [ ] opening it a second time focuses the existing window instead of creating another, asserted by counting created windows
-- [ ] closing the window does not quit the app and does not stop the poll loop
-- [ ] the window's HTML entry resolves in a packaged layout as well as in development, asserted the way T-22 asserts the panel's
-- [ ] the renderer loads with no console error and renders a table with its column headers and no rows
-- [ ] the window's size is restored to a stated default on each open rather than being persisted
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] a menu item opens the window, and the window is created with the app's CSP and `backgroundThrottling: false`
+- [x] opening it a second time focuses the existing window instead of creating another, asserted by counting created windows
+- [x] closing the window does not quit the app and does not stop the poll loop
+- [x] the window's HTML entry resolves in a packaged layout as well as in development, asserted the way T-22 asserts the panel's
+- [x] the renderer loads with no console error and renders a table with its column headers and no rows
+- [x] the window's size is restored to a stated default on each open rather than being persisted
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -3674,6 +3703,23 @@ second window is exactly the kind of thing that works in development and 404s in
 5. Add the menu item that opens it
 6. Run test, lint and build
 
+### Notes
+
+- Two paths in the plan did not exist and the work took the real ones instead, both verified by
+  QA: there is no `forge.config.ts` — electron-forge is configured under `package.json`'s
+  `config.forge`, and the entry reaches the bundle through T-22's `cp` step, which now copies
+  `devices.html` as well; and the menu item lives in `src/main/main.ts`, not `src/main/tray.ts`,
+  because `tray.ts` is the pure title builder and touches no Electron. `files:` above records
+  what was actually changed.
+- The worktree was cut from `1a2ba9a` rather than from the branch tip, so the branch had to take
+  a merge of `batch/orange-carrier` before it would integrate. Both conflicts
+  (`src/main/main.ts`, `test/main/main.test.ts`) were resolved by keeping both sides; nothing of
+  T-50..T-61 was dropped, and the combined tree runs 1409 tests.
+- The devices page deliberately ships with no stylesheet — inline `<style>` is blocked by the
+  `default-src 'none'` CSP, so a `devices.css` belongs with T-66's real content.
+- Carried into T-66: the app runs `LSUIElement` with the Dock icon hidden, so `open()`/`focus()`
+  may raise the window without bringing the app forward. `app.focus({ steal: true })` in
+  `devices-window.ts` is the fix if it shows up in use.
 ## T-66 Fill the devices window from the live router
 
 T-66 · status: todo · size: M · needs: T-64, T-65 · files: src/main/poll.ts, src/main/devices-window.ts, src/renderer/devices.ts, test/main/poll.test.ts, test/renderer/devices.test.ts
