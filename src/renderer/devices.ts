@@ -98,13 +98,33 @@ function press(device: DeviceRow, blocked: boolean): void {
 }
 
 /**
- * The control in a row's last cell, created once and re-aimed thereafter.
+ * What stands where this machine's own control would have been.
+ *
+ * A sentence rather than a greyed-out button. Blocking the Mac the app runs on
+ * severs the connection the undo would have to travel over, and nothing in here
+ * could put it back — recovery means the router's own web UI from another
+ * device, or a factory reset. So the control is absent rather than disabled: a
+ * disabled control is one attribute away from being pressed, and an empty cell
+ * would leave the omission to be guessed at.
+ */
+const LOCAL_REASON = "This Mac — blocking it would cut off the app";
+
+/**
+ * The control in a row's last cell, created once and re-aimed thereafter —
+ * except on this machine's own row, which is given {@link LOCAL_REASON} instead
+ * and no control at all.
  *
  * The handler is assigned rather than added, because rows are kept between
  * polls: a listener added on every render would fire once per poll the row had
  * survived, turning one press into a handful of writes.
  */
 function fillAction(cell: HTMLTableCellElement, device: DeviceRow): void {
+  if (device.local) {
+    fillLocalReason(cell);
+
+    return;
+  }
+
   const existing = cell.querySelector<HTMLButtonElement>("[data-block]");
   const control = existing ?? document.createElement("button");
 
@@ -124,6 +144,27 @@ function fillAction(cell: HTMLTableCellElement, device: DeviceRow): void {
   control.onclick = (): void => {
     press(device, wanted);
   };
+}
+
+/**
+ * States the reason in place of the control, and takes any control that was
+ * there with it.
+ *
+ * The handler is given up before the button goes, rather than left for the
+ * element to carry away: a row is kept between polls, and a detached control
+ * still holding a live `onclick` is exactly the stale press this file is at
+ * pains elsewhere to avoid. `textContent` replaces every child, so the button
+ * cannot survive as a sibling of the words that replaced it.
+ */
+function fillLocalReason(cell: HTMLTableCellElement): void {
+  const control = cell.querySelector<HTMLButtonElement>("[data-block]");
+
+  if (control !== null) {
+    control.onclick = null;
+  }
+  if (cell.textContent !== LOCAL_REASON) {
+    cell.textContent = LOCAL_REASON;
+  }
 }
 
 /** The row elements already on the page, by the MAC each one belongs to. */
@@ -147,6 +188,7 @@ function fill(row: HTMLTableRowElement, device: DeviceRow): void {
   // hang on without the words having to go.
   row.dataset["blocked"] = String(device.blocked);
   row.dataset["present"] = String(device.present);
+  row.dataset["local"] = String(device.local);
 
   values.forEach((value, index) => {
     const cell = row.cells[index];

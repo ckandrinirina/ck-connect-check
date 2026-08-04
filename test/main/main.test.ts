@@ -57,6 +57,19 @@ const electron = vi.hoisted(() => ({
   trayImages: [] as unknown[],
 }));
 
+/**
+ * This machine's real interfaces are never read here.
+ *
+ * `main.ts` falls back to `networkInterfaces()` for the self-block guard when no
+ * `localMacs` is injected, and a test whose verdict moved with whatever adapters
+ * the host happened to have up would be no test at all. Everything else in
+ * `node:os` — `tmpdir`, which the config fixtures use — stays exactly as it is.
+ */
+vi.mock("node:os", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:os")>()),
+  networkInterfaces: (): Record<string, undefined> => ({}),
+}));
+
 vi.mock("electron", () => {
   class Tray {
     setTitle = electron.setTitle;
@@ -1904,6 +1917,7 @@ describe("startMenuBarApp — the device list behind that window", () => {
       popover: recordingPopover(),
       devices,
       hosts: countingHosts(),
+      localMacs: () => [],
     });
 
     clickDevicesMenuItem();
@@ -1922,6 +1936,9 @@ describe("startMenuBarApp — the device list behind that window", () => {
           // T-68 is what gives the poll a filter to pass in.
           blocked: false,
           present: true,
+          // No interface of this machine is in the list, so every row keeps
+          // its control — T-69's guard has nothing to match here.
+          local: false,
         },
       ],
     });
@@ -2395,6 +2412,48 @@ describe("startMenuBarApp — blocking a device", () => {
     expect(access.reads).toBe(0);
     expect(access.writes).toHaveLength(0);
     expect(outcome).toEqual({ ok: false, reason: "not-logged-in" });
+
+    app.stop();
+  });
+
+  it("tells the window which row is this machine, so the control can be withheld", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const { app, devices } = launchWithFilter(access, [
+      LAPTOP,
+      { ...LAPTOP, mac: THIS_MAC, name: "this-mac" },
+    ]);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Read from the interfaces this run was given, never matched by IP: the two
+    // rows below share one lease in the fixture.
+    expect(rowFor(devices, THIS_MAC)?.local).toBe(true);
+    expect(rowFor(devices, LAPTOP.mac)?.local).toBe(false);
+
+    app.stop();
+  });
+
+  it("marks no row as this machine when none of its interfaces is listed", async () => {
+    const access = recordingAccess(macFilter("off"));
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      hosts: countingHosts({ online: true, devices: [LAPTOP] }),
+      access,
+      credentials: storeHolding(CREDENTIAL),
+      // On Ethernet, with only Wi-Fi hosts reported. Every row keeps its
+      // control, which is the correct outcome rather than a fallback.
+      localMacs: () => [],
+    });
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(rowFor(devices, LAPTOP.mac)?.local).toBe(false);
 
     app.stop();
   });

@@ -112,6 +112,7 @@ function row(overrides: Partial<DeviceRow> = {}): DeviceRow {
     connectedFor: "5h 52m",
     blocked: false,
     present: true,
+    local: false,
     ...overrides,
   };
 }
@@ -561,6 +562,155 @@ describe("the devices table — the block control", () => {
 
     expect(() => controlOfRow(0)?.click()).not.toThrow();
     expect(errors).toEqual([]);
+  });
+});
+
+/** The Action cell of a row — the control, or whatever stands in its place. */
+function actionOfRow(index: number): HTMLTableCellElement | null {
+  const cells = bodyRows()[index]?.cells;
+
+  return cells === undefined ? null : (cells[cells.length - 1] ?? null);
+}
+
+/**
+ * The row that is the Mac this app runs on.
+ *
+ * Blocking it severs the connection the undo would have to travel over, and
+ * nothing inside the app could put it back: recovery would mean the router's own
+ * web UI from another device, or a factory reset. No confirmation dialog makes
+ * that a reasonable thing to offer, so the control is not offered — absent, not
+ * disabled, because a disabled control is one attribute away from being pressed.
+ *
+ * Every assertion about "nothing was sent" is a count of what reached the
+ * bridge, never a returned value.
+ */
+describe("the devices table — this machine's own row", () => {
+  beforeEach(() => {
+    sent = [];
+    window.devicesBridge = {
+      setBlocked(request: { mac: string; blocked: boolean }) {
+        sent.push(request);
+      },
+    };
+  });
+
+  it("renders the row of a local interface with no block control at all", async () => {
+    await apply(listed(row({ local: true })));
+
+    expect(controlOfRow(0)).toBeNull();
+    expect(bodyRows()[0]?.querySelector("button")).toBeNull();
+  });
+
+  it("states why the control is gone, in words and not only by its absence", async () => {
+    await apply(listed(row({ local: true })));
+
+    const reason = actionOfRow(0)?.textContent ?? "";
+
+    // The window ships unstyled, so an empty cell or a greyed-out control would
+    // say nothing at all — the same rule the Access column already follows.
+    expect(reason.trim()).not.toBe("");
+    expect(reason).toMatch(/this mac/i);
+    expect(reason.toLowerCase()).toContain("block");
+  });
+
+  it("leaves every other row its control", async () => {
+    await apply(listed(PHONE, row({ local: true }), TABLET));
+
+    expect([0, 1, 2].map((index) => controlOfRow(index) !== null)).toEqual([
+      true,
+      false,
+      true,
+    ]);
+  });
+
+  it("leaves every row its control when this machine is not in the list", async () => {
+    // On Ethernet, with only Wi-Fi hosts reported, the guard has nothing to
+    // match. That is the correct outcome, and nothing errors.
+    await apply(listed(PHONE, row(), TABLET));
+
+    expect([0, 1, 2].map((index) => controlOfRow(index) !== null)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("sends nothing for this machine, there being nothing to press", async () => {
+    confirmationAnswers(true);
+    await apply(listed(row({ local: true })));
+
+    bodyRows()[0]?.click();
+    actionOfRow(0)?.click();
+
+    expect(sent).toHaveLength(0);
+  });
+
+  it("still reads as a full row, with its access stated like any other", async () => {
+    await apply(listed(row({ local: true })));
+
+    expect(bodyRows()[0]?.cells).toHaveLength(7);
+    expect(accessOfRow(0)).toBe("Allowed");
+    expect(cellsOfRow(0)).toEqual([
+      "MacBookPro",
+      "192.168.8.100",
+      "A2:00:5E:00:00:01",
+      "HUAWEI-B310-XXXX",
+      "5h 52m",
+      "Allowed",
+    ]);
+  });
+
+  it("marks the row itself, so a style has something to hang on", async () => {
+    await apply(listed(row({ local: true }), PHONE));
+
+    expect(bodyRows()[0]?.dataset["local"]).toBe("true");
+    expect(bodyRows()[1]?.dataset["local"]).toBe("false");
+  });
+
+  it("writes the reason as text, never as markup", async () => {
+    await apply(listed(row({ local: true })));
+
+    expect(document.querySelector("table img")).toBeNull();
+    expect(actionOfRow(0)?.querySelector("*")).toBeNull();
+  });
+
+  it("says it once however many polls land on the same row", async () => {
+    await apply(listed(row({ local: true })));
+    const before = actionOfRow(0)?.textContent;
+
+    await apply(listed(row({ local: true })));
+    await apply(listed(row({ local: true })));
+
+    expect(actionOfRow(0)?.childNodes).toHaveLength(1);
+    expect(actionOfRow(0)?.textContent).toBe(before);
+  });
+
+  it("leaves no handler behind when a control is replaced by the reason", async () => {
+    confirmationAnswers(true);
+    await apply(listed(row({ local: false })));
+    const stale = controlOfRow(0);
+
+    await apply(listed(row({ local: true })));
+    stale?.click();
+
+    expect(controlOfRow(0)).toBeNull();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("puts a control back, armed exactly once, if the row stops being this machine", async () => {
+    const { asked } = confirmationAnswers(true);
+
+    await apply(listed(row({ local: true })));
+    await apply(listed(row({ local: false })));
+    await apply(listed(row({ local: false })));
+    controlOfRow(0)?.click();
+
+    // The row is kept between polls, so a listener added per render would fire
+    // twice for one press.
+    expect(controlOfRow(0)?.textContent).toBe("Block");
+    expect(asked).toHaveLength(1);
+    expect(sent).toHaveLength(1);
   });
 });
 

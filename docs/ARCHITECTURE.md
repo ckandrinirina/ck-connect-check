@@ -505,6 +505,8 @@ Append-only. One line each, always with the reason.
 - A press gets its own single sign-in, where the poll's list gets one for the whole run (T-68) — a refused login is never retried inside one press, but a second press tries again, because a press is deliberate and a poll is not
 - The row after a write is drawn from a re-read of the filter, never from the click (T-68) — the router is the only thing that knows what it is now refusing, and a row painted optimistically would state a block that may have been refused
 - The devices page talks back over a preload bridge on a named channel, where the model rides a global (T-68) — the model only ever flows main → renderer, and this ends in an authenticated `POST`, so it is validated in the main process like every other channel that can reach the router
+- This machine's own row carries no block control at all, with a sentence where the button would have been (T-69) — absent rather than disabled, because a disabled control is one attribute away from being pressed and an empty cell would leave the omission to be guessed at; the domain refusal above stands whatever the page renders
+- Which row is this machine is decided in `src/domain/` from the interface MACs the main process reads, and travels on the row (T-69) — the page is told the verdict rather than working it out, exactly as it is told the blocked one, and a machine with no interface in the list marks nothing and leaves every row its control
 
 ## Conventions
 

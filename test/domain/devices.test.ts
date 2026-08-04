@@ -26,6 +26,7 @@ import {
   sortDevices,
   withDeviceBlocked,
   withDeviceUnblocked,
+  type DeviceBlockRefusal,
 } from "../../src/domain/devices.js";
 
 function device(overrides: Partial<Device> = {}): Device {
@@ -420,6 +421,162 @@ describe("listDevices — a device the filter remembers and the router does not"
   it("adds no row for a whitelisted address that is merely away", () => {
     // A whitelist entry names a device that is allowed, not one that is barred.
     expect(listDevices([], filter("whitelist", away))).toEqual([]);
+  });
+});
+
+/**
+ * Which row is this machine's own.
+ *
+ * The verdict is settled here rather than in the page, so the window has only to
+ * act on it. It is a MAC comparison and never an IP one: a DHCP lease moves
+ * between devices, and blocking the wrong one because the table shifted is the
+ * exact failure the self-block guard exists to prevent.
+ */
+describe("listDevices — the row that is this machine", () => {
+  const connected = [
+    device({ name: "MacBookPro", mac: LAPTOP }),
+    device({ name: "galaxy-s10e", mac: PHONE }),
+  ];
+
+  /** Which listed address was read as this machine's, by MAC. */
+  function localMacsOf(listed: { device: Device; local: boolean }[]): string[] {
+    return listed.filter((one) => one.local).map((one) => one.device.mac);
+  }
+
+  it("marks the host whose address belongs to an interface of this machine", () => {
+    const listed = listDevices(connected, filter("off"), [LAPTOP]);
+
+    expect(localMacsOf(listed)).toEqual([LAPTOP]);
+  });
+
+  it("matches whatever separators or case either address is written with", () => {
+    expect(
+      localMacsOf(listDevices(connected, filter("off"), ["a2-00-5e-00-00-01"])),
+    ).toEqual([LAPTOP]);
+    expect(
+      localMacsOf(listDevices(connected, filter("off"), ["a2005e000001"])),
+    ).toEqual([LAPTOP]);
+  });
+
+  it("never reads a matching IP as this machine", () => {
+    // Both hosts share the lease; only the MAC decides.
+    const sharedLease = [
+      device({ name: "MacBookPro", mac: LAPTOP, ip: "192.168.8.100" }),
+      device({ name: "galaxy-s10e", mac: PHONE, ip: "192.168.8.100" }),
+    ];
+
+    expect(
+      localMacsOf(listDevices(sharedLease, filter("off"), [PHONE])),
+    ).toEqual([PHONE]);
+  });
+
+  it("marks every interface this machine has, not only the first", () => {
+    expect(
+      localMacsOf(listDevices(connected, filter("off"), [PHONE, LAPTOP])),
+    ).toEqual([PHONE, LAPTOP]);
+  });
+
+  it("marks nothing when this machine is not in the list at all", () => {
+    // On Ethernet, with only Wi-Fi hosts reported. Every row keeps its control,
+    // which is the correct outcome and not a fallback to work around.
+    expect(localMacsOf(listDevices(connected, filter("off"), []))).toEqual([]);
+  });
+
+  it("marks nothing when no local addresses are offered at all", () => {
+    expect(localMacsOf(listDevices(connected, filter("off")))).toEqual([]);
+  });
+
+  it("marks a remembered but absent address too, if it is this machine's", () => {
+    const away = { mac: "A6:00:5E:00:00:03", name: "iPad" };
+    const listed = listDevices([], filter("blacklist", away), [
+      "a6:00:5e:00:00:03",
+    ]);
+
+    expect(localMacsOf(listed)).toEqual(["A6:00:5E:00:00:03"]);
+  });
+
+  it("says nothing else about the row it marks", () => {
+    const listed = listDevices(connected, filter("blacklist", PHONE), [PHONE]);
+
+    expect(
+      listed.map((one) => [one.device.mac, one.blocked, one.present]),
+    ).toEqual([
+      [PHONE, true, true],
+      [LAPTOP, false, true],
+    ]);
+  });
+});
+
+/**
+ * The self-block guard, re-asserted at the layer that owns it.
+ *
+ * T-68 built `refuseDeviceBlock`; what is pinned here is that the window's
+ * missing control is a convenience and not the guard. Every assertion below
+ * counts the writes that were reached, because a test reading the returned
+ * refusal would pass an implementation that sent the write and then reported
+ * one.
+ */
+describe("refuseDeviceBlock — the guard is the domain's, not the page's", () => {
+  /** A write behind the gate, counting every time the gate let one through. */
+  function gated(localMacs: readonly string[]) {
+    const writes: string[] = [];
+
+    return {
+      writes,
+      set(mac: string, blocked: boolean): DeviceBlockRefusal | null {
+        const refusal = refuseDeviceBlock({
+          filter: ssids(blocked ? "off" : "blacklist", mac),
+          mac,
+          blocked,
+          localMacs,
+        });
+
+        if (refusal === null) {
+          writes.push(mac);
+        }
+
+        return refusal;
+      },
+    };
+  }
+
+  it("makes no write at all for a block asked on this machine's address", () => {
+    const gate = gated([LAPTOP]);
+
+    expect(gate.set(LAPTOP, true)).toEqual({ kind: "self" });
+    expect(gate.writes).toHaveLength(0);
+  });
+
+  it("makes no write however this machine's address is spelled", () => {
+    const gate = gated([LAPTOP]);
+
+    gate.set("a2-00-5e-00-00-01", true);
+    gate.set("a2005e000001", true);
+
+    expect(gate.writes).toHaveLength(0);
+  });
+
+  it("writes for every other device, the guard naming exactly one", () => {
+    const gate = gated([LAPTOP]);
+
+    expect(gate.set(PHONE, true)).toBeNull();
+    expect(gate.writes).toEqual([PHONE]);
+  });
+
+  it("writes for every device when this machine is not in the list", () => {
+    const gate = gated([]);
+
+    gate.set(LAPTOP, true);
+    gate.set(PHONE, true);
+
+    expect(gate.writes).toEqual([LAPTOP, PHONE]);
+  });
+
+  it("still writes the unblock that frees this machine rather than severing it", () => {
+    const gate = gated([LAPTOP]);
+
+    expect(gate.set(LAPTOP, false)).toBeNull();
+    expect(gate.writes).toEqual([LAPTOP]);
   });
 });
 

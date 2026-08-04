@@ -351,6 +351,7 @@ describe("buildDevicesModel", () => {
           connectedFor: "5h 52m",
           blocked: false,
           present: true,
+          local: false,
         },
       ],
     });
@@ -394,6 +395,7 @@ describe("buildDevicesModel", () => {
           connectedFor: "",
           blocked: true,
           present: false,
+          local: false,
         },
       ],
     });
@@ -427,6 +429,47 @@ describe("buildDevicesModel", () => {
       state: "listed",
       devices: [],
     });
+  });
+
+  it("carries the self-block verdict onto the row, so the page can act on it", () => {
+    const model = buildDevicesModel(
+      {
+        online: true,
+        devices: [device(), device({ mac: "00:1A:2B:00:00:02", name: "iPad" })],
+      },
+      macFilter("off"),
+      ["a2-00-5e-00-00-01"],
+    );
+
+    // Spelled differently from the host list, as the interfaces really are.
+    expect(
+      model.state === "listed"
+        ? model.devices.map((one) => [one.mac, one.local])
+        : [],
+    ).toEqual([
+      ["00:1A:2B:00:00:02", false],
+      ["A2:00:5E:00:00:01", true],
+    ]);
+  });
+
+  it("marks no row as this machine when none of its interfaces is listed", () => {
+    const model = buildDevicesModel(
+      { online: true, devices: [device()] },
+      macFilter("off"),
+      ["AA:BB:CC:DD:EE:FF"],
+    );
+
+    expect(
+      model.state === "listed" ? model.devices.map((one) => one.local) : [],
+    ).toEqual([false]);
+  });
+
+  it("marks no row as this machine before any interface has been read", () => {
+    const model = buildDevicesModel({ online: true, devices: [device()] });
+
+    expect(
+      model.state === "listed" ? model.devices.map((one) => one.local) : [],
+    ).toEqual([false]);
   });
 
   it("states an unreachable router as offline, never as an empty list", () => {

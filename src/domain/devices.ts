@@ -117,6 +117,11 @@ export interface ListedDevice {
   blocked: boolean;
   /** Whether the router reports it as associated right now. */
   present: boolean;
+  /**
+   * Whether this is the machine the app is running on — settled here so the
+   * window has only to act on it, and by MAC alone. See {@link isLocalDevice}.
+   */
+  local: boolean;
 }
 
 /** A filtered address the router says nothing else about, as a device. */
@@ -148,16 +153,23 @@ function absentDevice(mac: string, name: string): Device {
  * filter off, or under a whitelist, its entries name devices that are merely
  * remembered or merely permitted, and a ghost row for one of those answers no
  * question the window was asked.
+ *
+ * `localMacs` are this machine's own interface addresses, and every row is
+ * marked against them. It defaults to none, which marks nothing: before the
+ * interfaces have been read — and on a machine genuinely absent from the list —
+ * there is nothing to match, and that is the correct answer rather than a guess.
  */
 export function listDevices(
   devices: readonly Device[],
   filter: MacFilter,
+  localMacs: readonly string[] = [],
 ): ListedDevice[] {
   const present = new Set(devices.map((device) => normaliseMac(device.mac)));
   const listed: ListedDevice[] = devices.map((device) => ({
     device,
     blocked: isDeviceBlocked(filter, device.mac),
     present: true,
+    local: isLocalDevice(device.mac, localMacs),
   }));
 
   for (const entry of filter.entries) {
@@ -172,6 +184,7 @@ export function listDevices(
       device: absentDevice(entry.mac, entry.name),
       blocked: true,
       present: false,
+      local: isLocalDevice(entry.mac, localMacs),
     });
   }
 
