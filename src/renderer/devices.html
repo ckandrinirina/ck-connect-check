@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-devices-state="offline">
   <head>
     <meta charset="utf-8" />
     <!-- The same policy as the panel: nothing remote, no chart library, no font. -->
@@ -21,16 +21,31 @@
     <!--
       The shell of the list. The columns are stated here because they never
       change; the rows are written by `devices.ts` and arrive from the router.
+
+      There is no medium column and no active dot: `host-list` sends neither,
+      and it reports only the hosts associated right now — see T-62.
     -->
-    <table class="devices">
+    <table class="devices" data-devices-table hidden>
       <thead>
         <tr>
           <th scope="col">Device</th>
           <th scope="col">IP address</th>
           <th scope="col">MAC address</th>
+          <th scope="col">Network</th>
+          <th scope="col">Connected for</th>
         </tr>
       </thead>
       <tbody data-devices></tbody>
     </table>
+    <!--
+      The two ways of having no rows, which are not the same answer. The router
+      saying nothing is connected is a fact about the household; the router not
+      answering is a fact about the router, and the app runs unattended, so it
+      is a state on the page rather than a dialog.
+    -->
+    <p class="notice" data-devices-empty hidden>
+      No device is connected to the router.
+    </p>
+    <p class="notice" data-devices-offline hidden>Waiting for the router</p>
   </body>
 </html>

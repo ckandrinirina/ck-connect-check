@@ -467,6 +467,12 @@ Append-only. One line each, always with the reason.
 - **Corrects the poll line above (T-62):** devices are read only when a password is stored, because `host-list` answers `100003` on an unauthenticated session — it is not on the same footing as `/api/monitoring/status`, so the list rides the poll only once logged in, and "no password stored" is an empty state the window renders rather than an error
 - **Corrects the cap in the line above (T-62):** the filter holds ten entries per SSID, not 32, and the reply is four `<Ssid>` blocks rather than one list — a write carries all four or it silently clears the ones it omits
 - The devices window drops the 2.4/5 GHz column it was sketched with (T-62) — `host-list` carries no band, frequency or medium field, `/api/lan/HostInfo` does not exist on this firmware, and a column with no source is not worth inventing one for
+- **Narrows the "devices ride the poll" line above (T-66):** the host list is read only while the devices window is open — it is an authenticated request the menu bar never needs, so a window nobody has open must not cost one every 30 seconds
+- The device list is fetched inside the poll's own tick rather than beside it — a request started next to the poll could stack on the router, which is the one thing the settle-then-schedule cadence exists to prevent
+- A login taken out for the device list is attempted once and, if refused, stands the list down for the rest of the run — the list is read on every poll while the window is open, and a retry on that cadence would reach the five-failure lockout in minutes
+- An empty device list and an unreachable router are different states in the window, not one blank table — only the router can say that nothing is connected, and a router that did not answer has said nothing at all
+- The devices window drops the active dot too (T-66) — `host-list` carries no `Active` element and reports only the hosts currently associated, so the dot would be lit on every row it ever drew
+- Device rows are keyed by MAC in the renderer and updated in place — the list refreshes on the poll, and rebuilding the table would replace the row under a user reading it
 
 ## Conventions
 

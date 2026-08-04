@@ -23,18 +23,24 @@ import { isAnchorStale, needsAutomaticSync } from "../domain/allowance.js";
 import type { Carrier } from "../domain/carrier.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
-import { RouterClient, type SnapshotResult } from "../hilink/client.js";
+import {
+  RouterClient,
+  type HostListResult,
+  type SnapshotResult,
+} from "../hilink/client.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
 import type { Allowance, RouterSnapshot } from "../hilink/types.js";
 import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import {
   DEVICES_MENU_LABEL,
+  buildDevicesModel,
   createDevicesWindow,
   type DevicesWindow,
 } from "./devices-window.js";
 import {
   UsagePoller,
+  type HostListSource,
   type PortalSource,
   type SnapshotSource,
 } from "./poller.js";
@@ -79,6 +85,13 @@ export interface MenuBarOptions {
    * {@link MenuBarOptions.client} is: no test may reach `123.orange.mg`.
    */
   portal?: PortalSource;
+  /**
+   * The connected-devices side of the router, injected separately from
+   * {@link MenuBarOptions.client} for the reason the USSD side is: no test may
+   * reach a real device, and the poll's two reads are meant to be visibly
+   * independent of each other.
+   */
+  hosts?: HostListSource;
   /** The password store. Injected so tests need no Keychain. */
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
@@ -196,6 +209,12 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const portalSource: PortalSource = options.portal ?? {
     read: () => readInfoConso(),
   };
+
+  // The device list is a window of its own rather than a section of the panel:
+  // the panel is 320×520 with nothing left to spend and nothing scrolls in it.
+  // Created before the poller, which asks it on every tick whether anyone is
+  // looking at the list.
+  const devices = options.devices ?? createDevicesWindow();
 
   function refreshPopover(): void {
     popover.setModel(
@@ -466,9 +485,58 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     },
   };
 
+  /**
+   * Whether a login taken out for the device list has already been refused.
+   *
+   * One refusal stands the list down for the rest of the run: `host-list` is
+   * read on every poll while the window is open, and a wrong password retried
+   * on that cadence would reach the router's five-failure lockout in under
+   * three minutes. The same rule the sync keeps, for the same reason.
+   */
+  let deviceLoginRefused = false;
+
+  /**
+   * The connected devices, signing in first when the router insists.
+   *
+   * Unlike the monitoring endpoints this one is not anonymous — T-62 found
+   * `host-list` answering `100003` without a session — so the list rides the
+   * poll only once there is a password to sign in with. No password stored is
+   * therefore an ordinary "no list", not an error: it is exactly the state the
+   * window renders as the router being unavailable.
+   */
+  async function readHostList(): Promise<HostListResult> {
+    const credential = credentials.load();
+
+    if (credential === null) {
+      return { online: false, reason: "session" };
+    }
+
+    const listed = await routerClient.hosts();
+
+    if (listed.online || deviceLoginRefused) {
+      return listed;
+    }
+
+    const login = await routerClient.login(credential);
+
+    if (!login.ok) {
+      deviceLoginRefused = true;
+
+      return listed;
+    }
+
+    return await routerClient.hosts();
+  }
+
   const poller = new UsagePoller({
     client,
     config,
+    hosts: options.hosts ?? { hosts: readHostList },
+    // The window being open is the only reason to ask for the list at all.
+    wantsDevices: () => devices.isOpen(),
+    onDevices: (result) => {
+      devices.setDevices(buildDevicesModel(result));
+    },
     // Only ever read on Orange, and only on the idle interval — the poller
     // decides both, from the carrier the router reports.
     portal: {
@@ -520,10 +588,6 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // that has come round is noticed — `syncStaleAfterMinutes` decides whether
   // there is anything to notice.
   const staleCheck = setInterval(syncIfStale, STALE_CHECK_INTERVAL_MS);
-
-  // The device list is a window of its own rather than a section of the panel:
-  // the panel is 320×520 with nothing left to spend and nothing scrolls in it.
-  const devices = options.devices ?? createDevicesWindow();
 
   // Electron quits when the last window closes and nobody has said otherwise.
   // This app's home is the menu bar, where there is no window at all, so closing

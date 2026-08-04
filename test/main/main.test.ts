@@ -16,8 +16,11 @@ import type {
 import { defaultConfig } from "../../src/config/defaults.js";
 import {
   DEVICES_MENU_LABEL,
+  type DevicesModel,
   type DevicesWindow,
 } from "../../src/main/devices-window.js";
+import type { HostListResult } from "../../src/hilink/client.js";
+import type { Device } from "../../src/hilink/devices.js";
 import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
 import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
@@ -1678,11 +1681,16 @@ describe("startMenuBarApp — choosing which Orange forfait is measured", () => 
 });
 
 /** A stand-in for the devices window, so no window is ever created here. */
-function recordingDevices(): DevicesWindow & { opens: number } {
+function recordingDevices(): DevicesWindow & {
+  opens: number;
+  /** Every model pushed to the window, in order. */
+  models: DevicesModel[];
+} {
   let open = false;
 
   const devices = {
     opens: 0,
+    models: [] as DevicesModel[],
     open() {
       devices.opens += 1;
       open = true;
@@ -1691,6 +1699,9 @@ function recordingDevices(): DevicesWindow & { opens: number } {
       open = false;
     },
     isOpen: () => open,
+    setDevices(model: DevicesModel) {
+      devices.models.push(model);
+    },
     destroy() {
       open = false;
     },
@@ -1826,5 +1837,155 @@ describe("startMenuBarApp — the connected-devices window", () => {
     app.stop();
 
     expect(devices.isOpen()).toBe(false);
+  });
+});
+
+const LAPTOP: Device = {
+  mac: "A2:00:5E:00:00:01",
+  ip: "192.168.8.100",
+  name: "MacBookPro",
+  ssid: "HUAWEI-B310-XXXX",
+  associatedSeconds: 21_125,
+};
+
+/**
+ * The panel's model without its sparkline — the one part of it that is *meant*
+ * to differ between two polls, because a second sample has arrived.
+ */
+function panelReading(popover: RecordingPopover): Partial<PopoverModel> {
+  const reading: Partial<PopoverModel> = { ...latest(popover) };
+
+  delete reading.history;
+
+  return reading;
+}
+
+/** A host list that answers, and counts how often it was asked. */
+function countingHosts(result?: HostListResult): {
+  hosts: () => Promise<HostListResult>;
+  calls: number;
+} {
+  const source = {
+    calls: 0,
+    hosts: (): Promise<HostListResult> => {
+      source.calls += 1;
+
+      return Promise.resolve(result ?? { online: true, devices: [LAPTOP] });
+    },
+  };
+
+  return source;
+}
+
+describe("startMenuBarApp — the device list behind that window", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("pushes the router's devices into the window while it is open", async () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      hosts: countingHosts(),
+    });
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(devices.models.at(-1)).toEqual({
+      state: "listed",
+      devices: [
+        {
+          name: "MacBookPro",
+          ip: "192.168.8.100",
+          mac: "A2:00:5E:00:00:01",
+          network: "HUAWEI-B310-XXXX",
+          connectedFor: "5h 52m",
+        },
+      ],
+    });
+
+    app.stop();
+  });
+
+  it("asks the router for no host list while the window is shut", async () => {
+    const hosts = countingHosts();
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+      hosts,
+    });
+
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+    expect(hosts.calls).toBe(0);
+    expect(devices.models).toEqual([]);
+
+    app.stop();
+  });
+
+  it("leaves the panel's reading exactly as it was when the host list fails", async () => {
+    const popover = recordingPopover();
+    const devices = recordingDevices();
+    let refuse = false;
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+      devices,
+      hosts: {
+        hosts: () =>
+          refuse
+            ? Promise.reject(new Error("host-list refused"))
+            : Promise.resolve<HostListResult>({
+                online: true,
+                devices: [LAPTOP],
+              }),
+      },
+    });
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+    const reading = panelReading(popover);
+
+    refuse = true;
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(panelReading(popover)).toEqual(reading);
+    // And the window is told, rather than being left showing a stale list.
+    expect(devices.models.at(-1)).toEqual({ state: "offline" });
+
+    app.stop();
+  });
+
+  it("tells the window the router is unreachable rather than showing no devices", async () => {
+    const hosts = countingHosts();
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: scriptedClient([OFFLINE]),
+      popover: recordingPopover(),
+      devices,
+      hosts,
+    });
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(devices.models.at(-1)).toEqual({ state: "offline" });
+    expect(hosts.calls).toBe(0);
+
+    app.stop();
   });
 });
