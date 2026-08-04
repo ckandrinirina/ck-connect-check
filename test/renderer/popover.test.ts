@@ -27,6 +27,8 @@ import type { SyncFailure, SyncState } from "../../src/main/sync.js";
 import type { RateSample } from "../../src/domain/history.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import { selectForfait } from "../../src/orange/select.js";
+import type { OrangeForfait } from "../../src/orange/types.js";
 import {
   buildPopoverModel,
   type PopoverModel,
@@ -1022,6 +1024,7 @@ interface FakeBridge {
   savePassword: ReturnType<typeof vi.fn>;
   setPlanLimit: ReturnType<typeof vi.fn>;
   setPlanDays: ReturnType<typeof vi.fn>;
+  chooseForfait: ReturnType<typeof vi.fn>;
 }
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
@@ -1031,6 +1034,7 @@ function stubBridge(): FakeBridge {
     savePassword: vi.fn(),
     setPlanLimit: vi.fn(),
     setPlanDays: vi.fn(),
+    chooseForfait: vi.fn(),
   };
 
   window.popoverBridge = bridge;
@@ -2482,5 +2486,295 @@ describe("the new-plan confirmation — which view it belongs to", () => {
       ?.click();
 
     expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+  });
+});
+
+/**
+ * The Orange panel. Two of its controls have nothing behind them, and a
+ * control the user can reach but not use is worse than the space it costs —
+ * so they come off the page rather than being greyed out or hidden. Everything
+ * below therefore asserts against the rendered document, never against a class
+ * or a `display` rule: an element that is present but invisible is still
+ * focusable and still reachable by keyboard.
+ */
+const ORANGE_SNAPSHOT: RouterSnapshot = {
+  ...snapshot(10 * GB),
+  carrier: { carrier: "ORANGE MG", id: "orange" },
+};
+
+/** The live capture's Wifiber plan: 7.37 Go consumed, no cap stated anywhere. */
+const WIFIBER: OrangeForfait = {
+  label: "Wifiber Go+ SSE",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 7_370_000_000,
+};
+
+/** A top-up beside it, so a choice has something to choose between. */
+const TOP_UP: OrangeForfait = {
+  label: "Pass Internet 5 Go",
+  nature: "Internet",
+  bundleType: "data",
+  consumedBytes: 1_000_000_000,
+};
+
+/** The Orange panel over `forfaits`, with `rememberedLabel` chosen or not. */
+function orangeModel(
+  forfaits: readonly OrangeForfait[] = [WIFIBER],
+  rememberedLabel?: string,
+): PopoverModel {
+  const selection = selectForfait(forfaits, rememberedLabel);
+
+  return buildPopoverModel({
+    result: { online: true, snapshot: ORANGE_SNAPSHOT },
+    lastReading: null,
+    config: configWithLimit(20 * GB),
+    portal: {
+      reading: {
+        forfait: selection.selected,
+        candidates: selection.candidates,
+        remembered: selection.remembered,
+        at: NOW,
+      },
+      live: true,
+    },
+    clock,
+  });
+}
+
+describe("the Orange panel — the controls it does not offer", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(orangeModel());
+  });
+
+  it("has no Sync button anywhere in the document", () => {
+    expect(document.querySelector("[data-sync]")).toBeNull();
+  });
+
+  it("has no sync status line either, the button's report having no button", () => {
+    expect(document.querySelector('[data-field="syncStatus"]')).toBeNull();
+    expect(document.querySelector("[data-sync-row]")).toBeNull();
+  });
+
+  it("has no plan-length field in the settings view", () => {
+    settingsToggle().click();
+
+    expect(document.querySelector("form[data-plan-days]")).toBeNull();
+    expect(document.querySelector("[data-plan-days-input]")).toBeNull();
+    expect(document.querySelector('[data-field="planDaysError"]')).toBeNull();
+  });
+
+  it("keeps the plan cap, which the portal genuinely never states", () => {
+    settingsToggle().click();
+
+    const cap = document.querySelector<HTMLInputElement>(
+      "[data-plan-limit-input]",
+    );
+
+    expect(cap).not.toBeNull();
+    expect(cap?.value).toBe("20");
+  });
+
+  it("puts every one of them back when a Yas model follows", () => {
+    // The SIM decides, and a SIM can be swapped without the app restarting.
+    apply(modelUsing(10 * GB));
+
+    expect(document.querySelector("[data-sync]")).not.toBeNull();
+    expect(document.querySelector('[data-field="syncStatus"]')).not.toBeNull();
+    expect(document.querySelector("form[data-plan-days]")).not.toBeNull();
+    expect(
+      document.querySelector('[data-field="planDaysError"]'),
+    ).not.toBeNull();
+  });
+
+  it("still fills the sync line once it is back, rather than leaving it stale", () => {
+    apply(modelSyncing({ phase: "failed", reason: "timeout" }));
+
+    expect(textOf("syncStatus")).not.toBe("");
+  });
+});
+
+describe("the Yas panel — every control it always had", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelUsing(10 * GB));
+  });
+
+  it("still carries the Sync button and its status line", () => {
+    expect(document.querySelector("[data-sync]")).not.toBeNull();
+    expect(document.querySelector('[data-field="syncStatus"]')).not.toBeNull();
+  });
+
+  it("still carries the plan-length field beside the cap", () => {
+    settingsToggle().click();
+
+    const { cap, length } = typedForms();
+
+    expect(cap.hidden).toBe(false);
+    expect(length.hidden).toBe(false);
+  });
+
+  it("still sends a sync when the button is pressed", () => {
+    const bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+
+    document.querySelector<HTMLButtonElement>("[data-sync]")?.click();
+
+    expect(bridge.sync).toHaveBeenCalledTimes(1);
+  });
+
+  it("still sends the plan length when its form is submitted", () => {
+    const bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+    settingsToggle().click();
+
+    const field = document.querySelector<HTMLInputElement>(
+      "[data-plan-days-input]",
+    );
+
+    if (field === null) {
+      throw new Error("the settings view has no plan-length field");
+    }
+
+    field.value = "30";
+    document
+      .querySelector<HTMLFormElement>("form[data-plan-days]")
+      ?.dispatchEvent(
+        new window.Event("submit", { bubbles: true, cancelable: true }),
+      );
+
+    expect(bridge.setPlanDays).toHaveBeenCalledWith("30");
+  });
+});
+
+describe("the Orange panel — the forfait it names", () => {
+  function choices(): HTMLButtonElement[] {
+    return [
+      ...document.querySelectorAll<HTMLButtonElement>("[data-forfait-label]"),
+    ];
+  }
+
+  function choiceBlock(): HTMLElement {
+    const element = document.querySelector<HTMLElement>(
+      "[data-forfait-choice]",
+    );
+
+    if (element === null) {
+      throw new Error("the panel has no forfait choice block");
+    }
+
+    return element;
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("renders the detected plan's own name on the panel", () => {
+    apply(orangeModel());
+
+    expect(textOf("allowancePlan")).toBe("Wifiber Go+ SSE");
+  });
+
+  it("offers nothing to choose when one plan was live", () => {
+    apply(orangeModel());
+
+    expect(choiceBlock().hidden).toBe(true);
+    expect(choices()).toHaveLength(0);
+  });
+
+  it("names the chosen plan and lists the others when several were live", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    expect(textOf("allowancePlan")).toBe("Wifiber Go+ SSE");
+    expect(textOf("forfaitNote")).not.toBe("");
+    expect(choiceBlock().hidden).toBe(false);
+    expect(choices().map((one) => one.textContent)).toEqual([
+      "Pass Internet 5 Go",
+    ]);
+  });
+
+  it("draws each alternative as a real button with a name of its own", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    for (const choice of choices()) {
+      expect(choice.tagName).toBe("BUTTON");
+      expect(choice.getAttribute("type")).toBe("button");
+      expect(choice.tabIndex).toBeGreaterThanOrEqual(0);
+      expect(choice.getAttribute("aria-label")).not.toBe("");
+    }
+  });
+
+  it("sends the chosen label over the bridge exactly once", () => {
+    const bridge = stubBridge();
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    choices()[0]?.click();
+
+    expect(bridge.chooseForfait).toHaveBeenCalledTimes(1);
+    expect(bridge.chooseForfait).toHaveBeenCalledWith("Pass Internet 5 Go");
+  });
+
+  it("sends one message per press, not one per model pushed since", () => {
+    const bridge = stubBridge();
+    apply(orangeModel([WIFIBER, TOP_UP]));
+    apply(orangeModel([WIFIBER, TOP_UP]));
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    choices()[0]?.click();
+
+    expect(bridge.chooseForfait).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes the offer away once the choice is remembered", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+    apply(orangeModel([WIFIBER, TOP_UP], "Pass Internet 5 Go"));
+
+    expect(textOf("allowancePlan")).toBe("Pass Internet 5 Go");
+    expect(choiceBlock().hidden).toBe(true);
+    expect(choices()).toHaveLength(0);
+  });
+
+  it("costs no height while there is nothing to choose", () => {
+    // `hidden` alone would leave the box open: the block is a grid, and the UA
+    // rule loses to a `display` of its own — the same bargain `.pace-meter`
+    // and `.password-prompt` already make.
+    expect(POPOVER_CSS).toMatch(
+      /\.forfait-choice\[hidden\]\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it("sits in the main view rather than behind the settings toggle", () => {
+    apply(orangeModel([WIFIBER, TOP_UP]));
+
+    expect(choiceBlock().closest("[data-main-view]")).toBe(mainView());
+    expect(choiceBlock().closest("[data-settings-view]")).toBeNull();
+  });
+});
+
+describe("the Orange panel — the height it has to fit", () => {
+  it("fits the same window once its two dead controls are gone", () => {
+    // Read the way T-45 reads it: no layout engine, so this is a budget rather
+    // than a measurement. Orange starts from T-45's 350px of chrome, gives back
+    // the ~38px sync row at the foot of the main view, and spends up to 48px on
+    // the forfait choice at its tallest — a 15px note, a 4px gap, a ~22px row
+    // of buttons and the 6px above it. The plan-length field costs nothing
+    // either way: it is in the settings view, which is `hidden` whenever this
+    // one is not.
+    const ORANGE_CHROME_HEIGHT = 350 - 38 + 48;
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+    expect(
+      Number(dialSize) +
+        Number(sparkSize) * SPARK_ROWS +
+        SPARK_GAP +
+        ORANGE_CHROME_HEIGHT,
+    ).toBeLessThanOrEqual(POPOVER_HEIGHT);
   });
 });

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig } from "../../src/config/defaults.js";
 import {
+  POPOVER_CHOOSE_FORFAIT_CHANNEL,
   POPOVER_HEIGHT,
   POPOVER_SAVE_PASSWORD_CHANNEL,
   POPOVER_SYNC_CHANNEL,
@@ -547,6 +548,46 @@ describe("createPopover — the panel talking back", () => {
     send(POPOVER_SAVE_PASSWORD_CHANNEL, sender, null);
 
     expect(onSavePassword).not.toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("passes a chosen forfait label on as the page sent it", () => {
+    const onChooseForfait = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onChooseForfait,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(
+      POPOVER_CHOOSE_FORFAIT_CHANNEL,
+      lastWindow().webContents,
+      "Pass Internet 5 Go",
+    );
+
+    expect(onChooseForfait).toHaveBeenCalledWith("Pass Internet 5 Go");
+
+    popover.destroy();
+  });
+
+  it("drops a forfait message that is not a label", () => {
+    // A channel that writes to the config validates its own input rather than
+    // trusting that only our page can reach it.
+    const onChooseForfait = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onChooseForfait,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+
+    send(POPOVER_CHOOSE_FORFAIT_CHANNEL, sender, 42);
+    send(POPOVER_CHOOSE_FORFAIT_CHANNEL, sender, null);
+    send(POPOVER_CHOOSE_FORFAIT_CHANNEL, { someone: "else" }, "Wifiber Go+");
+
+    expect(onChooseForfait).not.toHaveBeenCalled();
 
     popover.destroy();
   });

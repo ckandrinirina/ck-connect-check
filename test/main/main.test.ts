@@ -15,6 +15,7 @@ import type {
 } from "../../src/hilink/types.js";
 import { defaultConfig } from "../../src/config/defaults.js";
 import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
+import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
 import { trayImageFor } from "../../src/main/tray-icon.js";
@@ -1531,6 +1532,139 @@ describe("startMenuBarApp — re-syncing on open and after a long silence", () =
 
     expect(latest(popover).sync.status).toMatch(/busy/i);
     expect(latest(popover).sync.automatic).toBe(true);
+
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — choosing which Orange forfait is measured", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A router on the Orange network, so the poller reads the portal at all. */
+  function orangeClient(): { snapshot: () => Promise<SnapshotResult> } {
+    const taken = snapshot(5_830_718_387);
+
+    return {
+      snapshot: () =>
+        Promise.resolve({
+          online: true,
+          snapshot: {
+            ...taken,
+            carrier: { carrier: "ORANGE MG", id: "orange" },
+          },
+        }),
+    };
+  }
+
+  /** The two data forfaits of the live capture, both valid at once. */
+  const PORTAL_PAGE = {
+    account: { offer: "WiFiber", balanceAr: 0 },
+    forfaits: [
+      {
+        label: "Wifiber Go+ SSE",
+        nature: "Internet",
+        bundleType: "data",
+        consumedBytes: 7_370_000_000,
+      },
+      {
+        label: "Pass Internet 5 Go",
+        nature: "Internet",
+        bundleType: "data",
+        consumedBytes: 1_000_000_000,
+      },
+    ],
+  };
+
+  /** The portal, answering the same page every time it is asked. */
+  function stubPortal(): PortalSource {
+    return {
+      read: () => Promise.resolve({ state: "read", page: PORTAL_PAGE }),
+    };
+  }
+
+  /** What the config file on disk remembers as the chosen forfait. */
+  function storedLabel(configPath: string): unknown {
+    return (
+      JSON.parse(readFileSync(configPath, "utf8")) as {
+        orangeForfaitLabel?: unknown;
+      }
+    ).orangeForfaitLabel;
+  }
+
+  function launch(configPath: string) {
+    const popover = recordingPopover();
+
+    return {
+      popover,
+      app: startMenuBarApp({
+        configPath,
+        client: orangeClient(),
+        portal: stubPortal(),
+        popover,
+        credentials: storeHolding(CREDENTIAL),
+      }),
+    };
+  }
+
+  it("offers the alternative while the app is the one that chose", async () => {
+    const { popover, app } = launch(configHolding(null));
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(latest(popover).forfait?.label).toBe("Wifiber Go+ SSE");
+    expect(
+      latest(popover).forfait?.alternatives.map((one) => one.label),
+    ).toEqual(["Pass Internet 5 Go"]);
+
+    app.stop();
+  });
+
+  it("writes the chosen label down, so it survives a restart", async () => {
+    const configPath = configHolding(null);
+    const { app } = launch(configPath);
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setForfait("Pass Internet 5 Go");
+
+    expect(storedLabel(configPath)).toBe("Pass Internet 5 Go");
+
+    app.stop();
+  });
+
+  it("measures the chosen plan on the next poll, and stops offering", async () => {
+    const { popover, app } = launch(configHolding(null));
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setForfait("Pass Internet 5 Go");
+
+    // The next portal fetch is the one that acts on it: the choice is stored,
+    // and the selection is made where every poll makes it.
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(latest(popover).forfait?.label).toBe("Pass Internet 5 Go");
+    expect(latest(popover).allowance.planLabel).toBe("Pass Internet 5 Go");
+    expect(latest(popover).monthTotal).toBe("1.00 Go");
+    expect(latest(popover).forfait?.alternatives).toEqual([]);
+
+    app.stop();
+  });
+
+  it("ignores a blank label rather than clearing the stored choice", async () => {
+    const configPath = configHolding(null);
+    const { app } = launch(configPath);
+
+    await vi.advanceTimersByTimeAsync(0);
+    app.setForfait("Pass Internet 5 Go");
+    app.setForfait("   ");
+
+    expect(storedLabel(configPath)).toBe("Pass Internet 5 Go");
 
     app.stop();
   });
