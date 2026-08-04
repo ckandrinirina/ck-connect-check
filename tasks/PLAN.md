@@ -61,6 +61,7 @@
 | T-57 | Say when the portal cannot be reached or the forfait is unreadable      | done   | S    | T-55                         |
 | T-58 | Bring the README and screenshots up to the Orange setup                 | doing  | S    | T-56, T-57, T-59             |
 | T-60 | Stop the dial contradicting the notice beneath it                       | done   | S    | T-57                         |
+| T-61 | Stop the allowance strip claiming what Orange never said                | done   | S    | T-60                         |
 | T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
 
 ## T-01 Set the project up so tests can run
@@ -3338,6 +3339,83 @@ should stand down rather than compete with it.
   portal answered. In the unreadable, no-Internet-plan and http states a screen-reader user is
   told exactly what T-60 stopped the visible panel from saying. Out of scope here — the criteria
   are literal about "the prompt" — and it wants its own task.
+
+## T-61 Stop the allowance strip claiming what Orange never said
+
+T-61 · status: done · size: S · needs: T-60 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Found by looking at the running panel on Orange rather than by a test. Three things the panel
+states are true of YAS and untrue here, and all three are the same fault: the panel asserting
+something the Orange path cannot support.
+
+**The remaining volume is captioned "left with the carrier".** On YAS that is exactly right —
+the carrier states the remaining volume over USSD, and the anchor carries it. On Orange the
+carrier states only what was **consumed**; the remainder is derived from the cap the user typed
+in settings. Crediting the user's own number to Orange is a false attribution, and it matters on
+the day the cap and the plan disagree: the panel would present a stale setting as a figure the
+carrier had confirmed.
+
+**The `Expires` row can only ever show two dashes.** `allowance-validity` is static markup and
+is never detached; the portal states no expiry and no days-until-expiry, so on Orange the row is
+a caption with nothing behind it. That is what T-56 removed the Sync button for. It survived
+because T-56's criteria were a list of controls rather than the rule behind the list — and its
+removal gives back height on a panel already at 514 px of 520.
+
+**The accessible description still says the portal never answered.** T-60 stopped the visible
+dial from claiming to be waiting for a page that had already answered, but `buildMonthlyDial()`
+hardcodes the description to "No reading from the Orange portal yet" whenever `reading` is null,
+regardless. In the unreadable, no-Internet-plan and http states a screen-reader user is told
+precisely what the sighted panel no longer says. T-60 was right not to widen its own scope; the
+result is a sighted-only fix, which is worse than either fixing both or neither.
+
+On YAS every one of these three stays exactly as it is today.
+
+### Acceptance
+
+- [x] on Orange the remaining figure is not captioned as the carrier's own statement
+- [x] on YAS the caption is unchanged from today
+- [x] on Orange the `Expires` row is absent from the rendered panel, not present-and-dashed
+- [x] on YAS the `Expires` row is present and behaves as it does today
+- [x] the dial's accessible description never says the portal has not answered when the notice says it did, asserted for every portal state the way T-60 asserts the visible prompt
+- [x] the panel's worst-case height is still within the 520 px budget, and the reclaimed row is reflected in the measurement
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Extend the tests for the per-carrier caption, the absent `Expires` row and the description
+2. Branch the caption and the validity row on the carrier
+3. Route the accessible description through the same `portalAnswered()` predicate T-60 added
+4. Re-assert the height budget
+5. Run test, lint and build
+
+### Notes
+
+- **All three defects were found by looking at the running panel, not by a test.** Every one had
+  passed its own task's QA, because the criteria enumerated _which_ controls to withdraw rather
+  than stating the rule behind them: the tests were checking the list. A screenshot of the live
+  app caught what twelve QA passes did not.
+- The caption is now model-driven: `left on your plan` on Orange, `left with the carrier`
+  byte-identical on YAS. The cross product asserts the Orange caption never matches `/carrier/i`.
+- The validity row is withdrawn through the **same** `setPresent()` comment-marker path T-56 built
+  for the sync row (`node.replaceWith(marker)`), so `[data-validity-row]`, `allowanceExpires` and
+  `allowanceDaysLeft` all leave the document rather than being hidden — a `display: none` row is
+  still announced by assistive technology, which would have defeated the task. The SIM-swap
+  restore is exercised: a YAS model after an Orange one brings the row back populated.
+- **The accessible description could not stand down to `""`** the way T-60 let the visible prompt,
+  because an empty `aria-label` leaves the dial unnamed. It reads "The Orange portal answered
+  without a usable figure" instead, routed through the **same** `portalAnswered()` predicate as the
+  prompt — one judgement, not two kept in step — with a test asserting the description is
+  non-empty in all 40 standings and another asserting prompt and description can never disagree.
+- **Height: 514 → 497 px of 520**, 17 px reclaimed. Asserted as an exact `toBe(497)` and coupled to
+  the row genuinely being off the panel, so it cannot pass if the row returns.
+- The agent caught its **own** vacuous test: the height assertion's selector matched no markup
+  before the fix, so it would have passed against nothing. It added
+  `expect(INDEX_HTML).toContain("data-validity-row")` and re-observed the failure before
+  implementing — the same failure mode T-49 caught in its own suite. QA swept the other twelve new
+  tests for it and found none.
+- `PopoverControls` gained `expiry: boolean`, which is a readout row rather than a control — noted
+  in both docblocks. Nothing asserts that type exhaustively (`leaves()` walks it recursively), so
+  the new field broke nothing.
 
 ## T-58 Bring the README and screenshots up to the Orange setup
 
