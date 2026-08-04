@@ -159,7 +159,12 @@ One parsing trap, and it is the router's own: the MAC slots are `WifiMacFilterMa
 name slots are `wifihostnameN`, lower-case. A write has to reproduce both spellings exactly.
 
 At rest the filter is off — `WifiMacFilterStatus` is `0` on all four SSIDs — and that is the
-shape a write has to start from.
+shape a write has to start from. `0` is therefore the only status this device has been
+observed to send; `1` is read as a whitelist and `2` as a blacklist, which is the order the
+router's own web UI offers (disabled, allow, deny) and the mapping `src/hilink/macfilter.ts`
+converts at the boundary. A status outside those three is rejected rather than guessed at,
+so a firmware that numbers them differently fails loudly instead of drawing the wrong
+verdict on every row.
 
 ## Orange portal
 
@@ -473,6 +478,13 @@ Append-only. One line each, always with the reason.
 - An empty device list and an unreachable router are different states in the window, not one blank table — only the router can say that nothing is connected, and a router that did not answer has said nothing at all
 - The devices window drops the active dot too (T-66) — `host-list` carries no `Active` element and reports only the hosts currently associated, so the dot would be lit on every row it ever drew
 - Device rows are keyed by MAC in the renderer and updated in place — the list refreshes on the poll, and rebuilding the table would replace the row under a user reading it
+- `WifiMacFilterStatus` becomes a named mode at the `src/hilink/` boundary (T-67) — unlike `CurrentNetworkTypeEx`, which is a carrier-agnostic label table, this number _is_ the reply's own encoding of a state, and a bare `2` crossing into the app would leave every caller re-reading the router's numbering
+- "Blocked" is a predicate over the filter's mode and its list together, never a membership test (T-67) — a blacklist holding a MAC blocks it and a whitelist holding the same MAC allows it and blocks everyone else, so the list alone answers the opposite question half the time
+- MAC comparison drops separators and case before comparing (T-67) — the host list and the filter slots are the same router spelling the same address two ways, and a raw string test would read a blocked device as allowed
+- The four per-SSID blocks are kept beside the collapsed mode and address set (T-67) — the write replaces the filter whole, so the read T-68's `POST` is composed from has to carry the blocks it came from
+- An address the filter blocks and `host-list` does not report is shown as a device that is blocked and absent (T-67) — a blocked device stops associating, so without a row of its own it could only be unblocked by connecting first, which is the one thing it cannot do
+- A remembered address that does not read as blocked adds no row (T-67) — with the filter off, or under a whitelist, such an entry names a device that is merely remembered or merely permitted, and a ghost row for it answers no question the window was asked
+- The blocked state is a word in an Access column, not a tint on the row (T-67) — the window ships unstyled, and the pace meter's rule already stands: colour is never the only carrier of a verdict
 
 ## Conventions
 

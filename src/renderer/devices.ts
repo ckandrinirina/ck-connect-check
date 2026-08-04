@@ -21,6 +21,26 @@ declare global {
   }
 }
 
+/**
+ * What the last column says about a device's access.
+ *
+ * A word, not a colour and not a dot. The window ships unstyled, so a tint
+ * would say nothing at all here — and once it is styled it would still say
+ * nothing to a colour-blind reader or in a greyscale screenshot, which is the
+ * rule the pace meter already follows.
+ */
+const ACCESS_BLOCKED = "Blocked";
+const ACCESS_ALLOWED = "Allowed";
+
+/**
+ * What the duration column says about a device the router is not reporting.
+ *
+ * A blocked device stops associating, so it is in the list on the filter's word
+ * alone — and it is listed precisely so it can be unblocked without having to
+ * connect first, which is the one thing it cannot do.
+ */
+const NOT_CONNECTED = "Not connected";
+
 /** The cells of one row, in the order `devices.html` declares its columns. */
 function cellsOf(device: DeviceRow): string[] {
   return [
@@ -28,7 +48,8 @@ function cellsOf(device: DeviceRow): string[] {
     device.ip,
     device.mac,
     device.network,
-    device.connectedFor,
+    device.present ? device.connectedFor : NOT_CONNECTED,
+    device.blocked ? ACCESS_BLOCKED : ACCESS_ALLOWED,
   ];
 }
 
@@ -47,6 +68,11 @@ function fill(row: HTMLTableRowElement, device: DeviceRow): void {
   while (row.cells.length < values.length) {
     row.append(document.createElement("td"));
   }
+
+  // Stated on the row as well as in its last cell, so a stylesheet has
+  // something to hang on without the words having to go.
+  row.dataset["blocked"] = String(device.blocked);
+  row.dataset["present"] = String(device.present);
 
   values.forEach((value, index) => {
     const cell = row.cells[index];

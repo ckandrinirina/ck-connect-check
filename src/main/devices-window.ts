@@ -19,10 +19,11 @@ import { fileURLToPath } from "node:url";
 import {
   deviceAssociatedFor,
   deviceDisplayName,
-  sortDevices,
+  listDevices,
+  type ListedDevice,
 } from "../domain/devices.js";
 import type { HostListResult } from "../hilink/client.js";
-import type { Device } from "../hilink/devices.js";
+import { MAC_FILTER_OFF, type MacFilter } from "../hilink/macfilter.js";
 
 /** Wide enough for a name, an address and a MAC on one line. */
 export const DEVICES_WINDOW_WIDTH = 520;
@@ -66,7 +67,12 @@ export interface DeviceRow {
   ip: string;
   mac: string;
   network: string;
+  /** Empty for a device the router is not reporting; the page says so itself. */
   connectedFor: string;
+  /** The domain's verdict over the filter's mode and list, never a lookup. */
+  blocked: boolean;
+  /** Whether the router reports it as associated right now. */
+  present: boolean;
 }
 
 /**
@@ -84,29 +90,47 @@ export type DevicesModel =
   { state: "listed"; devices: DeviceRow[] } | { state: "offline" };
 
 /** One device, spelled for the table. */
-function rowFor(device: Device): DeviceRow {
+function rowFor(listed: ListedDevice): DeviceRow {
+  const { device } = listed;
+
   return {
     name: deviceDisplayName(device),
     ip: device.ip,
     mac: device.mac,
     network: device.ssid,
-    connectedFor: deviceAssociatedFor(device),
+    // A device the router is not reporting has been connected for nothing at
+    // all, and "0s" would be a duration it never stated.
+    connectedFor: listed.present ? deviceAssociatedFor(device) : "",
+    blocked: listed.blocked,
+    present: listed.present,
   };
 }
 
 /**
- * The window's contents for one reading of the host list.
+ * The window's contents for one reading of the host list and one of the MAC
+ * filter.
  *
  * The ordering is the domain's — stable across polls, so a row cannot move
- * under a click — and the naming and the duration are the domain's too. This
- * function only routes between them.
+ * under a click — and so are the naming, the duration and the blocked verdict.
+ * This function only routes between them.
+ *
+ * The filter defaults to off, which is the router's own state at rest and the
+ * only honest assumption before one has been read: reading it needs the stored
+ * password and a second call, so the window must be able to list devices before
+ * anything is known about the filter without claiming any of them are blocked.
  */
-export function buildDevicesModel(result: HostListResult): DevicesModel {
+export function buildDevicesModel(
+  result: HostListResult,
+  filter: MacFilter = MAC_FILTER_OFF,
+): DevicesModel {
   if (!result.online) {
     return { state: "offline" };
   }
 
-  return { state: "listed", devices: sortDevices(result.devices).map(rowFor) };
+  return {
+    state: "listed",
+    devices: listDevices(result.devices, filter).map(rowFor),
+  };
 }
 
 export interface DevicesWindowOptions {
