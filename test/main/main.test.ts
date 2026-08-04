@@ -14,6 +14,10 @@ import type {
   RouterSnapshot,
 } from "../../src/hilink/types.js";
 import { defaultConfig } from "../../src/config/defaults.js";
+import {
+  DEVICES_MENU_LABEL,
+  type DevicesWindow,
+} from "../../src/main/devices-window.js";
 import { startMenuBarApp, type MenuBarApp } from "../../src/main/main.js";
 import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
@@ -28,6 +32,9 @@ const electron = vi.hoisted(() => ({
   setTitle: vi.fn(),
   setImage: vi.fn(),
   on: vi.fn(),
+  /** `app.on`, kept apart from the tray's own subscriptions above. */
+  appOn: vi.fn(),
+  appQuit: vi.fn(),
   buildFromTemplate: vi.fn((template: unknown) => ({ template })),
   createEmpty: vi.fn(() => ({ empty: true })),
   createFromPath: vi.fn((path: string) => ({
@@ -55,9 +62,9 @@ vi.mock("electron", () => {
   return {
     app: {
       dock: { hide: electron.dockHide },
-      on: vi.fn(),
+      on: electron.appOn,
       whenReady: vi.fn(() => Promise.resolve()),
-      quit: vi.fn(),
+      quit: electron.appQuit,
     },
     Menu: { buildFromTemplate: electron.buildFromTemplate },
     Tray,
@@ -1667,5 +1674,157 @@ describe("startMenuBarApp — choosing which Orange forfait is measured", () => 
     expect(storedLabel(configPath)).toBe("Pass Internet 5 Go");
 
     app.stop();
+  });
+});
+
+/** A stand-in for the devices window, so no window is ever created here. */
+function recordingDevices(): DevicesWindow & { opens: number } {
+  let open = false;
+
+  const devices = {
+    opens: 0,
+    open() {
+      devices.opens += 1;
+      open = true;
+    },
+    close() {
+      open = false;
+    },
+    isOpen: () => open,
+    destroy() {
+      open = false;
+    },
+  };
+
+  return devices;
+}
+
+/** The tray's context-menu template, as `main.ts` last built it. */
+function menuTemplate(): { label?: string; click?: () => void }[] {
+  const built = electron.buildFromTemplate.mock.calls.at(-1);
+
+  if (built === undefined) {
+    throw new Error("no context menu was built");
+  }
+
+  return built[0] as { label?: string; click?: () => void }[];
+}
+
+/** Picks the devices entry out of the menu and presses it. */
+function clickDevicesMenuItem(): void {
+  const item = menuTemplate().find(
+    (entry) => entry.label === DEVICES_MENU_LABEL,
+  );
+
+  if (item?.click === undefined) {
+    throw new Error(`the menu has no "${DEVICES_MENU_LABEL}" item`);
+  }
+
+  item.click();
+}
+
+describe("startMenuBarApp — the connected-devices window", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.appOn.mockClear();
+    electron.appQuit.mockClear();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("opens the window from a menu item, not from a second tray click", () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+    });
+
+    clickDevicesMenuItem();
+
+    expect(devices.opens).toBe(1);
+    expect(devices.isOpen()).toBe(true);
+
+    app.stop();
+  });
+
+  it("leaves Quit in the menu beside it", () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices: recordingDevices(),
+    });
+
+    expect(menuTemplate().some((entry) => entry.label === "Quit")).toBe(true);
+
+    app.stop();
+  });
+
+  it("does not quit the app when the devices window is the last one closed", () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+    });
+
+    clickDevicesMenuItem();
+    devices.close();
+
+    // Electron quits when the last window goes and nobody has said otherwise,
+    // and this app's real home is the menu bar, where there is no window at all.
+    const closed = electron.appOn.mock.calls.find(
+      ([event]) => event === "window-all-closed",
+    );
+
+    expect(closed).toBeDefined();
+    (closed?.[1] as () => void)();
+
+    expect(electron.appQuit).not.toHaveBeenCalled();
+
+    app.stop();
+  });
+
+  it("keeps polling after the devices window is closed", async () => {
+    const client = countingClient();
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client,
+      popover: recordingPopover(),
+      devices,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    clickDevicesMenuItem();
+    devices.close();
+
+    const before = client.calls;
+    await vi.advanceTimersByTimeAsync(POLL_MS * 2);
+
+    expect(client.calls).toBeGreaterThan(before);
+
+    app.stop();
+  });
+
+  it("releases the window when the app stops", () => {
+    const devices = recordingDevices();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      devices,
+    });
+
+    clickDevicesMenuItem();
+    app.stop();
+
+    expect(devices.isOpen()).toBe(false);
   });
 });

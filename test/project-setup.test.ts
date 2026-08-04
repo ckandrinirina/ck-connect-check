@@ -100,7 +100,7 @@ describe("build output", () => {
     execFileSync("npm", ["run", "build"], { cwd: repoRoot, stdio: "pipe" });
   }, 180_000);
 
-  it.each(["index.html", "popover.css"])(
+  it.each(["index.html", "popover.css", "devices.html", "devices.js"])(
     "copies %s into dist/renderer/",
     (asset) => {
       expect(
@@ -134,6 +134,14 @@ describe("build output", () => {
     const page = readRepoFile("dist/renderer/index.html");
     expect(page).toContain('src="./popover.js"');
     expect(page).toContain('href="./popover.css"');
+    expect(page).not.toContain("../../dist/");
+  });
+
+  it("leaves the built devices page pointing at its own directory", () => {
+    // A second window is exactly the kind of thing that works in development
+    // and 404s in the bundle, so it is held to the same rule as the panel.
+    const page = readRepoFile("dist/renderer/devices.html");
+    expect(page).toContain('src="./devices.js"');
     expect(page).not.toContain("../../dist/");
   });
 });

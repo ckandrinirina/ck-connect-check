@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- The same policy as the panel: nothing remote, no chart library, no font. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src file: 'self'; script-src file: 'self'"
+    />
+    <title>Connected devices</title>
+    <!--
+      The build copies this page into `dist/renderer/`, beside the script `tsc`
+      emits there, and that copy is what the app loads. Every path here is
+      therefore relative to the page itself — a walk up out of `dist/` would
+      leave the bundle, which ships `dist/` and nothing else.
+    -->
+    <script type="module" src="./devices.js"></script>
+  </head>
+  <body>
+    <h1>Connected devices</h1>
+    <!--
+      The shell of the list. The columns are stated here because they never
+      change; the rows are written by `devices.ts` and arrive from the router.
+    -->
+    <table class="devices">
+      <thead>
+        <tr>
+          <th scope="col">Device</th>
+          <th scope="col">IP address</th>
+          <th scope="col">MAC address</th>
+        </tr>
+      </thead>
+      <tbody data-devices></tbody>
+    </table>
+  </body>
+</html>
