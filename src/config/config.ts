@@ -345,14 +345,15 @@ function readSyncStaleAfter(raw: Record<string, unknown>): number {
 }
 
 /**
- * Reads one of the two credential fields. Both are optional — every config file
- * written before the router needed a login is still valid — but a field that is
- * present has to be a real non-empty string, since a blank blob or username is
- * indistinguishable from a corrupted one.
+ * Reads one of the optional string fields. Every one is absent from some config
+ * the app itself wrote — before the router needed a login, before the portal was
+ * ever read — so absence is normal and never a complaint. A field that is
+ * *present* has to be a real non-empty string, since a blank blob, username or
+ * forfait label is indistinguishable from a corrupted one.
  */
-function readCredentialField(
+function readOptionalString(
   raw: Record<string, unknown>,
-  field: "routerUsername" | "routerPasswordBlob",
+  field: "routerUsername" | "routerPasswordBlob" | "orangeForfaitLabel",
 ): string | undefined {
   const value = raw[field];
 
@@ -468,8 +469,9 @@ export function parseConfig(raw: unknown): AppConfig {
 
   const record = raw as Record<string, unknown>;
   const pollIntervalSeconds = readPollInterval(record);
-  const routerUsername = readCredentialField(record, "routerUsername");
-  const routerPasswordBlob = readCredentialField(record, "routerPasswordBlob");
+  const routerUsername = readOptionalString(record, "routerUsername");
+  const routerPasswordBlob = readOptionalString(record, "routerPasswordBlob");
+  const orangeForfaitLabel = readOptionalString(record, "orangeForfaitLabel");
   // `planTotalBytes` is read by nothing: it held a high-water plan total that
   // the dial no longer measures against. Files the app wrote still carry it, so
   // it is dropped on the way through rather than rejected.
@@ -489,6 +491,7 @@ export function parseConfig(raw: unknown): AppConfig {
     syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
+    ...(orangeForfaitLabel === undefined ? {} : { orangeForfaitLabel }),
     ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),
   };
 }

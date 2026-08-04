@@ -223,6 +223,7 @@ It is written by the app; you can edit it by hand while the app is not running.
 | `syncStaleAfterMinutes`     | Minutes before the carrier figure counts as old and is re-anchored on its own. Default `30`. An unusable value falls back to that default                        |
 | `routerUsername`            | Router admin username. Absent until a credential has been saved                                                                                                  |
 | `routerPasswordBlob`        | The password **as encrypted by the Keychain**, base64-encoded — see below                                                                                        |
+| `orangeForfaitLabel`        | The Orange forfait you chose to measure, by name, when several data forfaits are live at once. Absent until you choose one                                       |
 | `allowanceAnchor`           | The last carrier reading and the router counter it was pinned to                                                                                                 |
 
 **Your router password is never in `config.json`.** It is encrypted by the macOS

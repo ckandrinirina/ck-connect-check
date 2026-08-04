@@ -73,10 +73,13 @@ describe("selectForfait — the three kinds a data meter does not measure", () =
     expect(selection.selected).toBeNull();
   });
 
-  it("never selects a bundle the page named Voix without a ring", () => {
-    const selection = selectForfait([forfait("Pass Voix", { nature: "Voix" })]);
+  it("never selects one named only by its nature line, with no ring at all", () => {
+    for (const nature of ["Voix", "SMS", "Crédit"]) {
+      const selection = selectForfait([forfait("Un pass", { nature })]);
 
-    expect(selection.selected).toBeNull();
+      expect(selection.selected).toBeNull();
+      expect(selection.candidates).toEqual([]);
+    }
   });
 
   it("keeps them out of the candidates, since they are nothing to offer", () => {
