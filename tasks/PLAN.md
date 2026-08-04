@@ -59,7 +59,8 @@
 | T-55 | Feed the panel from whichever carrier the SIM is on                     | done   | M    | T-50, T-52, T-54             |
 | T-56 | Show the forfait's name and hide what Orange cannot answer              | done   | S    | T-55                         |
 | T-57 | Say when the portal cannot be reached or the forfait is unreadable      | done   | S    | T-55                         |
-| T-58 | Bring the README and screenshots up to the Orange setup                 | todo   | S    | T-56, T-57, T-59             |
+| T-58 | Bring the README and screenshots up to the Orange setup                 | doing  | S    | T-56, T-57, T-59             |
+| T-60 | Stop the dial contradicting the notice beneath it                       | done   | S    | T-57                         |
 | T-59 | Show the Orange figure in the menu bar, not just the panel              | done   | S    | T-55                         |
 
 ## T-01 Set the project up so tests can run
@@ -3271,9 +3272,76 @@ the router reported and that no allowance source is known for it, rather than sh
 - No internal tag word (`unreachable`, `unreadable`, `timeout`, `http`) reaches the renderer as
   a leaf value; asserted across every failure state.
 
+## T-60 Stop the dial contradicting the notice beneath it
+
+T-60 · status: done · size: S · needs: T-57 · files: src/main/view-model.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+T-57 gave the panel a line that says why there is no figure. It did not change the dial's own
+prompt, because doing so meant editing an assertion that already passed, and every task in the
+Orange run was held back from touching existing tests — the rule that kept the YAS path intact
+across nine tasks. The cost landed here: in the "no Internet plan" state the dial reads
+"Waiting for the Orange portal to answer" while the notice beneath reads "Orange's page listed
+2 plans and none of them is an Internet plan". The page answered. The panel says both.
+
+A panel that contradicts itself is worse than one that says less. The dial's prompt is the
+larger, earlier text, so a reader takes it first and the correct notice reads as the
+contradiction rather than the correction.
+
+This task is the exception the rule was protecting against: **the existing assertion on the
+dial prompt is expected to change**, and that is the point of the task rather than a failure
+of it. What must not change is any assertion about the YAS path or about the notice text T-57
+settled.
+
+The prompt should say what is true of each state. Waiting is true only before an answer. Once
+the portal has answered — unreadable, or readable with no Internet plan — the dial is not
+waiting for anything, and the notice already carries the explanation, so the dial's prompt
+should stand down rather than compete with it.
+
+### Acceptance
+
+- [x] in the "no Internet plan" state the dial's prompt does not claim to be waiting
+- [x] in the "unreadable" state the dial's prompt does not claim to be waiting
+- [x] before any portal answer, the waiting prompt is unchanged from today
+- [x] the dial's prompt and the notice never state contradictory things about whether the page answered, asserted for every portal state
+- [x] the notice text T-57 settled is unchanged, and no YAS assertion is touched
+- [x] the panel's worst-case height is still within the 520 px budget
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. Enumerate the portal states and the dial prompt each should carry
+2. Update the prompt in `src/main/view-model.ts`
+3. Update the one existing dial-prompt assertion and add the per-state contradiction test
+4. Run test, lint and build
+
+### Notes
+
+- **The exception this task was granted went unused.** T-60 was written permitting the existing
+  dial-prompt assertion to be edited. Grepping first found that no such assertion existed — the
+  only `progress.prompt` assertions were YAS ones — so all seven new tests are additions and no
+  existing line was edited or deleted. Every task in the Orange run therefore landed with zero
+  deleted test lines.
+- `portalAnswered()` deliberately mirrors `portalNotice()`'s own structure, reading `failure`
+  only behind `!live`, exactly where the notice does. The prompt and the notice cannot disagree
+  **by construction** rather than by two independent judgements staying in step.
+- That structure made the **HTTP-status** case fall out correctly without being named in the
+  brief: "Orange's page answered HTTP 503" is an answer, so the dial stands down there too. The
+  prompt is now `""` for unreadable, no-Internet-plan and http; it keeps the byte-identical
+  "Waiting for the Orange portal to answer." for never-asked, offline and timeout.
+- The general assertion is a 40-standing cross product (5 failures × 4 readings × live
+  true/false), guarded by a companion test proving every non-empty notice classifies as exactly
+  one of "did not answer" / "page answered", so a seventh wording stating neither would fail
+  rather than pass vacuously.
+- **REMAINING GAP — the same false claim survives in the screen-reader layer.** QA confirmed
+  `buildMonthlyDial()` at `view-model.ts:1344-1346` hardcodes the accessible description to
+  "No reading from the Orange portal yet" whenever `reading === null`, regardless of whether the
+  portal answered. In the unreadable, no-Internet-plan and http states a screen-reader user is
+  told exactly what T-60 stopped the visible panel from saying. Out of scope here — the criteria
+  are literal about "the prompt" — and it wants its own task.
+
 ## T-58 Bring the README and screenshots up to the Orange setup
 
-T-58 · status: todo · size: S · needs: T-56, T-57, T-59 · files: README.md, docs/media/, test/readme.test.ts
+T-58 · status: doing · size: S · needs: T-56, T-57, T-59 · files: README.md, docs/media/, test/readme.test.ts
 
 `test/readme.test.ts` already holds the README to the app's actual behaviour, and after T-50
 to T-57 it describes an app that no longer exists: a YAS meter driven by a USSD dialogue and
@@ -3292,12 +3360,12 @@ suite, where an assertion compared two unknowns and would have passed with both 
 
 ### Acceptance
 
-- [ ] the README documents both carriers and states that the carrier is detected from the router, not configured
-- [ ] the README's Orange section names the portal URL, the typed cap and the calendar-month period
-- [ ] no instruction to enter a router password or press Sync is presented as universal
+- [x] the README documents both carriers and states that the carrier is detected from the router, not configured
+- [x] the README's Orange section names the portal URL, the typed cap and the calendar-month period
+- [x] no instruction to enter a router password or press Sync is presented as universal
 - [ ] `docs/media/` screenshots show the Orange panel and every image referenced by the README exists
-- [ ] `test/readme.test.ts` asserts per carrier rather than being relaxed to pass against both
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `test/readme.test.ts` asserts per carrier rather than being relaxed to pass against both
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
@@ -3305,3 +3373,39 @@ suite, where an assertion compared two unknowns and would have passed with both 
 2. Rewrite the README's allowance section to cover both paths
 3. Reshoot the panel screenshots into `docs/media/`
 4. Run test, lint and build
+
+### Notes
+
+- **Held open on the screenshot criterion — it needs a human and a real router.** The README
+  and its per-carrier tests are complete and merged; `docs/media/` still holds only `icon.png`.
+  No image was drawn, generated or copied, and the README references no path that fails to
+  resolve, so the existing link test passes honestly rather than by omission.
+- **Capture list** — retina (2×), app running against the router with the SIM on Orange:
+  1. `docs/media/panel-orange.png` — main view: dial with a share (type a cap first so it
+     draws), pace meter, allowance block, the detected `Wifiber Go+ SSE` name, both sparklines,
+     and the point of the shot — **no Sync button and no sync status row**. Full panel, uncropped.
+  2. `docs/media/panel-orange-settings.png` — the same panel with the ⚙ toggle flipped: plan cap
+     and router address present, **no plan-length field**. One image cannot show both views.
+  3. `docs/media/menubar-orange.png` — tight crop of the tray item reading `7.4Go · 37%`, about
+     320×44 at 2×. Crop out anything identifying from the rest of the menu bar.
+  4. Optional — `docs/media/panel-orange-forfaits.png`, the panel while two data forfaits are
+     live and none was remembered, showing the "Picked for you from several plans." note and the
+     alternative buttons. Needs a top-up alongside the base plan, so only if it arises naturally.
+     Reference each from the README's Orange section afterwards; the existing link test then holds
+     them, and the deliberately-absent assertion documented at the end of `test/readme.test.ts` can
+     be replaced with a real one.
+- **T-41 is waiting on the same capture** and has been since before this run. Its open criterion
+  is the pre-T-45 screenshot; shooting these closes both.
+- Two existing test constructs changed, both verified **stricter** by QA rather than relaxed:
+  `REQUIRED_HEADINGS` swapped one heading for three (the shared one plus both per-carrier
+  subheadings), and the Sync-instruction pattern widened to `/\bpress\s+(?:\*\*|`)?sync\b/i` so
+  lowercase and backtick-wrapped variants can no longer escape the guard.
+- Two vacuity guards make the negative assertions real: `section()` asserts a non-empty body
+  (readme.test.ts:99, commented as T-49 protection) so no `not.toMatch` can pass against
+  nothing, and the carrier-instruction test asserts it found instructions at all before
+  requiring each to sit under a YAS heading.
+- The per-carrier tray anchors pass the **same** `PortalStatus` into both cases and get
+  `7.4Go · 37%` on Orange against `60Go · 40%` on YAS — proving the carrier branch rather than
+  merely the portal's absence.
+- `docs/ARCHITECTURE.md`'s `docs/media/` line still describes "screenshots referenced by
+  README.md" when only `icon.png` exists; outside this task's declared files, worth a sweep.
