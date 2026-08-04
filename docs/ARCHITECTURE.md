@@ -53,7 +53,7 @@ Responses are XML. A stale or missing session returns `<error><code>125002</code
 | `/api/monitoring/month_statistics`   | `CurrentMonthDownload`, `CurrentMonthUpload`, `MonthDuration`, `MonthLastClearTime`      |
 | `/api/monitoring/traffic-statistics` | `CurrentDownloadRate`, `CurrentUploadRate`, `CurrentConnectTime`                         |
 | `/api/monitoring/status`             | `ConnectionStatus`, `SignalIcon`, `maxsignal`, `CurrentNetworkTypeEx`, `CurrentWifiUser` |
-| `/api/net/current-plmn`              | `FullName` (carrier — reads `Yas` on this device)                                        |
+| `/api/net/current-plmn`              | `FullName` (carrier — read `Yas` until 2026-08, reads `ORANGE MG` since)                 |
 | `/api/monitoring/start_date`         | `StartDay` (billing cycle start), `DataLimit`, `MonthThreshold`                          |
 
 Two findings that shape the design:
@@ -115,7 +115,83 @@ The `#359#` path to the exact allowance, as captured from the device:
 The final line is the ground truth the app is after: an exact remaining volume and an
 exact expiry date, neither of which any `/api/monitoring/` endpoint knows.
 
-## Syncing the real allowance
+### LAN device API — provisional
+
+**Not yet verified against the device.** Everything in this subsection is the expected shape
+on HiLink firmware, drawn from the router's own `/html/statistic.html`, and T-62 replaces it
+with what the B310s-22 on `21.333.01.00.00` actually answers. Nothing may be built on it
+until then.
+
+| Endpoint                             | Method | Expected to carry                                                                                                   |
+| ------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------- |
+| `/api/wlan/host-list`                | GET    | one `<Host>` per Wi-Fi client — `HostName`, `IpAddress`, `MacAddress`, `AssociatedTime`, `AssociatedSsid`, `Active` |
+| `/api/lan/HostInfo`                  | GET    | the same clients plus wired ones, with the connection medium                                                        |
+| `/api/wlan/multi-macfilter-settings` | GET    | the WLAN MAC filter — a mode (off / whitelist / blacklist) and its entries                                          |
+| `/api/wlan/multi-macfilter-settings` | POST   | writes the whole filter back; authenticated, like every other `POST`                                                |
+
+Three things follow from this being the mechanism, whatever the exact field names turn out
+to be:
+
+- Blocking is a **filter write, not a per-device call**. The router holds one list; blocking
+  one device means sending the list with that device added, so a stale read followed by a
+  write would silently unblock everyone else. Every write reads the filter first.
+- The list is **bounded** — HiLink firmware caps MAC filter entries (32 on comparable
+  devices), so a full list is an ordinary state the UI has to state, not an error.
+- The write is a `POST`, so it inherits the entire authenticated path above: a login, a
+  single-use rotating token, the `125003` refresh-and-retry-once rule, and the
+  five-failure account lockout that forbids automatic retries.
+
+The list is read on the ordinary poll — it is an unauthenticated `GET` on the same footing
+as `/api/monitoring/status`, so it costs no more than the fields already fetched.
+
+## Orange portal
+
+Verified live on 2026-08-04, from a machine behind the same router. The SIM moved to
+Orange MG on that date; the device is unchanged, and every `/api/monitoring/` endpoint above
+still answers exactly as documented. Only the source of the carrier's own figure has moved.
+
+```
+GET http://123.orange.mg/info-conso/   →  200, server-rendered HTML, ~38 KB
+```
+
+**No authentication of any kind.** The network identifies the subscriber — the reply carries
+`X-Header: intercepting the request` and sets `PROFILE=wifiber`, and the page greets the
+MSISDN without a login. There is no session, no token, no password and therefore no lockout
+to protect against. It is a plain `GET` that can be polled on the same footing as the router.
+
+The figure lives in the `Forfaits en cours de validité` section, one `.bundle-item` per
+active forfait:
+
+```html
+<span class="item_title title">Wifiber Go+ SSE</span>
+<span class="title-da-nature title">Internet</span>
+<p>
+  Vous avez consommé
+  <span class="color-orange text-bolder text-nowrap">7.37Go</span> sur votre
+  forfait
+</p>
+```
+
+Three findings that shape the design, each the reverse of the YAS situation:
+
+- The portal states **consumed**, not remaining, and states it directly. There is no
+  remaining volume and no expiry date anywhere on the page for this forfait.
+- A forfait's shape varies. `assets/js/full.infoconso.js` initialises a
+  `.bundle-circlebar` from `data-bundle-type` (`credit` | `data` | `voice` | `sms`) and
+  `data-bundle-pcvalue`, so a _capped_ bundle renders a percentage — Wifiber Go+ SSE renders
+  none. The parser must read the forfaits it finds rather than assume one layout.
+- The router's month counter and the portal's figure count different things: 51.1 Go since
+  `2026-7-27` against the portal's 7.37 Go on the same day. The counter is therefore not an
+  accumulator for this plan at all.
+
+The portal is unreachable off the Orange network, which is a normal state rendered like a
+missing router, never an error.
+
+## Syncing the real allowance — YAS only
+
+Everything in this section describes the **YAS** path and is unreachable on Orange, where the
+portal already states consumption on every poll. It stays because the carrier is detected at
+runtime, not chosen at build time.
 
 The router is a reliable **accumulator** and an unreliable **absolute** — it counts bytes
 faithfully but has no idea what the plan is. USSD is the reverse: exact absolutes, but far
@@ -156,21 +232,134 @@ An earlier design calibrated the denominator automatically from the highest
 _is_ that anchor's remaining, so the dial reads 0% by construction after every first sync,
 which is exactly what the panel showed on 2026-07-28. The cap is now stated, not inferred.
 
-The app syncs by itself **only when there is no usable anchor** — none stored, expired, or
-invalidated by a counter reset. A healthy anchor is carried forward with no dialogue at
-all. A failed automatic sync is reported in the panel and never retried on a timer, for the
-same reason a failed login is never retried: the account locks after five refusals.
+The app syncs by itself when there is no usable anchor — none stored, expired, or
+invalidated by a counter reset — **and when the anchor it does hold has gone stale**, which
+is any anchor older than `syncStaleAfterMinutes` (default 30). Staleness is evaluated when
+the panel is opened and on a background timer, so an app nobody has looked at for hours
+still re-anchors by itself. A failed automatic sync is reported in the panel and never
+retried on a timer, for the same reason a failed login is never retried: the account locks
+after five refusals — the stale clock only restarts on a **successful** sync, and a failed
+one parks automatic syncing until the next explicit Sync press.
+
+At most one dialogue is ever in flight, and a dialogue is never started while the router is
+unreachable or while no password is stored. A 30-minute window means up to roughly forty
+carrier dialogues a day on an app left running, each one a login and a real signalling
+exchange; the single-attempt, park-on-failure rule is what keeps that from becoming a
+lockout.
+
+## Reading the consumption pace
+
+Knowing that 40 Go of 150 are gone does not say whether that is calm or reckless — the
+answer depends on how far into the plan's life it happened. But a useful part of that
+answer needs nothing the app does not already hold, so the reading is built in **three
+tiers** and each input adds detail rather than unlocking the feature:
+
+**Tier 1 — the anchor alone.** A sync states a remaining volume and an expiry date, and
+those two give the number that matters most day to day:
+
+```
+sustainablePerDay = remainingNow / daysUntilExpiry
+```
+
+"You can spend 2.4 Go a day between now and the 15th." No cap, no plan length, no typing.
+This appears as soon as anything has ever been synced.
+
+**Tier 2 — with `planLimitBytes`.** The cap turns the remainder into a consumed share,
+`usedShare = usedNow / planLimitBytes`, which is the dial T-25 already draws.
+
+**Tier 3 — with `planDays`.** Only the plan's length can say how far the calendar has
+travelled, and only then can consumption be compared against it:
+
+```
+periodStart  = anchor.expiresAt − planDays
+elapsedShare = (now − periodStart) / planDays
+pace         = usedShare / elapsedShare
+```
+
+`pace` below 1 means less has been spent than the calendar has, which is the state a
+weekend of no usage produces. The bands are `safe` at or under 1.00, `warning` strictly
+between 1.00 and 1.20, and `over` at 1.20 and above. `affordedPerDay`
+(`planLimitBytes / planDays`) accompanies the band as the flat budget, against which tier
+1's `sustainablePerDay` reads as the recovery figure — it rises whenever nothing is used,
+which is exactly the compensation the band encodes.
+
+The same ratio is also stated the way the user thinks about it, as two daily volumes side
+by side:
+
+```
+averagePerDay = usedNow / elapsedDays          // what has actually been spent per day
+affordedPerDay = planLimitBytes / planDays     // what the plan affords per day
+pace = averagePerDay / affordedPerDay          // identical to usedShare / elapsedShare
+```
+
+150 Go over 30 days affords 5 Go a day; an average of 6 Go is `over` and 3 Go is `safe`.
+`averagePerDay` is a restatement, not a second calculation — it is derived from the same
+cumulative figures, so it can never disagree with the band beside it.
+
+### On Orange, the period is the calendar month
+
+Wifiber runs from the first of the month to its last day, so on Orange the period is not
+derived from a carrier expiry date and `planDays` is not typed — both come from the
+calendar:
+
+```
+periodStart = first day of the current month
+planDays    = days in the current month        // 28 · 29 · 30 · 31
+elapsedDays = days elapsed since periodStart
+usedNow     = the portal's consumed figure     // stated, not derived
+remainingNow = planLimitBytes − usedNow
+```
+
+The tiers therefore collapse on Orange. The portal states consumption but never a cap, and
+the calendar supplies the length for free, so **the cap is the only input that gates
+anything**: with it, every reading including the meter is available; without it, the panel
+can state the consumed volume and nothing else — no dial, no meter, no per-day figure,
+because all three need a total. There is no Orange equivalent of tier 1, since tier 1's
+inputs were a carrier-supplied remaining and expiry, and the portal supplies neither.
+
+`planDays` being derived also means the setting disappears from the panel on Orange rather
+than being asked for and ignored.
+
+### Drawing the pace
+
+The band is drawn, not narrated: a horizontal meter whose fill is `averagePerDay` against a
+full width of `affordedPerDay`, tinted green in `safe`, orange in `warning` and red in
+`over`, with a tick at the afforded figure so the overshoot is visible rather than implied.
+The two volumes stay as short numerals beside it — the colour says which band, the meter
+says by how much, and the numerals say the amounts. Colour is never the only carrier of the
+verdict: the meter's fill past its tick states the same thing without relying on hue.
+
+Below tier 3 there is no band and no meter, because there is no afforded figure to measure
+against. Tier 1 keeps its single sustainable-per-day line.
+
+Both sides of the ratio are **cumulative**, never per-day, so no daily usage is ever stored
+and the "no history database" decision stands.
+
+### Loading a new plan
+
+A top-up needs no reset. Every sync builds a whole new anchor through `anchorFrom` — label,
+remaining, expiry and both router counters — so nothing survives a sync that a reset button
+could usefully clear. What a sync cannot refresh is the two typed values, and a cap left
+over from the previous plan is a silent fault: `usedBytes` is `max(0, cap − remaining)`, so
+a remainder above a stale cap clamps consumption to zero and the dial reads 0% forever.
+
+So the new plan is _detected_ instead. A synced anchor belongs to a different plan when its
+`planLabel` differs from the previous one, its `expiresAt` moves later, or its
+`remainingBytes` exceeds the configured cap. Any of those marks the cap unconfirmed: the
+panel keeps the tier 1 reading, drops the dial and the pace rather than drawing them from a
+contradicted cap, and asks for the cap and length to be confirmed.
 
 ## Folder structure
 
 ```
 src/
   hilink/       router client — session handshake, login, XML parsing, USSD dialogue
+  orange/       Orange selfcare portal — fetch 123.orange.mg, parse forfaits from HTML
   domain/       quota math, allowance anchor, formatting — pure, no I/O, no Electron
   config/       read and write the plan limit, router address and allowance anchor
   main/         Electron main process — tray, poll loop, popover window, login item,
                 keychain-backed router password
-  renderer/     popover UI (HTML + CSS + TS)
+  renderer/     popover UI (HTML + CSS + TS), and the connected-devices window
 test/           mirrors src/, one .test.ts per source file
 assets/         icon sources — hand-written SVG, and the PNG/.icns rasterised from them
 scripts/        build-time scripts that are not part of the app — icon rasterisation
@@ -224,6 +413,40 @@ Append-only. One line each, always with the reason.
 - `assets/` and `scripts/` are added to the forge ignore list — the icon reaches the bundle through `packagerConfig.icon`, so shipping its sources inside the asar would be dead weight
 - The menu bar glyph is the signal bars and changes with the level, while the `.icns` is the ring mark — a tray image that never changes is the decoration already rejected for the panel, whereas the bundle icon's job is identity, not measurement
 - The tray glyph is a template image, so macOS inverts it for dark and light menu bars and for the selected state — a coloured tray icon is the one thing that always looks wrong on one of the two appearances
+- **Widens the "USSD only on an explicit press" decision above:** a dialogue also runs when the stored anchor is older than `syncStaleAfterMinutes` — an anchor carried forward for hours by a counter delta drifts from the carrier's own figure, and the whole point of the feature is that the panel states a number the carrier agreed with
+- Staleness is checked on panel open and on a background timer, not on every poll tick — the poll runs every 30 seconds and would otherwise turn one stale window into a dialogue attempt loop
+- The stale clock restarts only on a successful sync, and a failure parks automatic syncing until an explicit press — otherwise a wrong password would be re-offered every 30 minutes and lock the account within three hours
+- The pace compares the share of the allowance spent against the share of the period elapsed, both cumulative — a per-day comparison would need stored daily usage, and cumulative shares already give the weekend-offsets-a-heavy-Monday behaviour for free
+- The plan's length in days is entered by the user next to the cap, not derived — the period start is `expiresAt − planDays`, and the carrier's USSD reply states the expiry but never the duration
+- The pace is absent, not `safe`, until both a cap and a plan length are set — the same reason the dial is absent before the first sync
+- **Supersedes the line above:** the pace reading is tiered, and a synced anchor alone already yields `remainingNow / daysUntilExpiry` — the app holds a remaining volume and an expiry date from its first sync, so gating the most useful daily figure behind two typed values withheld an answer it could already give
+- Only the band and `affordedPerDay` still require a cap and a plan length — those two are genuinely un-derivable from the carrier's reply, whereas the sustainable daily figure is not
+- Loading a new plan needs no reset control — every sync replaces the whole anchor through `anchorFrom`, so a reset button would clear nothing a sync does not already overwrite
+- A synced anchor that contradicts the stored cap marks the cap unconfirmed instead of being reconciled — `usedBytes` is `max(0, cap − remaining)`, so a top-up above a stale cap silently clamps the dial to 0%, and a silently corrected number is the unreliability the anchor design exists to remove
+- The `over` band starts at 1.20 rather than above it — 150 Go over 30 days affords 5 Go a day and the ratio for 6 Go is exactly 1.20, so the intended verdict sat on the wrong side of an inclusive bound
+- The pace states `averagePerDay` beside `affordedPerDay` as well as the ratio — "6.1 Go a day against 5.0" is the sentence the user reasons in, and the ratio alone made them do the division
+- `averagePerDay` is derived from the same cumulative used volume and elapsed days as the ratio, never accumulated separately — two independent counters of the same thing eventually disagree, and only one of them would be right
+- The pace is a coloured meter rather than a sentence — a band is a magnitude with three named regions, which is the one thing a bar states faster than prose, and the panel already draws its dial and sparklines for the same reason
+- The band's colour is never its only signal — the fill crossing the afforded tick says the same thing, so the reading survives a colour-blind viewer and a greyscale screenshot
+- The download and upload month totals are gone from the panel — the plan is billed on their sum, the dial and the carrier's remaining already state that sum, and the split answers a question nobody asked of a menu bar app
+- The plan cap, the plan length and the router password move behind a settings toggle — three input rows and their error lines are a third of the panel's height serving a value typed once a month, and the panel is 320×520 with no room to scroll
+- The panel's default is graphical: any figure with a range, a share or a threshold is drawn, and text is reserved for what has no magnitude — names, dates and error reasons; new panel work starts from a shape, not a sentence
+- The carrier is detected at runtime from the router's `FullName`, not chosen at build time or typed in — the SIM can be swapped without touching the app, and the router already reports the answer on an endpoint the poll loop calls anyway
+- The YAS USSD path stays in the tree beside the Orange one rather than being deleted — carrier detection means both are live code, and a SIM swap back must not need a release
+- On Orange the allowance is read from the selfcare portal on the ordinary poll, with no anchor and no delta — the portal needs no authentication and states consumption directly, so every reason the anchor existed (an expensive, stateful, lockout-prone dialogue) is absent
+- The Orange portal is scraped from server-rendered HTML, not from a JSON API — the page ships the figure in its markup and there is no API behind it to call, so the parse is the integration
+- The Orange parse reads whatever forfaits the page lists rather than assuming one shape — `full.infoconso.js` renders a percentage ring for capped bundles and none for Wifiber Go+ SSE, so a single hard-coded layout would break on the next plan the user buys
+- The Internet forfait is auto-selected and voice, SMS and credit bundles are ignored — the app measures a data allowance, and the other three answer a question the menu bar was never asked
+- On Orange the plan period is the calendar month, derived, and only the cap is typed — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly
+- The router's month counter has no role at all on Orange — it read 51.1 Go against the portal's 7.37 Go on the same day, so the two count different traffic and joining them would produce a confident wrong number
+- An unreachable portal is rendered like an unreachable router, as a state and not an error — the portal only answers on the Orange network, so a laptop on any other Wi-Fi is an ordinary condition
+- The connected devices live in their own window, not in the popover — a device list is a table that grows with the household, and the panel is 320×520 with 497 px already spent and no room to scroll
+- The device list is the one place text beats a drawing, despite the graphical-default rule — names, IP addresses and MAC addresses are identifiers with no magnitude, and the rule reserves text for exactly that
+- Devices are read on the ordinary poll, not on a timer of their own — `host-list` is an unauthenticated `GET` alongside the monitoring endpoints, so a second schedule would be a second thing to keep in step for no saving
+- Blocking is the router's WLAN MAC filter, not a per-device API — the device holds one list and the write replaces it whole, so every block reads the current filter first and never composes a write from a remembered one
+- A block or unblock is only ever an explicit press and is never retried automatically — the write is an authenticated `POST`, and the same five-failure lockout that forbids a USSD retry loop forbids this one
+- The machine running the app can never be blocked from its own device list — cutting the app off from the router it is talking to is unrecoverable from inside the app, and no confirmation dialog makes that a reasonable thing to allow
+- A full MAC filter is a stated condition, not an error — the firmware caps the list, and a household reaching that cap has done nothing wrong
 
 ## Conventions
 

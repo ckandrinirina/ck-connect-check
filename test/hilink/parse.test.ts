@@ -127,6 +127,48 @@ describe("parseCurrentPlmn", () => {
     );
     expect(parseCurrentPlmn(empty).carrier).toBe("");
   });
+
+  function named(fullName: string): string {
+    return fixture("current-plmn").replace(
+      "<FullName>Yas</FullName>",
+      `<FullName>${fullName}</FullName>`,
+    );
+  }
+
+  it("resolves the name to a carrier the snapshot carries", () => {
+    expect(parseCurrentPlmn(fixture("current-plmn")).id).toBe("yas");
+    expect(parseCurrentPlmn(named("ORANGE MG")).id).toBe("orange");
+  });
+
+  it("keeps the original spelling beside the resolved carrier", () => {
+    const parsed = parseCurrentPlmn(named("ORANGE MG"));
+    expect(parsed.carrier).toBe("ORANGE MG");
+    expect(parsed.id).toBe("orange");
+  });
+
+  it("retains an unrecognised name for display and calls it unknown", () => {
+    const parsed = parseCurrentPlmn(named("Telma"));
+    expect(parsed.carrier).toBe("Telma");
+    expect(parsed.id).toBe("unknown");
+  });
+
+  it("calls an empty name unknown rather than guessing at yas", () => {
+    const empty = fixture("current-plmn").replace(
+      "<FullName>Yas</FullName>",
+      "<FullName></FullName>",
+    );
+    expect(parseCurrentPlmn(empty).id).toBe("unknown");
+  });
+
+  it("reads a reply with no <FullName> as unknown without throwing", () => {
+    const absent = fixture("current-plmn").replace(
+      "<FullName>Yas</FullName>\n",
+      "",
+    );
+    expect(() => parseCurrentPlmn(absent)).not.toThrow();
+    expect(parseCurrentPlmn(absent).carrier).toBe("");
+    expect(parseCurrentPlmn(absent).id).toBe("unknown");
+  });
 });
 
 describe("parseStartDate", () => {

@@ -13,10 +13,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   ConfigValidationError,
+  confirmedPlanLimit,
   gigabytesToBytes,
   loadConfig,
   parseConfig,
   planLimitInGigaoctets,
+  readPlanDaysEntry,
   readPlanLimitEntry,
   saveConfig,
 } from "../../src/config/config.js";
@@ -25,6 +27,7 @@ import {
   DEFAULT_HOST,
   DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_SYNC_STALE_AFTER_MINUTES,
   DEFAULT_WARN_THRESHOLD_PERCENT,
   MIN_ACTIVE_POLL_INTERVAL_SECONDS,
   MIN_POLL_INTERVAL_SECONDS,
@@ -58,6 +61,9 @@ describe("defaults", () => {
       activePollIntervalSeconds: 2,
       warnThresholdPercent: 90,
       planLimitBytes: null,
+      planDays: null,
+      planCapConfirmed: true,
+      syncStaleAfterMinutes: 30,
     });
   });
 
@@ -95,6 +101,9 @@ describe("save and load round-trip", () => {
       activePollIntervalSeconds: 3,
       warnThresholdPercent: 75,
       planLimitBytes: gigabytesToBytes(20),
+      planDays: 30,
+      planCapConfirmed: true,
+      syncStaleAfterMinutes: 45,
     };
 
     saveConfig(path(), written);
@@ -309,6 +318,209 @@ describe("plan limit validation", () => {
     } catch (error) {
       expect((error as ConfigValidationError).field).toBe("planLimitBytes");
     }
+  });
+});
+
+describe("planCapConfirmed — whether the stored cap still describes the plan", () => {
+  it("defaults to true, so an existing config is not flagged on first launch", () => {
+    expect(defaultConfig().planCapConfirmed).toBe(true);
+    expect(parseConfig({}).planCapConfirmed).toBe(true);
+  });
+
+  it("round-trips a cleared flag through save and load", () => {
+    saveConfig(path(), { ...defaultConfig(), planCapConfirmed: false });
+
+    expect(loadConfig(path()).config.planCapConfirmed).toBe(false);
+  });
+
+  it("round-trips a confirmed flag through save and load", () => {
+    saveConfig(path(), { ...defaultConfig(), planCapConfirmed: true });
+
+    expect(loadConfig(path()).config.planCapConfirmed).toBe(true);
+  });
+
+  it.each([0, "false", null, "yes"])(
+    "reads %s as confirmed rather than as a flag",
+    (value) => {
+      // Anything but a boolean is a file nobody wrote deliberately, and a panel
+      // demanding confirmation of a cap the user never changed is the worse
+      // failure of the two.
+      expect(parseConfig({ planCapConfirmed: value }).planCapConfirmed).toBe(
+        true,
+      );
+    },
+  );
+});
+
+describe("confirmedPlanLimit — the cap the app may measure against", () => {
+  it("hands back the stored cap while it is confirmed", () => {
+    expect(
+      confirmedPlanLimit({
+        ...defaultConfig(),
+        planLimitBytes: gigabytesToBytes(150),
+        planCapConfirmed: true,
+      }),
+    ).toBe(gigabytesToBytes(150));
+  });
+
+  it("hands back nothing while the cap is unconfirmed", () => {
+    // The one rule the dial and the tray title both read, so neither can quote
+    // a share the other has withdrawn.
+    expect(
+      confirmedPlanLimit({
+        ...defaultConfig(),
+        planLimitBytes: gigabytesToBytes(150),
+        planCapConfirmed: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("hands back nothing when no cap is stored at all", () => {
+    expect(confirmedPlanLimit(defaultConfig())).toBeNull();
+  });
+});
+
+describe("planDays — how long the plan lasts", () => {
+  it("defaults to null rather than inventing a 30-day period", () => {
+    expect(defaultConfig().planDays).toBeNull();
+    expect(parseConfig({}).planDays).toBeNull();
+  });
+
+  it("round-trips a stored plan length", () => {
+    saveConfig(path(), { ...defaultConfig(), planDays: 30 });
+
+    expect(loadConfig(path()).config.planDays).toBe(30);
+  });
+
+  it("round-trips an unset plan length", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(loadConfig(path()).config.planDays).toBeNull();
+  });
+
+  it.each([0, -7, 30.5, Number.NaN])(
+    "reads %s as null rather than as a period",
+    (days) => {
+      // A period nobody can divide by is the same as no period at all, and the
+      // pace reading is defined to be absent rather than wrong.
+      expect(parseConfig({ planDays: days }).planDays).toBeNull();
+    },
+  );
+
+  it("keeps the rest of the file when the stored length is unusable", () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({ host: "10.0.0.1", planDays: 0 }),
+      "utf8",
+    );
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.config.planDays).toBeNull();
+    expect(loaded.config.host).toBe("10.0.0.1");
+    expect(loaded.problem).toBeUndefined();
+  });
+});
+
+describe("readPlanDaysEntry — a plan length as the user typed it", () => {
+  it("reads whole days", () => {
+    expect(readPlanDaysEntry("30")).toEqual({ ok: true, days: 30 });
+    expect(readPlanDaysEntry(" 7 ")).toEqual({ ok: true, days: 7 });
+  });
+
+  it("refuses a blank entry, naming the reason", () => {
+    expect(readPlanDaysEntry("")).toEqual({ ok: false, reason: "blank" });
+    expect(readPlanDaysEntry("   ")).toEqual({ ok: false, reason: "blank" });
+  });
+
+  it("refuses something that is not a number", () => {
+    expect(readPlanDaysEntry("a month")).toEqual({
+      ok: false,
+      reason: "not-a-number",
+    });
+  });
+
+  it.each(["0", "-7"])("refuses %s, which is not a period", (typed) => {
+    expect(readPlanDaysEntry(typed)).toEqual({
+      ok: false,
+      reason: "not-positive",
+    });
+  });
+
+  it("refuses a fraction of a day", () => {
+    // The carrier sells whole days, and half a day of period would put a
+    // fractional edge on every band boundary for no gain.
+    expect(readPlanDaysEntry("30.5")).toEqual({
+      ok: false,
+      reason: "not-whole",
+    });
+  });
+});
+
+describe("syncStaleAfterMinutes — how old a carrier figure may get", () => {
+  it("defaults to half an hour", () => {
+    expect(DEFAULT_SYNC_STALE_AFTER_MINUTES).toBe(30);
+    expect(defaultConfig().syncStaleAfterMinutes).toBe(30);
+  });
+
+  it("reads an absent key as the default", () => {
+    expect(parseConfig({}).syncStaleAfterMinutes).toBe(30);
+  });
+
+  it("round-trips a configured window", () => {
+    saveConfig(path(), { ...defaultConfig(), syncStaleAfterMinutes: 45 });
+
+    expect(loadConfig(path()).config.syncStaleAfterMinutes).toBe(45);
+  });
+
+  it.each([0, -5])(
+    "falls back to the default on a window of %s, keeping the rest of the file",
+    (minutes) => {
+      // Deliberately not fatal, unlike the other bounded settings: a hand-typed
+      // zero here must not cost the stored anchor and force a fresh USSD
+      // dialogue to recover from a one-character mistake.
+      writeFileSync(
+        path(),
+        JSON.stringify({ host: "10.0.0.1", syncStaleAfterMinutes: minutes }),
+        "utf8",
+      );
+
+      const loaded = loadConfig(path());
+
+      expect(loaded.config.syncStaleAfterMinutes).toBe(30);
+      expect(loaded.config.host).toBe("10.0.0.1");
+      expect(loaded.problem).toBeUndefined();
+    },
+  );
+
+  it("falls back to the default on a value that is not a number at all", () => {
+    expect(
+      parseConfig({ syncStaleAfterMinutes: "soon" }).syncStaleAfterMinutes,
+    ).toBe(30);
+  });
+
+  it("keeps a stored anchor when the window is invalid", () => {
+    const anchor: AllowanceAnchor = {
+      planLabel: "NET MONTH 200 000",
+      remainingBytes: 145_835_900_000,
+      expiresAt: new Date(2026, 7, 12),
+      routerMonthBytes: 1_000_000_000,
+      routerClearTime: "2026-7-27",
+      syncedAt: new Date(2026, 6, 27, 10, 0, 0),
+    };
+
+    saveConfig(path(), { ...defaultConfig(), allowanceAnchor: anchor });
+    const stored = JSON.parse(readFileSync(path(), "utf8")) as Record<
+      string,
+      unknown
+    >;
+    writeFileSync(
+      path(),
+      JSON.stringify({ ...stored, syncStaleAfterMinutes: 0 }),
+      "utf8",
+    );
+
+    expect(loadConfig(path()).config.allowanceAnchor).toEqual(anchor);
   });
 });
 
@@ -680,6 +892,89 @@ describe("the stored allowance anchor", () => {
     saveConfig(path(), defaultConfig());
 
     expect(readFileSync(path(), "utf8")).not.toContain("allowanceAnchor");
+  });
+});
+
+describe("the remembered Orange forfait", () => {
+  const LABEL = "Wifiber Go+ SSE";
+
+  it("accepts a config carrying no remembered forfait at all", () => {
+    const parsed = parseConfig({ host: "10.0.0.1" });
+
+    expect(parsed).not.toHaveProperty("orangeForfaitLabel");
+  });
+
+  it("loads a config file written before the portal was ever read", () => {
+    // Written key by key rather than spread from `defaultConfig()`, so the file
+    // genuinely lacks the field instead of carrying it as `undefined`. A config
+    // the app itself wrote must never become one it refuses to start from.
+    writeFileSync(
+      path(),
+      JSON.stringify({
+        host: "10.0.0.1",
+        pollIntervalSeconds: 60,
+        activePollIntervalSeconds: 3,
+        warnThresholdPercent: 75,
+        planLimitBytes: 20_000_000_000,
+        planDays: 30,
+        planCapConfirmed: true,
+        syncStaleAfterMinutes: 45,
+      }),
+    );
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.problem).toBeUndefined();
+    expect(loaded.config).not.toHaveProperty("orangeForfaitLabel");
+    expect(loaded.config.host).toBe("10.0.0.1");
+  });
+
+  it("round-trips the remembered label through save and load", () => {
+    const written: AppConfig = {
+      ...defaultConfig(),
+      orangeForfaitLabel: LABEL,
+    };
+
+    saveConfig(path(), written);
+
+    expect(loadConfig(path()).config).toEqual(written);
+  });
+
+  it("writes no key when no forfait has been remembered", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(readFileSync(path(), "utf8")).not.toContain("orangeForfaitLabel");
+  });
+
+  it("rejects a remembered label that is not a non-empty string", () => {
+    expect(() =>
+      parseConfig({ ...defaultConfig(), orangeForfaitLabel: 42 }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      parseConfig({ ...defaultConfig(), orangeForfaitLabel: "   " }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("names orangeForfaitLabel on the rejection", () => {
+    try {
+      parseConfig({ ...defaultConfig(), orangeForfaitLabel: 42 });
+      expect.unreachable("expected a ConfigValidationError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).field).toBe("orangeForfaitLabel");
+    }
+  });
+
+  it("falls back to the defaults when a stored label is invalid", () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({ ...defaultConfig(), orangeForfaitLabel: 42 }),
+    );
+
+    const result = loadConfig(path());
+
+    expect(result.config).toEqual(defaultConfig());
+    expect(result.problem).toContain("orangeForfaitLabel");
   });
 });
 

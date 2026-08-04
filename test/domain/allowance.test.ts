@@ -3,10 +3,16 @@ import { describe, expect, it } from "vitest";
 import * as allowanceModule from "../../src/domain/allowance.js";
 import {
   anchorFrom,
+  isAnchorStale,
+  isNewPlan,
   needsAutomaticSync,
   readAllowanceNow,
   type AllowanceAnchor,
 } from "../../src/domain/allowance.js";
+import {
+  parseAllowance,
+  parseUssdContent,
+} from "../../src/hilink/ussd-parse.js";
 import type { Clock } from "../../src/domain/quota.js";
 import type { Allowance, MonthStatistics } from "../../src/hilink/types.js";
 
@@ -501,6 +507,169 @@ describe("readAllowanceNow — daysUntilExpiry", () => {
     });
 
     expect(reading.daysUntilExpiry).toBeNull();
+  });
+});
+
+describe("isAnchorStale — whether a usable anchor is still recent", () => {
+  const STALE_AFTER_MINUTES = 30;
+
+  /** An anchor stamped `minutes` (and `milliseconds`) before {@link NOW}. */
+  function syncedAgo(minutes: number, milliseconds = 0): AllowanceAnchor {
+    return anchor({
+      syncedAt: new Date(NOW.getTime() - minutes * 60_000 - milliseconds),
+    });
+  }
+
+  it("is stale 31 minutes after the sync", () => {
+    expect(isAnchorStale(syncedAgo(31), NOW, STALE_AFTER_MINUTES)).toBe(true);
+  });
+
+  it("is not stale 29 minutes after the sync", () => {
+    expect(isAnchorStale(syncedAgo(29), NOW, STALE_AFTER_MINUTES)).toBe(false);
+  });
+
+  it("is not yet stale at exactly the window, to the millisecond", () => {
+    expect(isAnchorStale(syncedAgo(30), NOW, STALE_AFTER_MINUTES)).toBe(false);
+    expect(isAnchorStale(syncedAgo(30, 1), NOW, STALE_AFTER_MINUTES)).toBe(
+      true,
+    );
+  });
+
+  it("honours the configured window rather than a hardcoded 30 minutes", () => {
+    expect(isAnchorStale(syncedAgo(45), NOW, 60)).toBe(false);
+    expect(isAnchorStale(syncedAgo(45), NOW, 10)).toBe(true);
+  });
+
+  it("reports no anchor as not stale, leaving that case to the usability check", () => {
+    // Conflating the two would run the same dialogue for two different
+    // reasons — "nothing has ever been synced" is not "the figure is old".
+    expect(isAnchorStale(undefined, NOW, STALE_AFTER_MINUTES)).toBe(false);
+    expect(isAnchorStale(null, NOW, STALE_AFTER_MINUTES)).toBe(false);
+    expect(needsAutomaticSync(undefined, month(ANCHORED_COUNTER), clock)).toBe(
+      true,
+    );
+  });
+
+  it("is not stale when the sync is stamped in the future, and throws nothing", () => {
+    // A clock moved backwards, or a config hand-edited. Neither is a reason to
+    // dial the carrier.
+    const ahead = anchor({ syncedAt: new Date(NOW.getTime() + 60 * 60_000) });
+
+    expect(() => isAnchorStale(ahead, NOW, STALE_AFTER_MINUTES)).not.toThrow();
+    expect(isAnchorStale(ahead, NOW, STALE_AFTER_MINUTES)).toBe(false);
+  });
+});
+
+describe("isNewPlan", () => {
+  /** The cap the anchored 145.8359 Go comfortably fits inside. */
+  const CAP = 200_000_000_000;
+
+  it("is true when the carrier states a different offer name", () => {
+    expect(
+      isNewPlan(anchor({ planLabel: "NET MONTH 400 000" }), anchor(), CAP),
+    ).toBe(true);
+  });
+
+  it("is true when the expiry moves later", () => {
+    const topped = anchor({ expiresAt: new Date(2026, 8, 12) });
+
+    expect(isNewPlan(topped, anchor(), CAP)).toBe(true);
+  });
+
+  it("is true when the remaining volume passes the configured cap", () => {
+    // The case a carrier that reuses its offer name would otherwise hide: a
+    // 50 Go cap with 145 Go left is a cap that no longer describes the plan.
+    expect(isNewPlan(anchor(), anchor(), 50_000_000_000)).toBe(true);
+  });
+
+  it("is false when the label, the expiry and the remaining are unchanged", () => {
+    expect(isNewPlan(anchor(), anchor(), CAP)).toBe(false);
+  });
+
+  it("is false when there is no previous anchor to differ from", () => {
+    // A first-ever sync replaces nothing, so it contradicts nothing either.
+    expect(isNewPlan(anchor(), undefined, CAP)).toBe(false);
+    expect(isNewPlan(anchor(), null, CAP)).toBe(false);
+  });
+
+  it("is false when the expiry moved earlier", () => {
+    const earlier = anchor({ expiresAt: new Date(2026, 6, 30) });
+
+    expect(isNewPlan(earlier, anchor(), CAP)).toBe(false);
+  });
+
+  it("throws nothing when either expiry is null", () => {
+    const undated = anchor({ expiresAt: null });
+
+    expect(() => isNewPlan(undated, anchor(), CAP)).not.toThrow();
+    expect(() => isNewPlan(anchor(), undated, CAP)).not.toThrow();
+    expect(() => isNewPlan(undated, undated, CAP)).not.toThrow();
+    expect(isNewPlan(undated, anchor(), CAP)).toBe(false);
+    expect(isNewPlan(anchor(), undated, CAP)).toBe(false);
+  });
+
+  it("is false when only the remaining grew and no cap is configured", () => {
+    // With no cap there is nothing for a larger remainder to contradict.
+    const bigger = anchor({ remainingBytes: ANCHORED_REMAINING * 2 });
+
+    expect(isNewPlan(bigger, anchor(), null)).toBe(false);
+  });
+});
+
+describe("the carrier's last valid day, read end to end from its own reply", () => {
+  /**
+   * The reply behind the reported bug, verbatim in shape: a 30-day plan bought
+   * on 27/07/2026 that the carrier states as running "jusqu'au 25/08/2026".
+   */
+  const CARRIER_REPLY = parseUssdContent(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n<content>NET MONTH 200 000, il vous reste 133.51 Go utilisable a toute heure jusqu'au 25/08/2026.</content>\n<date></date>\n</response>`,
+  );
+
+  const stated = parseAllowance(CARRIER_REPLY);
+  if (stated === null) {
+    throw new Error("the recorded carrier reply must state an allowance");
+  }
+
+  const anchored = anchorFrom(stated, month(ANCHORED_COUNTER), {
+    now: () => new Date(2026, 6, 27, 18, 0, 0),
+  });
+
+  function readAt(now: Date) {
+    return readAllowanceNow({
+      anchor: anchored,
+      month: month(ANCHORED_COUNTER),
+      clock: { now: () => now },
+    });
+  }
+
+  it("is not expired at the very start of the stated day", () => {
+    const reading = readAt(new Date(2026, 7, 25, 0, 0, 0));
+
+    expect(reading.trustworthy).toBe(true);
+    expect(reading.staleReason).toBeNull();
+  });
+
+  it("is not expired at the very end of the stated day", () => {
+    const reading = readAt(new Date(2026, 7, 25, 23, 59, 59, 999));
+
+    expect(reading.trustworthy).toBe(true);
+    expect(reading.staleReason).toBeNull();
+  });
+
+  it("is expired the day after the stated day", () => {
+    const reading = readAt(new Date(2026, 7, 26, 9, 30, 0));
+
+    expect(reading.trustworthy).toBe(false);
+    expect(reading.staleReason).toBe("expired");
+  });
+
+  it("still counts the stated day as a day of the plan", () => {
+    // 29/07 through 25/08 inclusive is 28 days, which is what the user counts.
+    expect(readAt(new Date(2026, 6, 29, 16, 33, 0)).daysUntilExpiry).toBe(28);
+  });
+
+  it("leaves one day on the stated day itself, not none", () => {
+    expect(readAt(new Date(2026, 7, 25, 9, 30, 0)).daysUntilExpiry).toBe(1);
   });
 });
 

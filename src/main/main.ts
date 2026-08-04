@@ -12,33 +12,56 @@ import { Menu, Tray, app } from "electron";
 
 import {
   loadConfig,
+  readPlanDaysEntry,
   readPlanLimitEntry,
   saveConfig,
+  type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
 import { defaultConfigPath } from "../config/defaults.js";
-import { anchorFrom, needsAutomaticSync } from "../domain/allowance.js";
+import { isAnchorStale, needsAutomaticSync } from "../domain/allowance.js";
+import type { Carrier } from "../domain/carrier.js";
 import { createRateHistory } from "../domain/history.js";
 import { systemClock } from "../domain/quota.js";
 import { RouterClient, type SnapshotResult } from "../hilink/client.js";
 import { isRouterRefusal } from "../hilink/ussd.js";
 import type { Allowance, RouterSnapshot } from "../hilink/types.js";
+import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import {
   DEVICES_MENU_LABEL,
   createDevicesWindow,
   type DevicesWindow,
 } from "./devices-window.js";
-import { UsagePoller, type SnapshotSource } from "./poller.js";
+import {
+  UsagePoller,
+  type PortalSource,
+  type SnapshotSource,
+} from "./poller.js";
 import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
 import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
 import {
   createAllowanceSync,
+  recordAnchor,
   type AllowanceSource,
   type CredentialStore,
   type SyncState,
 } from "./sync.js";
-import { buildPopoverModel, type UsageReading } from "./view-model.js";
+import {
+  buildPopoverModel,
+  type PortalFailure,
+  type UsageReading,
+} from "./view-model.js";
+
+/**
+ * How often the staleness of the anchor is looked at, with the panel shut.
+ *
+ * A minute, against a window measured in tens of them: this only decides how
+ * promptly an elapsed window is noticed, never how often the carrier is dialled
+ * — the check is arithmetic on two dates, and almost every one of them decides
+ * to do nothing.
+ */
+const STALE_CHECK_INTERVAL_MS = 60_000;
 
 export interface MenuBarOptions {
   /** Where the config lives. Injected so tests never touch the user directory. */
@@ -51,6 +74,11 @@ export interface MenuBarOptions {
    * ever reaching it — and so it is obvious that the poll loop cannot.
    */
   allowance?: AllowanceSource;
+  /**
+   * The Orange selfcare portal. Injected for the same reason
+   * {@link MenuBarOptions.client} is: no test may reach `123.orange.mg`.
+   */
+  portal?: PortalSource;
   /** The password store. Injected so tests need no Keychain. */
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
@@ -72,6 +100,13 @@ export interface MenuBarApp {
    * can drive it without an Electron window.
    */
   setPlanLimit(value: string): void;
+  /** Stores a plan length the same way, and for the same reason. */
+  setPlanDays(value: string): void;
+  /**
+   * Remembers which of the carrier's forfaits the meter measures, by the label
+   * the carrier gave it. Exposed for the same reason the two above are.
+   */
+  setForfait(label: string): void;
   /** Stops polling and releases the tray item. */
   stop(): void;
 }
@@ -117,6 +152,12 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       onSetPlanLimit: (value) => {
         setPlanLimit(value);
       },
+      onSetPlanDays: (value) => {
+        setPlanDays(value);
+      },
+      onChooseForfait: (label) => {
+        setForfait(label);
+      },
     });
 
   // The poller only publishes a title, so the popover's figures are gathered
@@ -137,6 +178,25 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // with the complaint still on it.
   let planLimitProblem: PlanLimitRefusal | undefined;
 
+  /** The same, for the plan length typed beside it. */
+  let planDaysProblem: PlanDaysRefusal | undefined;
+
+  /**
+   * Why the last portal fetch produced no page, when it produced none.
+   *
+   * Read off the fetch on its way past rather than asked of the poller: the
+   * poller publishes whether the page answered, which is what it needs to age a
+   * figure, and the reason belongs to the attempt rather than to that standing.
+   * Held here for the reason the sync state is — a poll landing afterwards must
+   * rebuild the model with the line still on it.
+   */
+  let portalFailure: PortalFailure | undefined;
+
+  /** The page fetch itself, wrapped so the reason for a failure is not lost. */
+  const portalSource: PortalSource = options.portal ?? {
+    read: () => readInfoConso(),
+  };
+
   function refreshPopover(): void {
     popover.setModel(
       buildPopoverModel({
@@ -145,9 +205,22 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         config,
         history: history.samples(),
         sync: syncState,
+        portal: { ...poller.portal, failure: portalFailure },
         planLimitProblem,
+        planDaysProblem,
       }),
     );
+  }
+
+  /**
+   * Which network the SIM is on, as the last reading found it.
+   *
+   * Read from the last successful reading rather than the current result, so an
+   * unreachable router does not turn a known carrier into an unknown one — the
+   * SIM has not changed just because the device stopped answering.
+   */
+  function currentCarrier(): Carrier {
+    return lastReading?.snapshot.carrier.id ?? "unknown";
   }
 
   /**
@@ -169,6 +242,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     planLimitProblem = undefined;
     config.planLimitBytes = entry.bytes;
+    // Submitting the cap *is* confirming it, whether the figure changed or not
+    // — which is what lets the new-plan prompt cost a single press when the
+    // plan size did not actually move.
+    config.planCapConfirmed = true;
 
     try {
       saveConfig(configPath, config);
@@ -182,9 +259,73 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   }
 
   /**
+   * Stores the plan length the user typed, or says why it could not be.
+   *
+   * A refused entry writes nothing at all — a blank submission leaves whatever
+   * was already stored exactly as it was, rather than clearing the period out
+   * from under the pace reading.
+   */
+  function setPlanDays(value: string): void {
+    const entry = readPlanDaysEntry(value);
+
+    if (!entry.ok) {
+      planDaysProblem = entry.reason;
+      refreshPopover();
+
+      return;
+    }
+
+    planDaysProblem = undefined;
+    config.planDays = entry.days;
+
+    try {
+      saveConfig(configPath, config);
+    } catch (error) {
+      console.warn(`could not record the plan length: ${String(error)}`);
+    }
+
+    refreshPopover();
+  }
+
+  /**
+   * Remembers which forfait the meter measures.
+   *
+   * The label is written onto the same config object the poller holds, so the
+   * next portal read selects against it — the choice is applied where every
+   * poll applies it, rather than being pushed into the panel from here.
+   *
+   * A blank label is dropped rather than stored. It could only arrive from a
+   * page that named no plan, and clearing the stored choice would put the
+   * meter back on whichever forfait the portal happens to list first.
+   */
+  function setForfait(label: string): void {
+    const wanted = label.trim();
+
+    if (wanted === "") {
+      return;
+    }
+
+    config.orangeForfaitLabel = wanted;
+
+    try {
+      saveConfig(configPath, config);
+    } catch (error) {
+      // The choice still governs this run; losing it on quit is better than
+      // refusing it outright, exactly as the two typed settings decide.
+      console.warn(`could not record the chosen forfait: ${String(error)}`);
+    }
+
+    refreshPopover();
+  }
+
+  /**
    * Pins the carrier's figure to the router's counter at this instant and
    * writes it down. The anchor has to survive a quit — the router keeps
    * counting while the app is closed — so it goes to the config, not to memory.
+   *
+   * {@link recordAnchor} also decides, against the anchor being replaced,
+   * whether the typed-in cap still describes the plan — the one instant that
+   * comparison can be made.
    */
   function anchorAllowance(allowance: Allowance): void {
     const month = lastReading?.snapshot.month;
@@ -196,7 +337,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       return;
     }
 
-    config.allowanceAnchor = anchorFrom(allowance, month);
+    recordAnchor(config, allowance, month);
 
     try {
       saveConfig(configPath, config);
@@ -210,6 +351,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const sync = createAllowanceSync({
     router: allowanceRouter,
     credentials,
+    // The dialogue is the YAS path. On Orange it never starts, so no password
+    // is ever asked of the Keychain and no account can be walked towards its
+    // five-failure lockout for a figure a plain `GET` already answered.
+    carrier: currentCarrier,
     onAllowance: anchorAllowance,
     onStateChange: (state) => {
       if (state.phase === "failed" && isRouterRefusal(state.reason)) {
@@ -250,6 +395,36 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     if (needsAutomaticSync(config.allowanceAnchor, snapshot.month)) {
       void sync.start();
+    }
+  }
+
+  /**
+   * Re-anchors a figure that has simply gone old.
+   *
+   * The other half of {@link syncAutomaticallyOnce}: that one asks whether the
+   * anchor is *usable*, this one whether a usable anchor is still *recent*. It
+   * is evaluated at two moments — the panel opening, and a timer for an app
+   * nobody has opened all afternoon — and never on a poll tick, because a poll
+   * comes round every few seconds and a dialogue takes tens of them.
+   *
+   * Everything that could make this the wrong moment is checked here rather
+   * than inside the sync: no reading yet means no counter to anchor against,
+   * and an unreachable router means the dialogue would fail and park automatic
+   * syncing over a problem that fixes itself.
+   */
+  function syncIfStale(): void {
+    if (lastReading === null || result === null || !result.online) {
+      return;
+    }
+
+    if (
+      isAnchorStale(
+        config.allowanceAnchor,
+        systemClock.now(),
+        config.syncStaleAfterMinutes,
+      )
+    ) {
+      void sync.startAutomatic();
     }
   }
 
@@ -294,6 +469,22 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const poller = new UsagePoller({
     client,
     config,
+    // Only ever read on Orange, and only on the idle interval — the poller
+    // decides both, from the carrier the router reports.
+    portal: {
+      read: async () => {
+        const outcome = await portalSource.read();
+
+        // Cleared by the page that arrived, so a fault that has since gone
+        // cannot go on being reported beside a figure it did not stop.
+        portalFailure = outcome.state === "read" ? undefined : outcome;
+
+        return outcome;
+      },
+    },
+    onPortal: () => {
+      refreshPopover();
+    },
     onTitle: (title) => tray.setTitle(title),
   });
 
@@ -306,6 +497,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     show(bounds) {
       popover.show(bounds);
       poller.setActive(true);
+      syncIfStale();
     },
     hide() {
       popover.hide();
@@ -314,8 +506,20 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     toggle(bounds) {
       popover.toggle(bounds);
       poller.setActive(popover.isOpen());
+
+      // Only on the way open. Closing the panel is not a moment anyone wants a
+      // carrier dialogue to start.
+      if (popover.isOpen()) {
+        syncIfStale();
+      }
     },
   };
+
+  // Its own timer rather than a share of the poll loop: the poll runs every few
+  // seconds and this must not. The interval only decides how promptly a window
+  // that has come round is noticed — `syncStaleAfterMinutes` decides whether
+  // there is anything to notice.
+  const staleCheck = setInterval(syncIfStale, STALE_CHECK_INTERVAL_MS);
 
   // The device list is a window of its own rather than a section of the panel:
   // the panel is 320×520 with nothing left to spend and nothing scrolls in it.
@@ -351,7 +555,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   return {
     sync: () => sync.start(),
     setPlanLimit,
+    setPlanDays,
+    setForfait,
     stop() {
+      clearInterval(staleCheck);
       poller.stop();
       popover.destroy();
       devices.destroy();

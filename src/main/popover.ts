@@ -34,6 +34,12 @@ export const POPOVER_SAVE_PASSWORD_CHANNEL = "popover:save-password";
 /** The plan-size field's submit, carrying the characters typed into it. */
 export const POPOVER_SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
 
+/** The plan-length field's submit, carrying the characters typed into it. */
+export const POPOVER_SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
+
+/** An alternative forfait pressed, carrying the label the carrier gave it. */
+export const POPOVER_CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
+
 /**
  * The page, as the build leaves it. `npm run build` copies it and its stylesheet
  * into `dist/renderer/`, and that copy is the one the app loads: a packaged
@@ -72,6 +78,10 @@ export interface PopoverOptions {
   onSavePassword?: (credential: RouterCredential) => void;
   /** The user submitted the plan-size field, with whatever they typed into it. */
   onSetPlanLimit?: (value: string) => void;
+  /** The user submitted the plan-length field, on the same terms. */
+  onSetPlanDays?: (value: string) => void;
+  /** The user picked one of the carrier's other forfaits, by its own label. */
+  onChooseForfait?: (label: string) => void;
 }
 
 /**
@@ -154,9 +164,23 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onSetPlanDaysMessage(event: IpcMainEvent, payload: unknown): void {
+    if (fromThisPanel(event) && typeof payload === "string") {
+      options.onSetPlanDays?.(payload);
+    }
+  }
+
+  function onChooseForfaitMessage(event: IpcMainEvent, payload: unknown): void {
+    if (fromThisPanel(event) && typeof payload === "string") {
+      options.onChooseForfait?.(payload);
+    }
+  }
+
   ipcMain.on(POPOVER_SYNC_CHANNEL, onSyncMessage);
   ipcMain.on(POPOVER_SAVE_PASSWORD_CHANNEL, onSavePasswordMessage);
   ipcMain.on(POPOVER_SET_PLAN_LIMIT_CHANNEL, onSetPlanLimitMessage);
+  ipcMain.on(POPOVER_SET_PLAN_DAYS_CHANNEL, onSetPlanDaysMessage);
+  ipcMain.on(POPOVER_CHOOSE_FORFAIT_CHANNEL, onChooseForfaitMessage);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -174,6 +198,29 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     // Rejects if the page is still loading; `did-finish-load` pushes again.
     void open.webContents
       .executeJavaScript(`window.applyPopoverModel(${JSON.stringify(model)})`)
+      .catch(() => undefined);
+  }
+
+  /**
+   * Puts the page back on its main view.
+   *
+   * The window is hidden rather than destroyed between opens, so a panel left
+   * on its settings would still be on them the next time the tray item is
+   * clicked. The figures are what the panel is opened for; the settings are
+   * typed once a month.
+   *
+   * Rejects while the page is still loading, which is exactly the case where
+   * there is nothing to reset — a freshly loaded page opens on the main view.
+   */
+  function resetView(): void {
+    const open = alive();
+
+    if (open === null) {
+      return;
+    }
+
+    void open.webContents
+      .executeJavaScript("window.resetPopoverView?.()")
       .catch(() => undefined);
   }
 
@@ -235,6 +282,8 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       position(open, bounds);
     }
 
+    // Before the push, so the model lands on the view the user is about to see.
+    resetView();
     push();
     open.show();
   }
@@ -273,6 +322,14 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       ipcMain.removeListener(
         POPOVER_SET_PLAN_LIMIT_CHANNEL,
         onSetPlanLimitMessage,
+      );
+      ipcMain.removeListener(
+        POPOVER_SET_PLAN_DAYS_CHANNEL,
+        onSetPlanDaysMessage,
+      );
+      ipcMain.removeListener(
+        POPOVER_CHOOSE_FORFAIT_CHANNEL,
+        onChooseForfaitMessage,
       );
       alive()?.destroy();
       window = null;

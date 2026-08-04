@@ -11,6 +11,11 @@
   --muted: #6d6d72;
   --line: rgb(0 0 0 / 10%);
   --accent: #0a84ff;
+
+  /* The three bands the pace is drawn in. Orange and red are the same two the
+     dial already uses for trouble, so the panel speaks one visual language;
+     green is the only one that had no name yet. */
+  --safe: #30d158;
   --warn: #ff9f0a;
   --over: #ff453a;
   --track: rgb(0 0 0 / 8%);
@@ -36,6 +41,7 @@
     --muted: #9a9aa0;
     --line: rgb(255 255 255 / 12%);
     --accent: #0a84ff;
+    --safe: #32d74b;
     --warn: #ffa726;
     --over: #ff6961;
     --track: rgb(255 255 255 / 12%);
@@ -159,6 +165,71 @@ body {
   background: var(--muted);
 }
 
+/*
+  The panel shows one view or the other, never both. `display` of their own, so
+  the UA rule for `hidden` would not take the put-away one off the panel — the
+  same bargain `.pace-meter` and `.password-prompt` already make.
+*/
+.view {
+  display: block;
+}
+
+.view[hidden] {
+  display: none;
+}
+
+/* Room to breathe: three rows in a 320×520 window, entered a few times a year. */
+.settings-view {
+  padding-top: 4px;
+}
+
+/*
+  The way through to the three typed values. A glyph rather than a word: the
+  header already carries a carrier name that can run long, and this is the one
+  control on it that is not read every time the panel is opened.
+*/
+.settings-toggle {
+  position: relative;
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+  cursor: default;
+}
+
+.settings-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Pressed reads as pressed: the panel behind it has changed, so the control
+   that changed it has to look held down rather than merely clicked. */
+.settings-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/*
+  Nothing is stored to sign in with, and the form that would ask is behind this
+  button. A dot, not a colour on the button itself: the wording inside says what
+  is missing, and this only makes it findable.
+*/
+.settings-toggle[data-attention="true"]::after {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  content: "";
+}
+
 .usage {
   display: flex;
   align-items: center;
@@ -265,8 +336,11 @@ body {
 }
 
 /* Nothing is measurable until this is filled in, so an empty field is the one
-   thing on the panel asking to be touched. */
-:root[data-plan-limit="unset"] .plan-limit-input {
+   thing on the panel asking to be touched. Scoped to the cap's own input rather
+   than to the shared class: the plan length beside it wears the same class, and
+   it is a refinement rather than a precondition — the panel reads correctly
+   with it blank, so it is not marked as the thing to fill in. */
+:root[data-plan-limit="unset"] [data-plan-limit-input] {
   border-color: var(--accent);
 }
 
@@ -291,6 +365,40 @@ body {
    the panel must not jump when a refusal appears or clears. */
 .plan-limit-error:empty {
   display: none;
+}
+
+/* The new-plan confirmation. It sits under the two fields it is about, and is
+   hidden through the `hidden` attribute rather than a class, so it costs no
+   height at all until a sync contradicts the stored cap. */
+.plan-cap-prompt {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.plan-cap-prompt[hidden] {
+  display: none;
+}
+
+.plan-cap-message {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.plan-cap-confirm {
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: default;
 }
 
 /* Approaching the plan limit, then past it. The state is decided in the main
@@ -369,6 +477,21 @@ body {
   flex: none;
 }
 
+/* When the volume above runs out, on the line under it: two former tiles that
+   qualify the figure they now sit beneath. */
+.allowance-validity {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.allowance-days-left::before {
+  margin-right: 6px;
+  content: "·";
+}
+
 /* The re-sync marker. Colour is the second signal here, never the only one —
    the sentence itself says the figure can no longer be trusted. */
 .allowance-note {
@@ -377,8 +500,56 @@ body {
   font-size: 11px;
 }
 
+/* Which plan the figure above is about, offered only where the app picked it
+   from several. Hidden through the `hidden` attribute rather than a class, and
+   given a `display` of its own so the UA rule cannot lose to this one — the
+   same bargain `.pace-meter` and `.password-prompt` already make. It costs no
+   height at all until there is a choice to offer. */
+.forfait-choice {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.forfait-choice[hidden] {
+  display: none;
+}
+
+.forfait-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* As many as the carrier listed, so they wrap rather than overrun the panel. */
+.forfait-alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.forfait-alternative {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.forfait-alternative:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Nothing synced yet: the strip has no figure to show, so it says so instead. */
 :root[data-allowance="none"] .allowance-meta,
+:root[data-allowance="none"] .allowance-validity,
 :root[data-allowance="none"] .allowance-figure .caption {
   display: none;
 }
@@ -526,6 +697,30 @@ body {
   font-size: 11px;
 }
 
+/* The line saying why there is no figure, built exactly like the sync footer
+   above because it stands in that footer's place. Given a `display` of its own
+   so the UA `hidden` rule cannot lose to this one — the same bargain
+   `.pace-meter`, `.password-prompt` and `.forfait-choice` already make, so it
+   costs no height at all while every figure is present. */
+.notice {
+  display: block;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+/* Warned rather than alarmed, and in words either way: this is the same colour
+   `.allowance-note` uses to mark a figure that can no longer be trusted. */
+.notice-message {
+  min-width: 0;
+  color: var(--warn);
+  font-size: 11px;
+}
+
 /* The first-run password prompt. Hidden through the `hidden` attribute rather
    than a class, so it costs no height until the panel asks for it. */
 .password-prompt {
@@ -570,4 +765,113 @@ body {
   font: inherit;
   font-weight: 500;
   cursor: default;
+}
+
+/* The pace row. It sits under the dial because it explains the share the dial
+   draws, and it carries one reading at a time: the recovery figure after a
+   sync, and the meter in its place once the two fields above are filled in. */
+.pace {
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+
+  /* The band's colour, swapped by the state below. Grey is what a row with no
+     band yet is drawn in, though at that point there is no bar to draw. */
+  --pace: var(--muted);
+}
+
+/* Collapsed rather than blank: below tier 3 there is no hint, and an empty
+   line must not hold a gap open under the figure. */
+.pace-sustainable:empty,
+.pace-hint:empty {
+  display: none;
+}
+
+.pace-sustainable {
+  font-size: 12px;
+}
+
+.pace-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* The bar and its numerals: the colour says which band, the bar says by how
+   much, and only the numbers say the amounts. Hidden through the `hidden`
+   attribute below tier 3, so it costs no height at all.
+
+   Stacked, bar over pair. T-48 bought the width for `spent` and `budget` out
+   of the bar, which had shrunk it to a stub, because height was the budget
+   with no slack. The recovery line's departure is that slack: the track now
+   takes a whole row to itself and the pair reads underneath it, so the words
+   are paid for in height and the bar is a bar again. The section is still
+   shorter at tier 3 than it was with the line on it. */
+.pace-meter {
+  display: grid;
+  gap: 6px;
+}
+
+.pace-meter[hidden] {
+  display: none;
+}
+
+/* Twice the afforded figure wide, with the afforded figure marked at its
+   middle — the widths themselves are written by the renderer from the model. */
+.pace-track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.pace-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px;
+  background: var(--pace);
+  transition:
+    width 240ms ease-out,
+    background 240ms ease-out;
+}
+
+/* Fill crossing this mark is the verdict stated without hue, so it has to stand
+   out against the fill as well as against the track. */
+.pace-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--text);
+}
+
+.pace-figures {
+  display: flex;
+  align-items: baseline;
+  flex: none;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pace-average {
+  color: var(--pace);
+  font-weight: 600;
+}
+
+/* The three bands. The state is decided in the main process — nothing here
+   compares a ratio to a threshold. */
+.pace[data-pace-state="safe"] {
+  --pace: var(--safe);
+}
+
+.pace[data-pace-state="warning"] {
+  --pace: var(--warn);
+}
+
+.pace[data-pace-state="over"] {
+  --pace: var(--over);
 }

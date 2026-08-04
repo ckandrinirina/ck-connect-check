@@ -58,13 +58,29 @@ function readPlanLabel(text: string, clauseIndex: number): string {
     .trim();
 }
 
+/**
+ * The instant the plan stops being valid, from a `jusqu'au JJ/MM/AAAA` clause.
+ *
+ * The carrier means the plan runs *through* the day it names — its own
+ * arithmetic proves it, since a 30-day plan bought on 27/07 reaches 25/08 only
+ * when that last day is counted. So the instant returned is the midnight that
+ * *ends* the stated day, which is the midnight that opens the next one. Reading
+ * it as the midnight that opens the stated day would drop a day from every
+ * consumer at once: the period would start a day early, a day would go missing
+ * from the count remaining, and the plan would be declared dead while the
+ * carrier was still serving it.
+ *
+ * Passing `day + 1` to `Date` rather than adding a day's milliseconds keeps the
+ * rollover the platform's job — month ends, leap days and year ends all
+ * included — and stays at local midnight across any daylight-saving shift.
+ */
 function readExpiry(text: string): Date | null {
   const match = EXPIRY.exec(text);
   if (match === null) {
     return null;
   }
   const [, day = "", month = "", year = ""] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  const date = new Date(Number(year), Number(month) - 1, Number(day) + 1);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

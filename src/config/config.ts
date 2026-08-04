@@ -15,6 +15,7 @@ import {
   DEFAULT_ACTIVE_POLL_INTERVAL_SECONDS,
   DEFAULT_HOST,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_SYNC_STALE_AFTER_MINUTES,
   DEFAULT_WARN_THRESHOLD_PERCENT,
   MIN_ACTIVE_POLL_INTERVAL_SECONDS,
   MIN_POLL_INTERVAL_SECONDS,
@@ -226,14 +227,133 @@ function readPlanLimit(raw: Record<string, unknown>): number | null {
 }
 
 /**
- * Reads one of the two credential fields. Both are optional — every config file
- * written before the router needed a login is still valid — but a field that is
- * present has to be a real non-empty string, since a blank blob or username is
- * indistinguishable from a corrupted one.
+ * How long the plan runs for, in whole days.
+ *
+ * Falls back to `null` rather than throwing, for the reason
+ * {@link readSyncStaleAfter} does: an unusable period is the same as no period,
+ * the pace band is already defined to be absent without one, and a typo here
+ * must not cost the stored allowance anchor. Zero, a negative, and a fraction of
+ * a day are all periods nothing can be divided by.
  */
-function readCredentialField(
+function readPlanDays(raw: Record<string, unknown>): number | null {
+  const days = raw.planDays;
+
+  if (typeof days !== "number" || !Number.isInteger(days) || days <= 0) {
+    return null;
+  }
+
+  return days;
+}
+
+/**
+ * Whether the stored cap still describes the plan the carrier is reporting.
+ *
+ * Falls back to `true` rather than throwing, and for a reason opposite to
+ * {@link readPlanDays}': the safe direction here is *not* asking. Anything but
+ * a boolean is a file nobody wrote deliberately, and a panel demanding
+ * confirmation of a cap the user never changed is the worse of the two
+ * failures. It also means every config written before this field existed loads
+ * unflagged.
+ */
+function readPlanCapConfirmed(raw: Record<string, unknown>): boolean {
+  return typeof raw.planCapConfirmed === "boolean"
+    ? raw.planCapConfirmed
+    : true;
+}
+
+/**
+ * The cap the app may actually measure against: the stored one, or none at all
+ * while a sync has left it unconfirmed.
+ *
+ * The single rule the dial and the menu bar title both read, so neither can
+ * quote a share the other has withdrawn. An unconfirmed cap reads as no cap,
+ * which every consumer already knows how to render — the tier 1 pace stays,
+ * the dial and the share do not.
+ */
+export function confirmedPlanLimit(config: AppConfig): number | null {
+  // Only an explicit `false` withdraws the cap, mirroring
+  // {@link readPlanCapConfirmed}'s own fallback: a config assembled without the
+  // field is one written before it existed, not one a sync has contradicted.
+  return config.planCapConfirmed === false ? null : config.planLimitBytes;
+}
+
+/**
+ * Why a typed plan length could not be used. A token, not a sentence — the
+ * words the user reads are decided in `main/view-model.ts`, beside every other
+ * string the panel shows.
+ */
+export type PlanDaysRefusal =
+  "blank" | "not-a-number" | "not-positive" | "not-whole";
+
+export type PlanDaysEntry =
+  { ok: true; days: number } | { ok: false; reason: PlanDaysRefusal };
+
+/**
+ * A plan length as the user typed it into the panel — `"30"`. Read here, at the
+ * boundary, so the renderer sends the characters and works nothing out.
+ *
+ * A fraction is refused rather than rounded: the carrier sells whole days, and
+ * a rounded period would silently disagree with the expiry date the pace is
+ * measured back from.
+ */
+export function readPlanDaysEntry(text: string): PlanDaysEntry {
+  const trimmed = text.trim();
+
+  if (trimmed === "") {
+    return { ok: false, reason: "blank" };
+  }
+
+  const value = Number(trimmed);
+
+  if (!Number.isFinite(value)) {
+    return { ok: false, reason: "not-a-number" };
+  }
+
+  if (value <= 0) {
+    return { ok: false, reason: "not-positive" };
+  }
+
+  if (!Number.isInteger(value)) {
+    return { ok: false, reason: "not-whole" };
+  }
+
+  return { ok: true, days: value };
+}
+
+/**
+ * How stale a carrier reading may get before the app re-anchors it.
+ *
+ * The only setting that falls back rather than throwing. Every other bounded
+ * value takes the whole config down with it, which is right for a router
+ * address but wrong here: a hand-typed `0` would discard the stored allowance
+ * anchor along with it, and recovering that costs a full USSD dialogue and a
+ * login against a device that locks after five refusals. A window nobody can
+ * use is simply the default window.
+ */
+function readSyncStaleAfter(raw: Record<string, unknown>): number {
+  const minutes = raw.syncStaleAfterMinutes;
+
+  if (
+    typeof minutes !== "number" ||
+    !Number.isFinite(minutes) ||
+    minutes <= 0
+  ) {
+    return DEFAULT_SYNC_STALE_AFTER_MINUTES;
+  }
+
+  return minutes;
+}
+
+/**
+ * Reads one of the optional string fields. Every one is absent from some config
+ * the app itself wrote — before the router needed a login, before the portal was
+ * ever read — so absence is normal and never a complaint. A field that is
+ * *present* has to be a real non-empty string, since a blank blob, username or
+ * forfait label is indistinguishable from a corrupted one.
+ */
+function readOptionalString(
   raw: Record<string, unknown>,
-  field: "routerUsername" | "routerPasswordBlob",
+  field: "routerUsername" | "routerPasswordBlob" | "orangeForfaitLabel",
 ): string | undefined {
   const value = raw[field];
 
@@ -349,8 +469,9 @@ export function parseConfig(raw: unknown): AppConfig {
 
   const record = raw as Record<string, unknown>;
   const pollIntervalSeconds = readPollInterval(record);
-  const routerUsername = readCredentialField(record, "routerUsername");
-  const routerPasswordBlob = readCredentialField(record, "routerPasswordBlob");
+  const routerUsername = readOptionalString(record, "routerUsername");
+  const routerPasswordBlob = readOptionalString(record, "routerPasswordBlob");
+  const orangeForfaitLabel = readOptionalString(record, "orangeForfaitLabel");
   // `planTotalBytes` is read by nothing: it held a high-water plan total that
   // the dial no longer measures against. Files the app wrote still carry it, so
   // it is dropped on the way through rather than rejected.
@@ -365,8 +486,12 @@ export function parseConfig(raw: unknown): AppConfig {
     ),
     warnThresholdPercent: readWarnThreshold(record),
     planLimitBytes: readPlanLimit(record),
+    planDays: readPlanDays(record),
+    planCapConfirmed: readPlanCapConfirmed(record),
+    syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
+    ...(orangeForfaitLabel === undefined ? {} : { orangeForfaitLabel }),
     ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),
   };
 }

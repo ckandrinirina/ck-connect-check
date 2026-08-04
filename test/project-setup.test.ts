@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { APP_VERSION } from "../src/app-info.js";
+
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 function readRepoFile(relativePath: string): string {
@@ -14,9 +16,13 @@ function readRepoFile(relativePath: string): string {
 }
 
 const packageJson = JSON.parse(readRepoFile("package.json")) as {
+  version?: string;
   scripts?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
+
+/** The release this tree is: the pace meter and the automatic sync. */
+const RELEASED_VERSION = "0.2.0";
 
 describe("package.json", () => {
   it("declares test, build and lint scripts", () => {
@@ -29,6 +35,45 @@ describe("package.json", () => {
     expect(packageJson.devDependencies).toHaveProperty("electron");
     expect(packageJson.devDependencies).toHaveProperty("vitest");
   });
+});
+
+/**
+ * One version, stated in three places that cannot be allowed to drift: the
+ * manifest npm reads, the lockfile it writes beside it, and the constant the app
+ * itself carries. A bump that touches only one of them ships a build that
+ * reports a version nobody released.
+ */
+describe("the released version", () => {
+  it("reads 0.2.0 in package.json", () => {
+    expect(packageJson.version).toBe(RELEASED_VERSION);
+  });
+
+  it("is what the app itself reports", () => {
+    // Asserted against the manifest rather than against the literal, so the
+    // constant cannot be left behind by the next bump either.
+    expect(APP_VERSION).toBe(packageJson.version);
+  });
+
+  it("is a plain three-part semantic version", () => {
+    expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it.each(["the root entry", "the root package entry"])(
+    "agrees in package-lock.json at %s",
+    (where) => {
+      const lock = JSON.parse(readRepoFile("package-lock.json")) as {
+        version?: string;
+        packages?: Record<string, { version?: string }>;
+      };
+
+      const found =
+        where === "the root entry"
+          ? lock.version
+          : lock.packages?.[""]?.version;
+
+      expect(found).toBe(packageJson.version);
+    },
+  );
 });
 
 describe("build config", () => {
