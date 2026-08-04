@@ -174,17 +174,22 @@
       </section>
 
       <!--
-        The carrier's own figure, carried forward from the last sync. It is a
-        different question from the dial above it — that is a share of the plan,
-        this is the exact volume the carrier said was left — so it gets its own
-        strip rather than another number in the grid.
+        The volume left, and where the figure came from. It is a different
+        question from the dial above it — that is a share of the plan, this is
+        the volume itself — so it gets its own strip rather than another number
+        in the grid.
+
+        The caption is filled from the model rather than written here: one
+        carrier states the remaining volume outright and the other states only
+        what was used, and a caption fixed in the markup would credit the
+        second with a sentence it never said.
       -->
       <section class="allowance">
         <div class="allowance-figure">
           <span class="allowance-remaining" data-field="allowanceRemaining"
             >—</span
           >
-          <span class="caption">left with the carrier</span>
+          <span class="caption" data-field="allowanceCaption"></span>
         </div>
         <div class="allowance-meta">
           <span class="allowance-plan" data-field="allowancePlan">—</span>
@@ -195,8 +200,12 @@
           tiles of the grid below until the panel outgrew its window; they are
           the same carrier's answer about the same allowance, so they read
           better here than as boxes three sections from the figure they qualify.
+
+          Marked for withdrawal like the sync row: a carrier that states no
+          expiry leaves this able to read only "— · —", and a dashed row is
+          still read out in full to a screen reader.
         -->
-        <div class="allowance-validity">
+        <div class="allowance-validity" data-validity-row>
           <span class="caption">Expires</span>
           <span data-field="allowanceExpires">—</span>
           <span class="allowance-days-left" data-field="allowanceDaysLeft"

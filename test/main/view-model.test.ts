@@ -2439,3 +2439,114 @@ describe("buildPopoverModel — the dial's prompt beside the notice under it", (
     expect(model.progress.prompt).not.toMatch(CLAIMS_WAITING);
   });
 });
+
+/**
+ * The claim the dial's accessible name must not make once the page has spoken.
+ *
+ * Every wording that says nothing has come back says it one of these ways: it
+ * reports no reading, it reports nothing yet, or it says outright that it is
+ * waiting. The regex is deliberately wider than the one string in the file —
+ * a replacement wording that still claimed silence would otherwise pass.
+ */
+const DESCRIPTION_CLAIMS_NO_ANSWER = /no reading|nothing[^.]*yet|waiting/i;
+
+/** What the dial is called while the page has genuinely said nothing. */
+const NO_READING_DESCRIPTION = "No reading from the Orange portal yet";
+
+describe("buildPopoverModel — what the dial tells a screen reader", () => {
+  const standings = portalStandings();
+
+  it("never reports silence where the notice says the page answered", () => {
+    // T-60 stopped the visible prompt saying this. A screen-reader user has
+    // the description in place of the panel, so the same claim left standing
+    // here is the same contradiction, told to the reader least able to see the
+    // notice correcting it.
+    for (const standing of standings) {
+      const model = standingModel(standing);
+
+      if (!NOTICE_SAYS_ANSWERED.test(model.notice)) continue;
+
+      expect(model.progress.description).not.toMatch(
+        DESCRIPTION_CLAIMS_NO_ANSWER,
+      );
+    }
+  });
+
+  it("goes on reporting it wherever nothing has come back from the page", () => {
+    for (const standing of standings) {
+      const model = standingModel(standing);
+
+      if (standing.reading !== null) continue;
+      if (NOTICE_SAYS_ANSWERED.test(model.notice)) continue;
+
+      expect(model.progress.description).toBe(NO_READING_DESCRIPTION);
+    }
+  });
+
+  it("never agrees with the prompt about the page and disagrees here", () => {
+    // The two are drawn through one predicate rather than two judgements, so
+    // this holds by construction. Asserted because construction can be undone.
+    for (const standing of standings) {
+      const { prompt, description } = standingModel(standing).progress;
+
+      if (!CLAIMS_WAITING.test(prompt)) continue;
+
+      expect(description).toMatch(DESCRIPTION_CLAIMS_NO_ANSWER);
+    }
+  });
+
+  it("names the ring in every state, an unnamed dial being no dial at all", () => {
+    for (const standing of standings) {
+      expect(standingModel(standing).progress.description).not.toBe("");
+    }
+  });
+});
+
+describe("buildPopoverModel — what the remaining volume is captioned as", () => {
+  it("credits the carrier on Yas, which states the volume left itself", () => {
+    expect(yasModel().allowance.remainingCaption).toBe("left with the carrier");
+  });
+
+  it("credits the plan on Orange, the page having stated only what was used", () => {
+    // The portal states consumption. The remainder is `cap − consumed` from a
+    // number the user typed, and the carrier never said it.
+    expect(orangeModel(portal(true)).allowance.remainingCaption).toBe(
+      "left on your plan",
+    );
+  });
+
+  it("never calls a derived figure the carrier's own statement, in any standing", () => {
+    for (const standing of portalStandings()) {
+      expect(standingModel(standing).allowance.remainingCaption).not.toMatch(
+        /carrier/i,
+      );
+    }
+  });
+});
+
+describe("buildPopoverModel — the expiry row the portal cannot fill", () => {
+  it("stands it down on Orange, the page stating no expiry at all", () => {
+    expect(orangeModel(portal(true)).controls.expiry).toBe(false);
+  });
+
+  it("stands it down in every Orange standing, dashed or not", () => {
+    for (const standing of portalStandings()) {
+      expect(standingModel(standing).controls.expiry).toBe(false);
+    }
+  });
+
+  it("keeps it on Yas, where the carrier states an expiry and a countdown", () => {
+    expect(yasModel().controls.expiry).toBe(true);
+  });
+
+  it("keeps it before any reading has named a carrier", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: configWith(20_000_000_000),
+      clock,
+    });
+
+    expect(model.controls.expiry).toBe(true);
+  });
+});

@@ -2596,6 +2596,41 @@ describe("the Orange panel — the controls it does not offer", () => {
   });
 });
 
+describe("the Orange panel — what it does not claim about the figure", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(orangeModel());
+  });
+
+  it("captions the volume left as the plan's rather than the carrier's", () => {
+    // The page states consumption; the remainder is the typed cap minus it.
+    expect(textOf("allowanceCaption")).toBe("left on your plan");
+    expect(textOf("allowanceCaption")).not.toMatch(/carrier/i);
+  });
+
+  it("has no expiry row anywhere in the document, not one full of dashes", () => {
+    // Taken off rather than dashed or hidden, for the reason the sync row is:
+    // a row that can only ever say "— · —" is still read out in full by a
+    // screen reader, which is the one reader a dash tells nothing at all.
+    expect(document.querySelector("[data-validity-row]")).toBeNull();
+    expect(
+      document.querySelector('[data-field="allowanceExpires"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-field="allowanceDaysLeft"]'),
+    ).toBeNull();
+  });
+
+  it("puts the row and the carrier's caption back when a Yas model follows", () => {
+    // The SIM decides, and a SIM can be swapped without the app restarting.
+    apply(modelUsing(10 * GB));
+
+    expect(document.querySelector("[data-validity-row]")).not.toBeNull();
+    expect(textOf("allowanceExpires")).not.toBe("");
+    expect(textOf("allowanceCaption")).toBe("left with the carrier");
+  });
+});
+
 describe("the Yas panel — every control it always had", () => {
   beforeEach(() => {
     stubBridge();
@@ -2605,6 +2640,13 @@ describe("the Yas panel — every control it always had", () => {
   it("still carries the Sync button and its status line", () => {
     expect(document.querySelector("[data-sync]")).not.toBeNull();
     expect(document.querySelector('[data-field="syncStatus"]')).not.toBeNull();
+  });
+
+  it("still carries the expiry row and the caption crediting the carrier", () => {
+    expect(document.querySelector("[data-validity-row]")).not.toBeNull();
+    expect(textOf("allowanceExpires")).not.toBe("—");
+    expect(textOf("allowanceDaysLeft")).not.toBe("—");
+    expect(textOf("allowanceCaption")).toBe("left with the carrier");
   });
 
   it("still carries the plan-length field beside the cap", () => {
@@ -2825,6 +2867,45 @@ describe("the Orange panel — the height it has to fit", () => {
         SPARK_GAP +
         UNPLACED_CHROME_HEIGHT,
     ).toBeLessThanOrEqual(POPOVER_HEIGHT);
+  });
+
+  it("gives back the expiry row the portal can never fill", () => {
+    // Reclaimed space that goes unmeasured is space the next task spends
+    // twice, so the row's height is taken out of the worst case here and the
+    // figure is named rather than only bounded.
+    //
+    // Read the way every budget above is read: the row is 11px text, which is
+    // a 15px line box by the same convention the 11px notice and forfait note
+    // are counted with, and the 2px gap of the `.allowance` grid goes with it.
+    stubBridge();
+    apply(orangeModel());
+
+    // The height only comes back if the row is genuinely off the panel, and
+    // an absent row proves nothing unless the page ships one to begin with —
+    // a selector that matches no markup at all would pass this vacuously.
+    expect(INDEX_HTML).toContain("data-validity-row");
+    expect(document.querySelector("[data-validity-row]")).toBeNull();
+
+    const ORANGE_VALIDITY_HEIGHT = 15 + 2;
+    const ORANGE_CHOICE_HEIGHT = 48;
+    const ORANGE_CHROME_HEIGHT =
+      350 - 38 + ORANGE_CHOICE_HEIGHT - ORANGE_VALIDITY_HEIGHT;
+    const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const sparkSize = /--spark-height:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
+    const SPARK_ROWS = 2;
+    const SPARK_GAP = 6;
+
+    expect(dialSize).toBeDefined();
+    expect(sparkSize).toBeDefined();
+
+    const worstCase =
+      Number(dialSize) +
+      Number(sparkSize) * SPARK_ROWS +
+      SPARK_GAP +
+      ORANGE_CHROME_HEIGHT;
+
+    expect(worstCase).toBe(497);
+    expect(worstCase).toBeLessThanOrEqual(POPOVER_HEIGHT);
   });
 });
 

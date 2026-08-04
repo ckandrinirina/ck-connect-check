@@ -140,6 +140,14 @@ export interface PopoverAllowance {
   planLabel: string;
   /** Exact volume left, e.g. `"90.00 Go"`, or a dash. */
   remaining: string;
+  /**
+   * What the figure above is, in the words under it. Two carriers state two
+   * different things: one says outright how much is left, the other says only
+   * how much was used and leaves the remainder to be worked out against a cap
+   * the user typed. Captioning the second as the carrier's own statement would
+   * put a sentence in the carrier's mouth that it never said.
+   */
+  remainingCaption: string;
   /** Expiry as a date, e.g. `"12/08/2026"`, or a dash. */
   expires: string;
   /** Time left before the allowance expires, e.g. `"16 days"`, or a dash. */
@@ -333,10 +341,20 @@ export interface PopoverControls {
   sync: boolean;
   /** Whether the plan-length field belongs in the settings view. */
   planDays: boolean;
+  /**
+   * Whether the expiry row belongs on the panel — the carrier states a date
+   * the allowance runs to. A row that can only ever read "— · —" costs a line
+   * of the panel to say nothing, and says it out loud to a screen reader.
+   */
+  expiry: boolean;
 }
 
 /** Every control the panel has — what an anchored carrier offers. */
-const ALL_CONTROLS: PopoverControls = { sync: true, planDays: true };
+const ALL_CONTROLS: PopoverControls = {
+  sync: true,
+  planDays: true,
+  expiry: true,
+};
 
 /**
  * What a carrier the app cannot place offers. `createAllowanceSync` already
@@ -344,14 +362,24 @@ const ALL_CONTROLS: PopoverControls = { sync: true, planDays: true };
  * button is a control that does nothing when pressed, and the row it stands in
  * is exactly the room the line saying so needs.
  */
-const UNPLACED_CONTROLS: PopoverControls = { sync: false, planDays: true };
+const UNPLACED_CONTROLS: PopoverControls = {
+  sync: false,
+  planDays: true,
+  expiry: true,
+};
 
 /**
- * What Orange offers. Neither absence is a limitation of the app: there is no
- * dialogue to press for, since the portal answers a plain `GET`, and the
- * calendar month states the period any typed length would contradict.
+ * What Orange offers. No absence is a limitation of the app: there is no
+ * dialogue to press for, since the portal answers a plain `GET`, the calendar
+ * month states the period any typed length would contradict, and the page
+ * states no expiry at all — so the row that would carry one is not drawn
+ * rather than drawn empty.
  */
-const PORTAL_CONTROLS: PopoverControls = { sync: false, planDays: false };
+const PORTAL_CONTROLS: PopoverControls = {
+  sync: false,
+  planDays: false,
+  expiry: false,
+};
 
 /** One forfait the meter could be pointed at instead of the current one. */
 export interface PopoverForfaitOption {
@@ -687,12 +715,26 @@ function staleNote(reading: AllowanceReading): string {
   return "";
 }
 
+/**
+ * The caption where the carrier stated the remaining volume itself, over the
+ * dialogue the anchor was taken from.
+ */
+const STATED_REMAINING_CAPTION = "left with the carrier";
+
+/**
+ * The caption where it was worked out rather than stated. Orange's page gives
+ * the consumed volume and nothing else, so what is left is `cap − consumed`
+ * against a cap the user typed — the user's own plan, and their own figure.
+ */
+const DERIVED_REMAINING_CAPTION = "left on your plan";
+
 /** The panel before the first sync: an allowance section with nothing in it. */
-function noAllowance(): PopoverAllowance {
+function noAllowance(remainingCaption: string): PopoverAllowance {
   return {
     available: false,
     planLabel: NO_VALUE,
     remaining: NO_VALUE,
+    remainingCaption,
     expires: NO_VALUE,
     daysUntilExpiry: NO_VALUE,
     stale: false,
@@ -706,7 +748,7 @@ function buildAllowance(
   reading: AllowanceReading | null,
   now: Date,
 ): PopoverAllowance {
-  if (reading === null) return noAllowance();
+  if (reading === null) return noAllowance(STATED_REMAINING_CAPTION);
 
   const age = formatDuration(
     (now.getTime() - reading.syncedAt.getTime()) / MILLISECONDS_PER_SECOND,
@@ -716,6 +758,8 @@ function buildAllowance(
     available: true,
     planLabel: reading.planLabel === "" ? NO_VALUE : reading.planLabel,
     remaining: formatBytes(reading.remainingBytes),
+    // Stated by the carrier over the dialogue, not derived from anything.
+    remainingCaption: STATED_REMAINING_CAPTION,
     expires:
       reading.expiresAt === null
         ? NO_VALUE
@@ -997,7 +1041,7 @@ function emptyModel(
     networkType: NO_VALUE,
     freshness,
     history,
-    allowance: noAllowance(),
+    allowance: noAllowance(STATED_REMAINING_CAPTION),
     planLimit,
     planDays,
     planCapPrompt,
@@ -1294,14 +1338,42 @@ function promptWithoutFigure(
   return answered ? "" : WAITING_PROMPT;
 }
 
+/** What the dial is called while the page has told it nothing at all. */
+const NO_READING_DESCRIPTION = "No reading from the Orange portal yet";
+
+/** The same once the page has answered without a figure the dial can draw. */
+const NO_FIGURE_DESCRIPTION =
+  "The Orange portal answered without a usable figure";
+
+/**
+ * The empty ring's accessible name, off the same reading of the page as the
+ * prompt above it.
+ *
+ * The prompt can fall silent once the page has answered, because the notice
+ * beneath it is on the panel saying why. The name cannot: an `aria-label` is
+ * what the dial *is* to a reader who has no ring to look at, and an empty one
+ * leaves an unnamed control. So it stands down to the shorter true thing
+ * rather than to nothing — and never to the claim the prompt just dropped.
+ */
+function descriptionWithoutFigure(
+  reading: MonthlyPaceReading | null,
+  answered: boolean,
+): string {
+  if (reading !== null) return NO_LIMIT_DESCRIPTION;
+
+  return answered ? NO_FIGURE_DESCRIPTION : NO_READING_DESCRIPTION;
+}
+
 /**
  * Whether the page has said anything at all, read exactly the way
  * {@link portalNotice} reads the same standing.
  *
- * The two have to agree by construction rather than by care: the notice is the
- * panel's account of what the page did, and a prompt that decided the question
- * for itself could end up claiming a wait beneath a line saying the page had
- * already answered. So the failure is read only where the notice reads it —
+ * All three have to agree by construction rather than by care: the notice is
+ * the panel's account of what the page did, and a prompt or an accessible name
+ * that decided the question for itself could end up claiming a silence beneath
+ * a line saying the page had already answered — which is exactly what the name
+ * went on doing after the prompt was fixed, in the layer nobody was looking at.
+ * So the failure is read only where the notice reads it —
  * behind `live` — and the answered states are the two the wordings name as
  * answers: a status code came back, or a body did and could not be read.
  */
@@ -1320,10 +1392,13 @@ function portalAnswered(portal: PortalStanding): boolean {
  * consumption outright on every fetch, so nothing is carried forward and
  * nothing can go untrustworthy.
  *
- * `answered` decides only what the dial says in place of a figure. Waiting is
- * true before an answer and false after one, and after one the notice beneath
- * already carries the reason — so the prompt stands down rather than compete
- * with it from the larger, earlier line.
+ * `answered` decides only what the dial says in place of a figure, and it says
+ * it twice — once on the panel and once to a screen reader. Waiting is true
+ * before an answer and false after one, and after one the notice beneath
+ * already carries the reason, so the visible prompt stands down rather than
+ * compete with it from the larger, earlier line. The accessible name cannot
+ * stand down to nothing, so it says the shorter true thing instead; both come
+ * off the one flag, which is what keeps them from drifting apart again.
  */
 function buildMonthlyDial(
   reading: MonthlyPaceReading | null,
@@ -1340,10 +1415,7 @@ function buildMonthlyDial(
       label: NO_VALUE,
       sweep: 0,
       prompt: promptWithoutFigure(reading, answered),
-      description:
-        reading === null
-          ? "No reading from the Orange portal yet"
-          : NO_LIMIT_DESCRIPTION,
+      description: descriptionWithoutFigure(reading, answered),
       state,
     };
   }
@@ -1383,6 +1455,10 @@ function buildPortalAllowance(
       reading.remainingBytes === null
         ? NO_VALUE
         : formatBytes(reading.remainingBytes),
+    // The page stated the consumed volume and only that. What is left of it is
+    // the user's typed cap minus that figure, so the caption says whose plan
+    // it is a remainder of rather than crediting Orange with saying it.
+    remainingCaption: DERIVED_REMAINING_CAPTION,
     // The page carries neither for this plan, and inventing one from the
     // calendar would be stating a carrier fact the carrier never stated.
     expires: NO_VALUE,
@@ -1454,7 +1530,7 @@ function portalHalf(
         warnThresholdPercent,
         portalAnswered(portal),
       ),
-      allowance: noAllowance(),
+      allowance: noAllowance(DERIVED_REMAINING_CAPTION),
       pace: null,
       syncAttention: false,
       controls: PORTAL_CONTROLS,
