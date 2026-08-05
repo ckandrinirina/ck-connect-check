@@ -15,11 +15,8 @@ import type {
   RouterSnapshot,
 } from "../../src/hilink/types.js";
 import { defaultConfig } from "../../src/config/defaults.js";
-import {
-  DEVICES_MENU_LABEL,
-  type DevicesModel,
-  type DevicesWindow,
-} from "../../src/main/devices-window.js";
+import { DEVICES_MENU_LABEL } from "../../src/main/tray.js";
+import type { DevicesModel } from "../../src/main/view-model.js";
 import type {
   HostListResult,
   MacFilterWriteResult,
@@ -39,7 +36,7 @@ import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
 import { trayImageFor } from "../../src/main/tray-icon.js";
-import type { Popover } from "../../src/main/popover.js";
+import type { Popover, PopoverTab } from "../../src/main/popover.js";
 import type { PopoverModel } from "../../src/main/view-model.js";
 
 /** Electron is never loaded for real here — only the surface `main.ts` touches. */
@@ -165,6 +162,10 @@ function scriptedClient(results: readonly SnapshotResult[]) {
 interface RecordingPopover extends Popover {
   /** Every model pushed to the panel, in order. */
   models: PopoverModel[];
+  /** Every device list pushed to it, on the entry point of its own. */
+  deviceModels: DevicesModel[];
+  /** Selects a pane, as the page reports one over its own channel. */
+  showTab(name: PopoverTab): void;
 }
 
 /**
@@ -174,8 +175,15 @@ interface RecordingPopover extends Popover {
 function recordingPopover(): RecordingPopover {
   let visible = false;
 
+  let tab: PopoverTab = "usage";
+
   const popover: RecordingPopover = {
     models: [],
+    deviceModels: [],
+    visibleTab: () => tab,
+    showTab: (name) => {
+      tab = name;
+    },
     show: () => {
       visible = true;
     },
@@ -188,6 +196,9 @@ function recordingPopover(): RecordingPopover {
     isOpen: () => visible,
     setModel: (model) => {
       popover.models.push(model);
+    },
+    setDevices: (model) => {
+      popover.deviceModels.push(model);
     },
     destroy: () => {
       visible = false;
@@ -1706,36 +1717,6 @@ describe("startMenuBarApp — choosing which Orange forfait is measured", () => 
   });
 });
 
-/** A stand-in for the devices window, so no window is ever created here. */
-function recordingDevices(): DevicesWindow & {
-  opens: number;
-  /** Every model pushed to the window, in order. */
-  models: DevicesModel[];
-} {
-  let open = false;
-
-  const devices = {
-    opens: 0,
-    models: [] as DevicesModel[],
-    open() {
-      devices.opens += 1;
-      open = true;
-    },
-    close() {
-      open = false;
-    },
-    isOpen: () => open,
-    setDevices(model: DevicesModel) {
-      devices.models.push(model);
-    },
-    destroy() {
-      open = false;
-    },
-  };
-
-  return devices;
-}
-
 /** The tray's context-menu template, as `main.ts` last built it. */
 function menuTemplate(): { label?: string; click?: () => void }[] {
   const built = electron.buildFromTemplate.mock.calls.at(-1);
@@ -1760,7 +1741,16 @@ function clickDevicesMenuItem(): void {
   item.click();
 }
 
-describe("startMenuBarApp — the connected-devices window", () => {
+/**
+ * What survives the window's deletion.
+ *
+ * Electron quits when the last window closes and nobody has said otherwise.
+ * This app's home is the menu bar, where there is no window at all, so
+ * dismissing the panel must leave the tray item and the poll loop exactly as
+ * they were — the same claim the devices window used to carry, made about the
+ * one window that is left.
+ */
+describe("startMenuBarApp — closing the last window", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     electron.appOn.mockClear();
@@ -1772,75 +1762,37 @@ describe("startMenuBarApp — the connected-devices window", () => {
     vi.useRealTimers();
   });
 
-  it("opens the window from a menu item, not from a second tray click", () => {
-    const devices = recordingDevices();
+  it("does not quit when the last window is closed", () => {
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
       popover: recordingPopover(),
-      devices,
     });
 
-    clickDevicesMenuItem();
+    const handler = electron.appOn.mock.calls.find(
+      (call: unknown[]) => call[0] === "window-all-closed",
+    )?.[1] as (() => void) | undefined;
 
-    expect(devices.opens).toBe(1);
-    expect(devices.isOpen()).toBe(true);
-
-    app.stop();
-  });
-
-  it("leaves Quit in the menu beside it", () => {
-    const app = startMenuBarApp({
-      configPath: MISSING_CONFIG,
-      client: countingClient(),
-      popover: recordingPopover(),
-      devices: recordingDevices(),
-    });
-
-    expect(menuTemplate().some((entry) => entry.label === "Quit")).toBe(true);
-
-    app.stop();
-  });
-
-  it("does not quit the app when the devices window is the last one closed", () => {
-    const devices = recordingDevices();
-    const app = startMenuBarApp({
-      configPath: MISSING_CONFIG,
-      client: countingClient(),
-      popover: recordingPopover(),
-      devices,
-    });
-
-    clickDevicesMenuItem();
-    devices.close();
-
-    // Electron quits when the last window goes and nobody has said otherwise,
-    // and this app's real home is the menu bar, where there is no window at all.
-    const closed = electron.appOn.mock.calls.find(
-      ([event]) => event === "window-all-closed",
-    );
-
-    expect(closed).toBeDefined();
-    (closed?.[1] as () => void)();
+    expect(handler).toBeTypeOf("function");
+    handler?.();
 
     expect(electron.appQuit).not.toHaveBeenCalled();
 
     app.stop();
   });
 
-  it("keeps polling after the devices window is closed", async () => {
+  it("keeps polling after the panel is dismissed", async () => {
     const client = countingClient();
-    const devices = recordingDevices();
+    const popover = recordingPopover();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client,
-      popover: recordingPopover(),
-      devices,
+      popover,
     });
 
     await vi.advanceTimersByTimeAsync(0);
     clickDevicesMenuItem();
-    devices.close();
+    popover.hide();
 
     const before = client.calls;
     await vi.advanceTimersByTimeAsync(POLL_MS * 2);
@@ -1848,21 +1800,6 @@ describe("startMenuBarApp — the connected-devices window", () => {
     expect(client.calls).toBeGreaterThan(before);
 
     app.stop();
-  });
-
-  it("releases the window when the app stops", () => {
-    const devices = recordingDevices();
-    const app = startMenuBarApp({
-      configPath: MISSING_CONFIG,
-      client: countingClient(),
-      popover: recordingPopover(),
-      devices,
-    });
-
-    clickDevicesMenuItem();
-    app.stop();
-
-    expect(devices.isOpen()).toBe(false);
   });
 });
 
@@ -1903,7 +1840,7 @@ function countingHosts(result?: HostListResult): {
   return source;
 }
 
-describe("startMenuBarApp — the device list behind that window", () => {
+describe("startMenuBarApp — the device list behind the pane", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     electron.buildFromTemplate.mockClear();
@@ -1913,21 +1850,20 @@ describe("startMenuBarApp — the device list behind that window", () => {
     vi.useRealTimers();
   });
 
-  it("pushes the router's devices into the window while it is open", async () => {
-    const devices = recordingDevices();
+  it("pushes the router's devices into the pane while it is showing", async () => {
+    const popover = recordingPopover();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
-      popover: recordingPopover(),
-      devices,
+      popover,
       hosts: countingHosts(),
       localMacs: () => [],
     });
 
-    clickDevicesMenuItem();
+    showDevicesPane(popover);
     await vi.advanceTimersByTimeAsync(POLL_MS);
 
-    expect(devices.models.at(-1)).toEqual({
+    expect(popover.deviceModels.at(-1)).toEqual({
       state: "listed",
       devices: [
         {
@@ -1950,34 +1886,31 @@ describe("startMenuBarApp — the device list behind that window", () => {
     app.stop();
   });
 
-  it("asks the router for no host list while the window is shut", async () => {
+  it("asks the router for no host list while nobody is looking at it", async () => {
     const hosts = countingHosts();
-    const devices = recordingDevices();
+    const popover = recordingPopover();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
-      popover: recordingPopover(),
-      devices,
+      popover,
       hosts,
     });
 
     await vi.advanceTimersByTimeAsync(POLL_MS * 3);
 
     expect(hosts.calls).toBe(0);
-    expect(devices.models).toEqual([]);
+    expect(popover.deviceModels).toEqual([]);
 
     app.stop();
   });
 
   it("leaves the panel's reading exactly as it was when the host list fails", async () => {
     const popover = recordingPopover();
-    const devices = recordingDevices();
     let refuse = false;
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
       popover,
-      devices,
       hosts: {
         hosts: () =>
           refuse
@@ -1989,7 +1922,7 @@ describe("startMenuBarApp — the device list behind that window", () => {
       },
     });
 
-    clickDevicesMenuItem();
+    showDevicesPane(popover);
     await vi.advanceTimersByTimeAsync(0);
     const reading = panelReading(popover);
 
@@ -1998,26 +1931,25 @@ describe("startMenuBarApp — the device list behind that window", () => {
 
     expect(panelReading(popover)).toEqual(reading);
     // And the window is told, rather than being left showing a stale list.
-    expect(devices.models.at(-1)).toEqual({ state: "offline" });
+    expect(popover.deviceModels.at(-1)).toEqual({ state: "offline" });
 
     app.stop();
   });
 
-  it("tells the window the router is unreachable rather than showing no devices", async () => {
+  it("tells the pane the router is unreachable rather than showing no devices", async () => {
     const hosts = countingHosts();
-    const devices = recordingDevices();
+    const popover = recordingPopover();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: scriptedClient([OFFLINE]),
-      popover: recordingPopover(),
-      devices,
+      popover,
       hosts,
     });
 
-    clickDevicesMenuItem();
+    showDevicesPane(popover);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(devices.models.at(-1)).toEqual({ state: "offline" });
+    expect(popover.deviceModels.at(-1)).toEqual({ state: "offline" });
     expect(hosts.calls).toBe(0);
 
     app.stop();
@@ -2120,24 +2052,28 @@ function recordingAccess(
   return access;
 }
 
-/** Starts the app with a filter behind it and the devices window already open. */
+/**
+ * Starts the app with a filter behind it and the panel already on its Devices
+ * tab — which is what buys a `host-list` request from T-75 onwards.
+ */
 function launchWithFilter(
   access: DeviceAccessSource,
   held: Device[] = [LAPTOP],
 ) {
-  const devices = recordingDevices();
+  const popover = recordingPopover();
   const app = startMenuBarApp({
     configPath: MISSING_CONFIG,
     client: countingClient(),
-    popover: recordingPopover(),
-    devices,
+    popover,
     hosts: countingHosts({ online: true, devices: held }),
     access,
     credentials: storeHolding(CREDENTIAL),
     localMacs: () => [THIS_MAC],
   });
 
-  return { app, devices };
+  showDevicesPane(popover);
+
+  return { app, popover };
 }
 
 /** Every address the last write carried, block by block. */
@@ -2148,8 +2084,8 @@ function writtenMacs(access: RecordingAccess): string[][] {
 }
 
 /** The row the last pushed model holds for one address. */
-function rowFor(devices: { models: DevicesModel[] }, mac: string) {
-  const model = devices.models.at(-1);
+function rowFor(popover: RecordingPopover, mac: string) {
+  const model = popover.deviceModels.at(-1);
 
   return model?.state === "listed"
     ? model.devices.find((device) => device.mac === mac)
@@ -2374,12 +2310,10 @@ describe("startMenuBarApp — blocking a device", () => {
 
   it("leaves every other device blockable when this machine is not in the list", async () => {
     const access = recordingAccess(macFilter("off"));
-    const devices = recordingDevices();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
       popover: recordingPopover(),
-      devices,
       hosts: countingHosts(),
       access,
       credentials: storeHolding(CREDENTIAL),
@@ -2396,12 +2330,10 @@ describe("startMenuBarApp — blocking a device", () => {
 
   it("makes no request when there is no stored password to sign in with", async () => {
     const access = recordingAccess(macFilter("off"));
-    const devices = recordingDevices();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
       popover: recordingPopover(),
-      devices,
       hosts: countingHosts(),
       access,
       credentials: storeHolding(null),
@@ -2422,7 +2354,7 @@ describe("startMenuBarApp — blocking a device", () => {
 
   it("tells the window which row is this machine, so the control can be withheld", async () => {
     const access = recordingAccess(macFilter("off"));
-    const { app, devices } = launchWithFilter(access, [
+    const { app, popover } = launchWithFilter(access, [
       LAPTOP,
       { ...LAPTOP, mac: THIS_MAC, name: "this-mac" },
     ]);
@@ -2432,20 +2364,19 @@ describe("startMenuBarApp — blocking a device", () => {
 
     // Read from the interfaces this run was given, never matched by IP: the two
     // rows below share one lease in the fixture.
-    expect(rowFor(devices, THIS_MAC)?.local).toBe(true);
-    expect(rowFor(devices, LAPTOP.mac)?.local).toBe(false);
+    expect(rowFor(popover, THIS_MAC)?.local).toBe(true);
+    expect(rowFor(popover, LAPTOP.mac)?.local).toBe(false);
 
     app.stop();
   });
 
   it("marks no row as this machine when none of its interfaces is listed", async () => {
     const access = recordingAccess(macFilter("off"));
-    const devices = recordingDevices();
+    const popover = recordingPopover();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
-      popover: recordingPopover(),
-      devices,
+      popover,
       hosts: countingHosts({ online: true, devices: [LAPTOP] }),
       access,
       credentials: storeHolding(CREDENTIAL),
@@ -2454,17 +2385,17 @@ describe("startMenuBarApp — blocking a device", () => {
       localMacs: () => [],
     });
 
-    clickDevicesMenuItem();
+    showDevicesPane(popover);
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(rowFor(devices, LAPTOP.mac)?.local).toBe(false);
+    expect(rowFor(popover, LAPTOP.mac)?.local).toBe(false);
 
     app.stop();
   });
 
   it("shows the row as the router re-reads it, not as the click assumed", async () => {
     const access = recordingAccess(macFilter("off"));
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
@@ -2484,14 +2415,14 @@ describe("startMenuBarApp — blocking a device", () => {
 
     // The click assumed a block; the re-read says otherwise, and the re-read
     // is what the row shows.
-    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(false);
+    expect(rowFor(popover, LAPTOP.mac)?.blocked).toBe(false);
 
     app.stop();
   });
 
   it("re-reads the filter after a write and pushes the row it found", async () => {
     const access = recordingAccess(macFilter("off"));
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
@@ -2501,7 +2432,7 @@ describe("startMenuBarApp — blocking a device", () => {
 
     // One read to compose the write from, one afterwards to render from.
     expect(access.reads - readsBefore).toBeGreaterThanOrEqual(2);
-    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+    expect(rowFor(popover, LAPTOP.mac)?.blocked).toBe(true);
 
     app.stop();
   });
@@ -2510,7 +2441,7 @@ describe("startMenuBarApp — blocking a device", () => {
     const access = recordingAccess(macFilter("blacklist", LAPTOP.mac), {
       writeResult: { ok: false, reason: "timeout" },
     });
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
@@ -2522,22 +2453,20 @@ describe("startMenuBarApp — blocking a device", () => {
 
     expect(outcome).toEqual({ ok: false, reason: "timeout" });
     // The router still refuses it, and the row still says so.
-    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+    expect(rowFor(popover, LAPTOP.mac)?.blocked).toBe(true);
 
     app.stop();
   });
 });
 
-/** The last model the window was handed, whatever state it is in. */
-function lastModel(devices: {
-  models: DevicesModel[];
-}): DevicesModel | undefined {
-  return devices.models.at(-1);
+/** The last model the pane was handed, whatever state it is in. */
+function lastModel(popover: RecordingPopover): DevicesModel | undefined {
+  return popover.deviceModels.at(-1);
 }
 
 /** How many rows the last pushed model would draw. */
-function rowCount(devices: { models: DevicesModel[] }): number {
-  const model = lastModel(devices);
+function rowCount(popover: RecordingPopover): number {
+  const model = lastModel(popover);
 
   return model?.state === "listed" ? model.devices.length : 0;
 }
@@ -2568,25 +2497,24 @@ describe("startMenuBarApp — saying why the list is empty or a press did not ta
     vi.useRealTimers();
   });
 
-  it("tells the window there is no password, rather than that the router is unreachable", async () => {
-    const devices = recordingDevices();
+  it("tells the pane there is no password, rather than that the router is unreachable", async () => {
+    const popover = recordingPopover();
     const app = startMenuBarApp({
       configPath: MISSING_CONFIG,
       client: countingClient(),
-      popover: recordingPopover(),
-      devices,
+      popover,
       // No `hosts` stub: the real gate is exercised, and with no credential
       // stored it answers without a request ever leaving the process.
       credentials: storeHolding(null),
       localMacs: () => [],
     });
 
-    clickDevicesMenuItem();
+    showDevicesPane(popover);
     await vi.advanceTimersByTimeAsync(POLL_MS);
 
     // This used to degrade into the offline state, which said the router was
     // at fault for something the user can fix in the panel.
-    expect(lastModel(devices)).toEqual({ state: "no-password" });
+    expect(lastModel(popover)).toEqual({ state: "no-password" });
 
     app.stop();
   });
@@ -2603,15 +2531,15 @@ describe("startMenuBarApp — saying why the list is empty or a press did not ta
         },
       },
     });
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
-    const before = rowCount(devices);
+    const before = rowCount(popover);
 
     await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
 
-    expect(lastModel(devices)).toEqual({
+    expect(lastModel(popover)).toEqual({
       state: "listed",
       devices: expect.anything(),
       refusal: {
@@ -2623,7 +2551,7 @@ describe("startMenuBarApp — saying why the list is empty or a press did not ta
     });
     // The write failed; the devices did not go anywhere.
     expect(before).toBe(1);
-    expect(rowCount(devices)).toBe(before);
+    expect(rowCount(popover)).toBe(before);
 
     app.stop();
   });
@@ -2637,22 +2565,22 @@ describe("startMenuBarApp — saying why the list is empty or a press did not ta
       ),
     );
     const access = recordingAccess(full);
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
-    const before = rowCount(devices);
+    const before = rowCount(popover);
 
     await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
 
-    const model = lastModel(devices);
+    const model = lastModel(popover);
 
     expect(model?.state).toBe("listed");
     expect(model?.state === "listed" ? model.refusal : undefined).toEqual({
       kind: "full",
       cap: MAC_FILTER_CAP,
     });
-    expect(rowCount(devices)).toBe(before);
+    expect(rowCount(popover)).toBe(before);
 
     app.stop();
   });
@@ -2661,7 +2589,7 @@ describe("startMenuBarApp — saying why the list is empty or a press did not ta
     const access = recordingAccess(macFilter("off"), {
       writeResult: { ok: false, reason: "timeout" },
     });
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
@@ -2670,7 +2598,7 @@ describe("startMenuBarApp — saying why the list is empty or a press did not ta
     access.writeResult = { ok: true };
     await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
 
-    const model = lastModel(devices);
+    const model = lastModel(popover);
 
     expect(model?.state === "listed" ? model.refusal : "unset").toBeUndefined();
 
@@ -2690,19 +2618,27 @@ describe("startMenuBarApp — the filter behind the device list", () => {
 
   it("reads the filter on the poll and marks the blocked rows from it", async () => {
     const access = recordingAccess(macFilter("blacklist", LAPTOP.mac));
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(POLL_MS);
 
-    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(true);
+    expect(rowFor(popover, LAPTOP.mac)?.blocked).toBe(true);
 
     app.stop();
   });
 
-  it("asks for no filter while the window is shut", async () => {
+  it("asks for no filter while nobody is looking at the list", async () => {
     const access = recordingAccess(macFilter("off"));
-    const { app } = launchWithFilter(access);
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+      hosts: countingHosts({ online: true, devices: [LAPTOP] }),
+      access,
+      credentials: storeHolding(CREDENTIAL),
+      localMacs: () => [THIS_MAC],
+    });
 
     await vi.advanceTimersByTimeAsync(POLL_MS * 3);
 
@@ -2714,12 +2650,303 @@ describe("startMenuBarApp — the filter behind the device list", () => {
 
   it("claims nothing is blocked until a filter has actually been read", async () => {
     const access = recordingAccess(null);
-    const { app, devices } = launchWithFilter(access);
+    const { app, popover } = launchWithFilter(access);
 
     clickDevicesMenuItem();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(rowFor(devices, LAPTOP.mac)?.blocked).toBe(false);
+    expect(rowFor(popover, LAPTOP.mac)?.blocked).toBe(false);
+
+    app.stop();
+  });
+});
+
+/**
+ * The device list reaching the panel.
+ *
+ * T-74 moves the surface, not the rules. Every assertion above about what a
+ * press costs the router and what a row says afterwards still holds; these say
+ * that the same model now reaches the Devices pane, which is where it is read
+ * from T-76 onwards.
+ */
+describe("startMenuBarApp — the device list on the panel", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  it("hands the list to the panel as well as to the window", async () => {
+    const access = recordingAccess(macFilter("blacklist"));
+    const { app, popover } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    const model = popover.deviceModels.at(-1);
+
+    expect(model?.state).toBe("listed");
+    expect(
+      model?.state === "listed"
+        ? model.devices.map((row) => row.mac)
+        : undefined,
+    ).toContain(LAPTOP.mac);
+
+    app.stop();
+  });
+
+  it("pushes the re-read to the panel after a press, not the press's guess", async () => {
+    // T-68's rule, restated on the new surface: the router is the only thing
+    // that knows what it is now refusing.
+    const access = recordingAccess(macFilter("blacklist"));
+    const { app, popover } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    const model = popover.deviceModels.at(-1);
+    const row =
+      model?.state === "listed"
+        ? model.devices.find((device) => device.mac === LAPTOP.mac)
+        : undefined;
+
+    expect(row?.blocked).toBe(true);
+
+    app.stop();
+  });
+
+  it("puts a refusal on the panel beside the rows, never instead of them", async () => {
+    // T-70's rule, restated: a write that failed has said nothing whatever
+    // about which devices are connected.
+    const access = recordingAccess(macFilter("blacklist"), {
+      writeResult: {
+        ok: false,
+        reason: {
+          kind: "error",
+          source: "api",
+          code: UNNAMED_CODE,
+          endpoint: "/api/wlan/multi-macfilter-settings",
+        },
+      },
+    });
+    const { app, popover } = launchWithFilter(access);
+
+    clickDevicesMenuItem();
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    const model = popover.deviceModels.at(-1);
+
+    expect(model?.state).toBe("listed");
+    expect(model?.state === "listed" ? model.devices.length : 0).toBeGreaterThan(
+      0,
+    );
+    expect(model?.state === "listed" ? model.refusal : undefined).toMatchObject({
+      code: UNNAMED_CODE,
+    });
+
+    app.stop();
+  });
+
+  it("tells the panel no password is stored rather than blaming the router", async () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+      hosts: countingHosts({ online: true, devices: [LAPTOP] }),
+      credentials: storeHolding(null),
+      localMacs: () => [THIS_MAC],
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.setDeviceBlocked({ mac: LAPTOP.mac, blocked: true });
+
+    expect(popover.deviceModels.at(-1)?.state).toBe("no-password");
+
+    app.stop();
+  });
+});
+
+/**
+ * Opens the panel on the Devices tab — the one condition that now buys a
+ * `host-list` request.
+ */
+function showDevicesPane(popover: RecordingPopover): void {
+  popover.show();
+  popover.showTab("devices");
+}
+
+/**
+ * When the authenticated list is worth a request.
+ *
+ * T-66 gated it on the devices window being open. There is no such window after
+ * T-76, so the gate is retargeted rather than removed: the popover open *and*
+ * the Devices tab showing. A hidden panel and a panel on Usage stand the fetch
+ * down identically — neither is looking at a device list, and both would
+ * otherwise pay a login and a request every 30 seconds for nothing.
+ */
+describe("startMenuBarApp — reading the host list only while its tab shows", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function launchWatchingHosts() {
+    const hosts = countingHosts();
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+      hosts,
+      credentials: storeHolding(CREDENTIAL),
+      localMacs: () => [],
+    });
+
+    return { app, hosts, popover };
+  }
+
+  it("asks for no host list at all while the panel is hidden", async () => {
+    const { app, hosts } = launchWatchingHosts();
+
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+    expect(hosts.calls).toBe(0);
+
+    app.stop();
+  });
+
+  it("asks for no host list while the panel is open on Usage", async () => {
+    const { app, hosts, popover } = launchWatchingHosts();
+
+    popover.show();
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+    // An open panel is not a panel looking at devices. The figures cost the
+    // monitoring endpoints; the list costs a login on top of them.
+    expect(hosts.calls).toBe(0);
+
+    app.stop();
+  });
+
+  it("fetches on the next tick once the Devices tab is selected", async () => {
+    const { app, hosts, popover } = launchWatchingHosts();
+
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(hosts.calls).toBe(0);
+
+    showDevicesPane(popover);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    expect(hosts.calls).toBeGreaterThan(0);
+
+    app.stop();
+  });
+
+  it("stops asking as soon as the tab is left", async () => {
+    const { app, hosts, popover } = launchWatchingHosts();
+
+    showDevicesPane(popover);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    const asked = hosts.calls;
+
+    expect(asked).toBeGreaterThan(0);
+
+    popover.showTab("usage");
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+    expect(hosts.calls).toBe(asked);
+
+    app.stop();
+  });
+
+  it("stops asking as soon as the panel is closed", async () => {
+    const { app, hosts, popover } = launchWatchingHosts();
+
+    showDevicesPane(popover);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+
+    const asked = hosts.calls;
+
+    expect(asked).toBeGreaterThan(0);
+
+    popover.hide();
+    await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+
+    // The tab is still Devices; nobody is looking at it.
+    expect(hosts.calls).toBe(asked);
+
+    app.stop();
+  });
+
+});
+
+/**
+ * The tray's devices entry, after the window it used to open.
+ *
+ * The entry stays: the fastest route to the device list is one right-click and
+ * one item, and that is unchanged even though the surface it lands on is not.
+ * What it opens is the panel, on the tab that holds the list.
+ */
+describe("startMenuBarApp — the tray's devices entry", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("opens the panel on its Devices tab", () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+    });
+
+    clickDevicesMenuItem();
+
+    expect(popover.isOpen()).toBe(true);
+    expect(popover.visibleTab()).toBe("devices");
+
+    app.stop();
+  });
+
+  it("leaves the panel on Devices when the entry is used twice", () => {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+    });
+
+    clickDevicesMenuItem();
+    clickDevicesMenuItem();
+
+    // Not a toggle: someone reaching for the list twice wants the list, not a
+    // panel that has just dismissed itself.
+    expect(popover.isOpen()).toBe(true);
+    expect(popover.visibleTab()).toBe("devices");
+
+    app.stop();
+  });
+
+  it("keeps Quit in the menu beside it", () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+    });
+
+    expect(menuTemplate().some((entry) => entry.label === "Quit")).toBe(true);
 
     app.stop();
   });

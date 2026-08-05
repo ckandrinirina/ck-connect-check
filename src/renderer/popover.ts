@@ -17,7 +17,12 @@
  * machinery than that deserves.
  */
 
-import type { PopoverModel } from "../main/view-model.js";
+import type {
+  DeviceRefusal,
+  DeviceRow,
+  DevicesModel,
+  PopoverModel,
+} from "../main/view-model.js";
 
 /**
  * The two messages the page can send. Exposed by `src/renderer/preload.cts`,
@@ -46,6 +51,18 @@ export interface PopoverBridge {
    * what the next portal read matches against.
    */
   chooseForfait(label: string): void;
+  /**
+   * Ask the main process to block or unblock one device. The press has already
+   * been confirmed here; what it costs the router is decided the other side,
+   * and the payload is validated there rather than trusted.
+   */
+  setBlocked(request: { mac: string; blocked: boolean }): void;
+  /**
+   * Say which pane is showing. Which one it is stays the page's own state —
+   * this only tells the main process, which needs it to decide whether the
+   * authenticated device list is worth a request this tick.
+   */
+  setTab(name: string): void;
 }
 
 declare global {
@@ -59,6 +76,20 @@ declare global {
      * item is clicked — and the figures are what the panel is opened for.
      */
     resetPopoverView(): void;
+    /**
+     * Called with whatever the last host list and the last MAC filter add up
+     * to. Separate from {@link Window.applyPopoverModel} because it arrives on
+     * its own schedule: the figures land every couple of seconds and the list
+     * only while the Devices tab is the one showing.
+     */
+    applyDevicesModel(model: DevicesModel): void;
+    /**
+     * Called by `src/main/popover.ts` when something outside the page asks for
+     * a pane — the tray's devices entry, which used to open a window of its
+     * own. A press on the strip does not come through here; that is the page's
+     * own business and stays it.
+     */
+    showPopoverTab(name: string): void;
     popoverBridge?: PopoverBridge;
   }
 }
@@ -449,10 +480,20 @@ function applyTabs(): void {
   }
 }
 
-/** Selects a pane, and puts the focus where a keyboard user left it. */
+/**
+ * Selects a pane, and puts the focus where a keyboard user left it.
+ *
+ * The main process is told, because the pane decides whether the poll asks the
+ * router for its device list at all — an authenticated request that costs a
+ * login, and one a panel showing Usage has no use for. It is told from here
+ * rather than from `applyTabs`, which runs on every model: the tab changes when
+ * someone changes it, and a message a couple of times a second would be a
+ * channel repeating itself for nothing.
+ */
 function showTab(name: TabName, focus = false): void {
   document.documentElement.dataset["tab"] = name;
   applyTabs();
+  window.popoverBridge?.setTab(name);
 
   if (focus) {
     tabControl(name)?.focus();
@@ -922,6 +963,428 @@ function applySync(model: PopoverModel): void {
     : "none";
 }
 
+/*
+ * The Devices pane.
+ *
+ * Everything below is the rendering T-66 to T-70 built for the devices window,
+ * restated for a 320 px pane: the name and the address stack, the access word
+ * sits on the right, and the pane scrolls because a household's device count
+ * has no upper bound. What is shown does not change.
+ *
+ * The wording is duplicated with `devices.ts` for exactly as long as that window
+ * still exists — T-76 deletes the window, the page and its renderer, and this
+ * becomes the only copy. Sharing it in the meantime would mean a module the
+ * renderer imports across the main/renderer line, which is a worse trade than a
+ * fortnight of two copies.
+ */
+
+/**
+ * What the access word says.
+ *
+ * A word, not a colour and not a dot. Once the pane is styled a tint still says
+ * nothing to a colour-blind reader or in a greyscale screenshot, which is the
+ * rule the pace meter already follows.
+ */
+const ACCESS_BLOCKED = "Blocked";
+const ACCESS_ALLOWED = "Allowed";
+
+/**
+ * What a row says about a device the router is not reporting.
+ *
+ * A blocked device stops associating, so it is in the list on the filter's word
+ * alone — and it is listed precisely so it can be unblocked without having to
+ * connect first, which is the one thing it cannot do.
+ */
+const NOT_CONNECTED = "Not connected";
+
+/**
+ * What stands where this machine's own control would have been.
+ *
+ * A sentence rather than a greyed-out button. Blocking the Mac the app runs on
+ * severs the connection the undo would have to travel over, and nothing in here
+ * could put it back — recovery means the router's own web UI from another
+ * device, or a factory reset.
+ */
+const DEVICE_LOCAL_REASON = "This Mac — blocking it would cut off the app";
+
+/**
+ * What each word-shaped failure says, one sentence apiece.
+ *
+ * The same rule the panel's own failure table follows: "it did not work" tells
+ * the user nothing they can act on, whereas a dropped session, a router that
+ * never answered and a missing sign-in each call for something different. Every
+ * one of them ends by saying that nothing was changed, because the row beside it
+ * still shows the old state and the two have to agree.
+ */
+const DEVICE_REFUSAL_WORDS: Record<Extract<DeviceRefusal, string>, string> = {
+  unreachable: "The router did not answer, so nothing was changed.",
+  timeout: "The router took too long to answer, so nothing was changed.",
+  session:
+    "The router dropped the session, so nothing was changed — try again.",
+  error: "The router refused the change without saying why.",
+  "not-logged-in":
+    "The router wants a sign-in before it will change the blocked list. Save the router password in the settings.",
+};
+
+/**
+ * Why the last press changed nothing, as one sentence.
+ *
+ * A refusal carrying a number says the number and the endpoint it came from.
+ * That is the one thing here the user cannot work out for themselves and the
+ * only thing that makes an unrecognised refusal reportable, so it is spelled out
+ * rather than collapsed into "the router refused it".
+ */
+function deviceRefusalText(refusal: DeviceRefusal): string {
+  if (typeof refusal === "string") {
+    return DEVICE_REFUSAL_WORDS[refusal];
+  }
+
+  switch (refusal.kind) {
+    case "error":
+      return refusal.source === "http"
+        ? `The router answered HTTP ${String(refusal.code)} at ${refusal.endpoint}, so nothing was changed.`
+        : `The router refused the change (code ${String(refusal.code)} at ${refusal.endpoint}).`;
+    case "full":
+      // The cap is the actionable part: it says how many have to go before
+      // another can be added, and a household that reached it did nothing wrong.
+      return `The router's blocked list is full — it holds ${String(refusal.cap)} devices per network. Unblock one before blocking another.`;
+    case "whitelist":
+      return "The router's Wi-Fi filter is set as a whitelist, which allows only the devices it names. This app only ever writes a blocked list, so nothing was changed — change the filter in the router's own web page first.";
+    case "unreadable":
+      return "The router did not say which devices it is blocking, so there was nothing safe to write back and nothing was changed.";
+    case "self":
+      // The row already says this where the control would have been, so this is
+      // the domain guard speaking for a press the pane should never have offered.
+      return `${DEVICE_LOCAL_REASON}, so nothing was changed.`;
+  }
+}
+
+function devicesPane(): HTMLElement | null {
+  return tabPane("devices");
+}
+
+function devicesList(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-devices]");
+}
+
+/**
+ * The rows already on the pane, by the MAC each one belongs to.
+ *
+ * Read back off the DOM rather than held in a variable here: a reload — and
+ * every test that loads the markup afresh — replaces the list beneath this
+ * module, and a remembered map would then hand back rows belonging to a page
+ * that no longer exists.
+ */
+function rowsByMac(list: HTMLElement): Map<string, HTMLElement> {
+  const rows = new Map<string, HTMLElement>();
+
+  for (const child of Array.from(list.children)) {
+    if (!(child instanceof HTMLElement)) {
+      continue;
+    }
+
+    const mac = child.dataset["mac"];
+
+    if (mac !== undefined) {
+      rows.set(mac, child);
+    }
+  }
+
+  return rows;
+}
+
+/** An empty row, with the parts every device has and none of its strings. */
+function createDeviceRow(): HTMLElement {
+  const row = document.createElement("li");
+  const identity = document.createElement("span");
+
+  row.className = "device";
+  identity.className = "device-identity";
+
+  for (const part of ["device-name", "device-ip", "device-meta"]) {
+    const line = document.createElement("span");
+
+    line.className = part;
+    identity.append(line);
+  }
+
+  const access = document.createElement("span");
+
+  access.className = "device-access";
+  row.append(identity, access);
+
+  return row;
+}
+
+function setPart(row: HTMLElement, selector: string, text: string): void {
+  const part = row.querySelector<HTMLElement>(selector);
+
+  // `textContent`, never `innerHTML`: a device names itself, and its name and
+  // its network are the strings on this panel the user did not write.
+  if (part !== null && part.textContent !== text) {
+    part.textContent = text;
+  }
+}
+
+/**
+ * The line under the address: what the device is, rather than what it is
+ * called. The duration is replaced outright for a device the router is not
+ * reporting — it has been connected for nothing at all, and "0s" would be a
+ * figure the router never stated.
+ */
+function deviceMetaLine(device: DeviceRow): string {
+  return [
+    device.mac,
+    device.network,
+    device.present ? device.connectedFor : NOT_CONNECTED,
+  ]
+    .filter((part) => part !== "")
+    .join(" · ");
+}
+
+/**
+ * States why this machine has no control, or takes the statement back down.
+ *
+ * A row is kept between polls, so a machine that stopped being the local one —
+ * an adapter that went away, a MAC that moved — has to lose the sentence as
+ * well as gain a control.
+ */
+function fillDeviceLocalReason(row: HTMLElement, local: boolean): void {
+  const existing = row.querySelector<HTMLElement>(".device-local");
+
+  if (!local) {
+    existing?.remove();
+
+    return;
+  }
+  if (existing !== null) {
+    return;
+  }
+
+  const reason = document.createElement("span");
+
+  reason.className = "device-local";
+  reason.textContent = DEVICE_LOCAL_REASON;
+  row.querySelector(".device-identity")?.append(reason);
+}
+
+/** What the control offers to do, which is always the opposite of the state. */
+const BLOCK_ACTION = "Block";
+const UNBLOCK_ACTION = "Unblock";
+
+/**
+ * What the user is asked before anything is sent.
+ *
+ * The device is named, and its MAC given beside the name: two devices can share
+ * a name, and the address is what the write actually acts on — so a
+ * confirmation that only said "Block MacBookPro?" could be agreed to for the
+ * wrong row.
+ */
+function deviceConfirmation(device: DeviceRow, blocked: boolean): string {
+  const named = `${device.name} (${device.mac})`;
+
+  return blocked
+    ? `Block ${named} from the router's Wi-Fi?`
+    : `Allow ${named} back onto the router's Wi-Fi?`;
+}
+
+/**
+ * Asks, and sends only if the answer was yes.
+ *
+ * Nothing on the row is repainted here. What the router ends up refusing is
+ * settled by the write and the re-read behind it, and a row that showed the
+ * block straight away would be stating something that may well have been
+ * refused — the next pushed model is the only thing that moves it.
+ */
+function pressBlock(device: DeviceRow, blocked: boolean): void {
+  if (!window.confirm(deviceConfirmation(device, blocked))) {
+    return;
+  }
+
+  window.popoverBridge?.setBlocked({ mac: device.mac, blocked });
+}
+
+/**
+ * The row's control, created once and re-aimed thereafter — except on this
+ * machine's own row, which carries {@link DEVICE_LOCAL_REASON} instead and no
+ * control at all.
+ *
+ * The handler is assigned rather than added, because rows are kept between
+ * polls: a listener added on every render would fire once per poll the row had
+ * survived, turning one press into a handful of writes.
+ */
+function fillDeviceControl(row: HTMLElement, device: DeviceRow): void {
+  const existing = row.querySelector<HTMLButtonElement>("[data-block]");
+
+  if (device.local) {
+    // The handler is given up before the button goes, rather than left for the
+    // element to carry away: a detached control still holding a live `onclick`
+    // is exactly the stale press this file is at pains elsewhere to avoid.
+    if (existing !== null) {
+      existing.onclick = null;
+      existing.remove();
+    }
+
+    return;
+  }
+
+  const control = existing ?? document.createElement("button");
+
+  if (existing === null) {
+    control.type = "button";
+    control.className = "device-block";
+    control.dataset["block"] = "";
+    row.append(control);
+  }
+
+  const wanted = !device.blocked;
+  const label = wanted ? BLOCK_ACTION : UNBLOCK_ACTION;
+
+  if (control.textContent !== label) {
+    control.textContent = label;
+  }
+
+  control.onclick = (): void => {
+    pressBlock(device, wanted);
+  };
+}
+
+/** Brings one row up to date, in the element the device already had. */
+function fillDeviceRow(row: HTMLElement, device: DeviceRow): void {
+  row.dataset["mac"] = device.mac;
+  // Stated on the row as well as in its parts, so a stylesheet has something to
+  // hang on without the words having to go.
+  row.dataset["blocked"] = String(device.blocked);
+  row.dataset["present"] = String(device.present);
+  row.dataset["local"] = String(device.local);
+
+  setPart(row, ".device-name", device.name);
+  setPart(row, ".device-ip", device.ip);
+  setPart(row, ".device-meta", deviceMetaLine(device));
+  setPart(
+    row,
+    ".device-access",
+    device.blocked ? ACCESS_BLOCKED : ACCESS_ALLOWED,
+  );
+  fillDeviceLocalReason(row, device.local);
+  fillDeviceControl(row, device);
+}
+
+/**
+ * Writes the list into the pane, reusing the row each device already has.
+ *
+ * A device that left takes exactly its own row with it, and one that arrived
+ * lands in the position the model gives it without the rows around it being
+ * replaced. The MAC is the only field that can key on: a name may be absent or
+ * duplicated, and an IP is a lease that moves.
+ */
+function renderDeviceRows(devices: readonly DeviceRow[]): void {
+  const list = devicesList();
+
+  if (list === null) {
+    return;
+  }
+
+  const existing = rowsByMac(list);
+  const ordered = devices.map((device) => {
+    const row = existing.get(device.mac) ?? createDeviceRow();
+
+    fillDeviceRow(row, device);
+
+    return row;
+  });
+
+  list.replaceChildren(...ordered);
+}
+
+/**
+ * Which of the four the pane is in.
+ *
+ * `empty` is the one that is derived rather than pushed: a list that answered
+ * and held nothing is still a `listed` model, and only the count tells it from
+ * a list that answered and held something.
+ */
+type DevicesState = "listed" | "empty" | "offline" | "no-password";
+
+function devicesStateOf(model: DevicesModel): DevicesState {
+  if (model.state !== "listed") {
+    return model.state;
+  }
+
+  return model.devices.length === 0 ? "empty" : "listed";
+}
+
+/** Shows or hides one of the Devices pane's fixed regions. */
+function showDevicesRegion(selector: string, visible: boolean): void {
+  const element = document.querySelector<HTMLElement>(selector);
+
+  if (element !== null) {
+    element.hidden = !visible;
+  }
+}
+
+/**
+ * States why the last press changed nothing, or takes the statement back down.
+ *
+ * Written into a region of its own beside the rows rather than over them. The
+ * rows are what the pane is for, and a write that failed has said nothing
+ * whatever about which devices are connected.
+ */
+function renderDevicesRefusal(refusal: DeviceRefusal | undefined): void {
+  const notice = document.querySelector<HTMLElement>("[data-devices-refusal]");
+
+  if (notice === null) {
+    return;
+  }
+
+  const said = refusal === undefined ? "" : deviceRefusalText(refusal);
+
+  // `textContent`, never `innerHTML`: an endpoint arrives from the router.
+  if (notice.textContent !== said) {
+    notice.textContent = said;
+  }
+
+  notice.hidden = said === "";
+}
+
+/**
+ * Puts a pushed device list on the pane.
+ *
+ * Four states and one notice that rides beside them, and the point of every one
+ * is that it is not any of the others: a router that is not answering has not
+ * said that nothing is connected to it, a router nobody has the password for has
+ * not been asked at all, and a press the router refused has not emptied the
+ * household. "No devices" is only ever printed when the router itself said so.
+ */
+function renderDevices(model: DevicesModel): void {
+  if (model.state === "listed") {
+    renderDeviceRows(model.devices);
+  }
+
+  const state = devicesStateOf(model);
+  const pane = devicesPane();
+
+  if (pane !== null) {
+    pane.dataset["devicesState"] = state;
+  }
+
+  showDevicesRegion("[data-devices]", state === "listed");
+  showDevicesRegion("[data-devices-empty]", state === "empty");
+  showDevicesRegion("[data-devices-offline]", state === "offline");
+  showDevicesRegion("[data-devices-no-password]", state === "no-password");
+  renderDevicesRefusal(model.state === "listed" ? model.refusal : undefined);
+}
+
+window.applyDevicesModel = renderDevices;
+
+window.showPopoverTab = (name: string): void => {
+  // A name the page does not know leaves the pane exactly where it was: this
+  // arrives from outside the page, and there is no pane called anything else.
+  if (isTabName(name)) {
+    showTab(name);
+  }
+};
+
 window.applyPopoverModel = (model: PopoverModel): void => {
   // Before anything is filled in: a control that has just come back has to be
   // on the page in time for this model's own strings to reach it.
@@ -982,6 +1445,11 @@ window.applyPopoverModel = (model: PopoverModel): void => {
 window.resetPopoverView = (): void => {
   bindControls();
   showSettings(false);
+  // Said again on every open. The panel is hidden rather than destroyed
+  // between opens, so the main process has to be told the tab it is coming
+  // back on — a hidden panel stood the list down, and a reopen on Devices has
+  // to stand it back up without waiting for a press on the strip.
+  window.popoverBridge?.setTab(currentTab());
   // Redrawn from the tab already selected, never reset to Usage. The settings
   // are put away on every open because they are typed a few times a year and
   // the figures are what the panel is opened for; a tab is the opposite —

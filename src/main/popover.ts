@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import type { IpcMainEvent, Rectangle, Tray } from "electron";
 
 import type { RouterCredential } from "../hilink/types.js";
-import type { PopoverModel } from "./view-model.js";
+import type { DevicesModel, PopoverModel } from "./view-model.js";
 
 /** Wide enough for a rate and its unit on one line without wrapping. */
 export const POPOVER_WIDTH = 320;
@@ -39,6 +39,43 @@ export const POPOVER_SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 
 /** An alternative forfait pressed, carrying the label the carrier gave it. */
 export const POPOVER_CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
+
+/**
+ * A row's block control pressed, carrying the device and the state asked for.
+ *
+ * The list rides a global on the page because it only ever flows main →
+ * renderer. This goes the other way and ends in an authenticated `POST`, so it
+ * takes a named channel through the preload bridge, exactly as the panel's other
+ * writes do.
+ */
+export const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
+
+/**
+ * Which pane the page is reporting, when it changes.
+ *
+ * The tab is the page's own state and stays there — a poll landing every couple
+ * of seconds must never snatch it back. This channel only tells the main process
+ * what the user chose, because the `host-list` request behind the Devices pane
+ * is authenticated and costs a login: a panel on Usage is not looking at a
+ * device list and must not pay for one.
+ */
+export const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
+
+/** The panes the strip offers, in the order it draws them. */
+export const POPOVER_TABS = ["usage", "devices"] as const;
+
+export type PopoverTab = (typeof POPOVER_TABS)[number];
+
+function isPopoverTab(value: unknown): value is PopoverTab {
+  return POPOVER_TABS.some((tab) => tab === value);
+}
+
+/** One press: the device, and the state being asked for. */
+export interface DeviceBlockRequest {
+  mac: string;
+  /** `true` blocks, `false` unblocks. */
+  blocked: boolean;
+}
 
 /**
  * The page, as the build leaves it. `npm run build` copies it and its stylesheet
@@ -82,6 +119,12 @@ export interface PopoverOptions {
   onSetPlanDays?: (value: string) => void;
   /** The user picked one of the carrier's other forfaits, by its own label. */
   onChooseForfait?: (label: string) => void;
+  /**
+   * The user pressed a device row's block control, having confirmed it. The
+   * panel starts nothing itself — what that costs the router is decided in
+   * `main.ts`.
+   */
+  onSetBlocked?: (request: DeviceBlockRequest) => void;
 }
 
 /**
@@ -104,6 +147,28 @@ function readCredential(payload: unknown): RouterCredential | null {
   return { username, password };
 }
 
+/**
+ * A block request out of a renderer message, or null when the payload is not
+ * one.
+ *
+ * Moved here with the bridge the press arrives on, and unchanged in doing so:
+ * which surface sent it was never what made it safe. This check is, and it
+ * stays word for word what T-68 wrote for the page that used to send it.
+ */
+function readBlockRequest(payload: unknown): DeviceBlockRequest | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const { mac, blocked } = payload as Record<string, unknown>;
+
+  if (typeof mac !== "string" || typeof blocked !== "boolean") {
+    return null;
+  }
+
+  return { mac, blocked };
+}
+
 export interface Popover {
   /** Open when closed, close when open — what a tray click does. */
   toggle(bounds?: Rectangle): void;
@@ -112,6 +177,35 @@ export interface Popover {
   isOpen(): boolean;
   /** Hands the page a new set of display strings; safe before the window exists. */
   setModel(model: PopoverModel): void;
+  /**
+   * Hands the page a new device list, on the same terms.
+   *
+   * Its own entry point rather than a field on {@link PopoverModel} because the
+   * two arrive on their own schedules: the figures land every couple of seconds
+   * and the list only while the Devices tab is the visible one, so folding them
+   * together would mean either pushing a stale list or fetching one nobody is
+   * looking at.
+   */
+  setDevices(model: DevicesModel): void;
+  /**
+   * Which pane the page last said it was showing.
+   *
+   * Usage until the page says otherwise, which is what the markup ships with —
+   * and the safe answer either way, because it is the one that asks the router
+   * for nothing.
+   */
+  visibleTab(): PopoverTab;
+  /**
+   * Puts the page on a pane, from the main process rather than from a press on
+   * the strip. The tray's devices entry is the one thing that does this: it
+   * used to open a window of its own, and it lands the user on the list either
+   * way.
+   *
+   * The tab is recorded here as well as pushed, so the poll's gate opens on the
+   * same tick rather than waiting for the page to report back what it was just
+   * told.
+   */
+  showTab(name: PopoverTab): void;
   destroy(): void;
 }
 
@@ -123,6 +217,8 @@ export function createPopover(options: PopoverOptions = {}): Popover {
 
   let window: BrowserWindow | null = null;
   let model: PopoverModel | null = null;
+  let devices: DevicesModel | null = null;
+  let tab: PopoverTab = "usage";
 
   function alive(): BrowserWindow | null {
     return window !== null && !window.isDestroyed() ? window : null;
@@ -176,11 +272,34 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onSetTabMessage(event: IpcMainEvent, payload: unknown): void {
+    // A name nobody understands leaves the last one standing. Falling back to
+    // Usage would stand the device list down under a user looking straight at
+    // it, which is the one failure this channel exists to prevent.
+    if (fromThisPanel(event) && isPopoverTab(payload)) {
+      tab = payload;
+    }
+  }
+
+  function onSetBlockedMessage(event: IpcMainEvent, payload: unknown): void {
+    if (!fromThisPanel(event)) {
+      return;
+    }
+
+    const request = readBlockRequest(payload);
+
+    if (request !== null) {
+      options.onSetBlocked?.(request);
+    }
+  }
+
   ipcMain.on(POPOVER_SYNC_CHANNEL, onSyncMessage);
   ipcMain.on(POPOVER_SAVE_PASSWORD_CHANNEL, onSavePasswordMessage);
   ipcMain.on(POPOVER_SET_PLAN_LIMIT_CHANNEL, onSetPlanLimitMessage);
   ipcMain.on(POPOVER_SET_PLAN_DAYS_CHANNEL, onSetPlanDaysMessage);
   ipcMain.on(POPOVER_CHOOSE_FORFAIT_CHANNEL, onChooseForfaitMessage);
+  ipcMain.on(POPOVER_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
+  ipcMain.on(POPOVER_SET_TAB_CHANNEL, onSetTabMessage);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -198,6 +317,35 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     // Rejects if the page is still loading; `did-finish-load` pushes again.
     void open.webContents
       .executeJavaScript(`window.applyPopoverModel(${JSON.stringify(model)})`)
+      .catch(() => undefined);
+  }
+
+  /**
+   * Puts the page on a pane and remembers it. Rejects while the page is still
+   * loading, which is exactly the case where there is nothing to move: the
+   * markup opens on the tab this already holds, and `show` pushes again.
+   */
+  function pushTab(): void {
+    void alive()
+      ?.webContents.executeJavaScript(
+        `window.showPopoverTab?.(${JSON.stringify(tab)})`,
+      )
+      .catch(() => undefined);
+  }
+
+  /**
+   * Pushes the current device list, on the same terms as the figures above and
+   * through the entry point of its own.
+   */
+  function pushDevices(): void {
+    const open = alive();
+
+    if (open === null || devices === null) {
+      return;
+    }
+
+    void open.webContents
+      .executeJavaScript(`window.applyDevicesModel(${JSON.stringify(devices)})`)
       .catch(() => undefined);
   }
 
@@ -263,7 +411,12 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       hide();
     });
     created.webContents.on("did-finish-load", () => {
+      // The pane first, for the reason `show` puts it first: a freshly loaded
+      // page opens on Usage, and a tray entry that asked for Devices must not
+      // flash the figures on the way there.
+      pushTab();
       push();
+      pushDevices();
     });
 
     void created.loadFile(htmlPath);
@@ -289,7 +442,12 @@ export function createPopover(options: PopoverOptions = {}): Popover {
 
     // Before the push, so the model lands on the view the user is about to see.
     resetView();
+    // After the reset, which redraws from whatever the page itself holds, and
+    // before the window is shown: a tray entry that asked for Devices must not
+    // flash Usage on the way there.
+    pushTab();
     push();
+    pushDevices();
     open.show();
   }
 
@@ -316,6 +474,17 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       model = next;
       push();
     },
+    setDevices(next: DevicesModel): void {
+      devices = next;
+      pushDevices();
+    },
+    visibleTab(): PopoverTab {
+      return tab;
+    },
+    showTab(name: PopoverTab): void {
+      tab = name;
+      pushTab();
+    },
     destroy(): void {
       // `ipcMain` outlives the window, so the subscriptions have to be given
       // back explicitly or a destroyed panel keeps answering for the next one.
@@ -336,6 +505,8 @@ export function createPopover(options: PopoverOptions = {}): Popover {
         POPOVER_CHOOSE_FORFAIT_CHANNEL,
         onChooseForfaitMessage,
       );
+      ipcMain.removeListener(POPOVER_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
+      ipcMain.removeListener(POPOVER_SET_TAB_CHANNEL, onSetTabMessage);
       alive()?.destroy();
       window = null;
     },

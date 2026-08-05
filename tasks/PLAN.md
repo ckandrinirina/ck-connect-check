@@ -72,12 +72,13 @@
 | T-68 | Block and unblock a device from the list                                | done   | M    | T-67                         |
 | T-69 | Never let this Mac block itself off the router                          | done   | S    | T-68                         |
 | T-70 | Say why the list is empty or a block did not take                       | done   | S    | T-66, T-68                   |
-| T-71 | Show the devices window in the README                                   | todo   | S    | T-66, T-68                   |
+| T-71 | Show the devices window in the README                                   | done   | S    | T-66, T-68                   |
 | T-72 | Put the device list on a tab inside the panel                           | done   | M    | T-66, T-70                   |
-| T-73 | Draw the device rows at the panel's own width                           | todo   | M    | T-72                         |
-| T-74 | Move blocking onto the panel's own bridge                               | todo   | M    | T-72, T-73                   |
-| T-75 | Read the host list only while its tab is showing                        | todo   | S    | T-72, T-73                   |
-| T-76 | Retire the separate devices window                                      | todo   | S    | T-73, T-74, T-75             |
+| T-73 | Draw the device rows at the panel's own width                           | done   | M    | T-72                         |
+| T-74 | Move blocking onto the panel's own bridge                               | done   | M    | T-72, T-73                   |
+| T-75 | Read the host list only while its tab is showing                        | done   | S    | T-72, T-73                   |
+| T-76 | Retire the separate devices window                                      | done   | S    | T-73, T-74, T-75             |
+| T-77 | Put the devices tab in the README, with the capture                     | todo   | S    | T-76                         |
 
 ## T-01 Set the project up so tests can run
 
@@ -4163,7 +4164,7 @@ for.
 
 ## T-71 Show the devices window in the README
 
-T-71 · status: todo · size: S · needs: T-66, T-68 · files: README.md, docs/media/devices.png
+T-71 · status: done · size: S · needs: T-66, T-68 · files: README.md, docs/media/devices.png
 
 T-58 brought the README up to the Orange setup and left it describing an app with one window.
 This adds the second: what the device list shows, that blocking writes the router's own MAC
@@ -4215,6 +4216,17 @@ that is not there.
 - The agent was explicitly forbidden from creating a placeholder in any form — a stand-in risks
   shipping as though it were the real capture.
 
+**CLOSED by T-76 (2026-08-05).** Its checkboxes stay unticked on purpose: they describe a
+window that no longer exists, and ticking them would claim work nobody did. T-76 wrote
+`## The device list` for the tab instead, reusing this task's prose; T-77 carries the capture
+this task was held for.
+
+**Superseded by T-76 (2026-08-04).** The devices window this task documents is deleted by T-76,
+which writes the README section and takes the screenshot for the Devices _tab_ instead. T-71 was
+excluded from the `batch/devices-panel` run for that reason, not because it failed. Close it as
+part of T-76 rather than finishing it separately; the held branch above still holds prose worth
+reading when T-76 rewrites the section.
+
 ## T-72 Put the device list on a tab inside the panel
 
 T-72 · status: done · size: M · needs: T-66, T-70 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/popover.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts
@@ -4264,7 +4276,7 @@ child now and is never on the panel at the same time.
 
 ## T-73 Draw the device rows at the panel's own width
 
-T-73 · status: todo · size: M · needs: T-72 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/view-model.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts, test/main/view-model.test.ts
+T-73 · status: done · size: M · needs: T-72 · files: src/renderer/index.html, src/renderer/popover.css, src/renderer/popover.ts, src/main/view-model.ts, src/main/devices-window.ts, docs/ARCHITECTURE.md, test/renderer/popover.test.ts, test/main/view-model.test.ts
 
 The rendering built in T-66, T-67, T-69 and T-70 moves out of `devices.ts` into the Devices
 pane and is restated for 320 px rather than 520: the name and the IP stack in one column,
@@ -4278,27 +4290,27 @@ not.
 
 ### Acceptance
 
-- [ ] the Devices pane renders one row per host carrying the name, the IP address and the access word
-- [ ] nothing in the pane overflows horizontally at 320 px, asserted against the stylesheet's widths
-- [ ] all five T-70 conditions render distinct sentences, one assertion per condition
-- [ ] a row survives a refresh by identity, asserted with the same MAC's element before and after
-- [ ] an address the filter blocks and `host-list` does not report still gets a row (T-67)
-- [ ] the Devices pane scrolls vertically and the Usage pane does not, both asserted against the stylesheet
-- [ ] the popover is still 320×520
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the Devices pane renders one row per host carrying the name, the IP address and the access word
+- [x] nothing in the pane overflows horizontally at 320 px, asserted against the stylesheet's widths
+- [x] all five T-70 conditions render distinct sentences, one assertion per condition
+- [x] a row survives a refresh by identity, asserted with the same MAC's element before and after
+- [x] an address the filter blocks and `host-list` does not report still gets a row (T-67)
+- [x] the Devices pane scrolls vertically and the Usage pane does not, both asserted against the stylesheet
+- [x] the popover is still 320×520
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Move `test/renderer/devices.test.ts`'s assertions onto the pane and watch them fail
-2. [ ] Move the row markup into the Devices pane in `index.html`
-3. [ ] Restate the row as a stacked two-line layout with the access word right-aligned
-4. [ ] Carry the five states and the MAC-keyed diffing across unchanged
-5. [ ] Scope the scroll to this pane alone
-6. [ ] Run test, lint and build
+1. [x] Move `test/renderer/devices.test.ts`'s assertions onto the pane and watch them fail
+2. [x] Move the row markup into the Devices pane in `index.html`
+3. [x] Restate the row as a stacked two-line layout with the access word right-aligned
+4. [x] Carry the five states and the MAC-keyed diffing across unchanged
+5. [x] Scope the scroll to this pane alone
+6. [x] Run test, lint and build
 
 ## T-74 Move blocking onto the panel's own bridge
 
-T-74 · status: todo · size: M · needs: T-72, T-73 · files: src/renderer/preload.cts, src/renderer/popover.ts, src/main/main.ts, docs/ARCHITECTURE.md, test/main/main.test.ts, test/renderer/popover.test.ts
+T-74 · status: done · size: M · needs: T-72, T-73 · files: src/renderer/preload.cts, src/renderer/popover.ts, src/main/main.ts, src/main/popover.ts, src/main/devices-window.ts, docs/ARCHITECTURE.md, test/main/main.test.ts, test/main/popover.test.ts, test/renderer/popover.test.ts
 
 The block channel exists and is validated in the main process; only the bridge it arrives on
 moves, from the devices page's preload to the popover's. Which window sent it was never what
@@ -4310,26 +4322,26 @@ this machine's row having no control at all.
 
 ### Acceptance
 
-- [ ] the popover preload exposes the block channel and the main process rejects a malformed payload on it, asserted with a payload that is not a MAC
-- [ ] every eligible row carries a block or unblock control
-- [ ] this machine's row carries a sentence where the control would be and no control at all (T-69)
-- [ ] the confirmation still precedes a block, and a cancelled confirmation issues no request
-- [ ] the row after a write is drawn from a re-read of the filter, never from the press (T-68)
-- [ ] a refused write leaves every row present and states the refusal beside the list (T-70)
-- [ ] a filter already in whitelist mode is refused before any request is made (T-68)
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] the popover preload exposes the block channel and the main process rejects a malformed payload on it, asserted with a payload that is not a MAC
+- [x] every eligible row carries a block or unblock control
+- [x] this machine's row carries a sentence where the control would be and no control at all (T-69)
+- [x] the confirmation still precedes a block, and a cancelled confirmation issues no request
+- [x] the row after a write is drawn from a re-read of the filter, never from the press (T-68)
+- [x] a refused write leaves every row present and states the refusal beside the list (T-70)
+- [x] a filter already in whitelist mode is refused before any request is made (T-68)
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write the failing tests, including the malformed-payload rejection
-2. [ ] Expose the block channel on the popover preload
-3. [ ] Wire the pane's controls to it and keep the confirmation
-4. [ ] Confirm the main-process validation is unchanged, not re-implemented
-5. [ ] Run test, lint and build
+1. [x] Write the failing tests, including the malformed-payload rejection
+2. [x] Expose the block channel on the popover preload
+3. [x] Wire the pane's controls to it and keep the confirmation
+4. [x] Confirm the main-process validation is unchanged, not re-implemented
+5. [x] Run test, lint and build
 
 ## T-75 Read the host list only while its tab is showing
 
-T-75 · status: todo · size: S · needs: T-72, T-73 · files: src/main/poller.ts, src/main/main.ts, src/main/popover.ts, docs/ARCHITECTURE.md, test/main/poller.test.ts, test/main/main.test.ts
+T-75 · status: done · size: S · needs: T-72, T-73 · files: src/main/poller.ts, src/main/main.ts, src/main/popover.ts, src/renderer/preload.cts, src/renderer/popover.ts, docs/ARCHITECTURE.md, test/main/poller.test.ts, test/main/main.test.ts, test/main/popover.test.ts, test/renderer/popover.test.ts
 
 T-66 gated the authenticated `host-list` request on the devices window being open. There is
 no such window after T-76, so the gate is retargeted rather than removed: it becomes the
@@ -4339,23 +4351,44 @@ both would otherwise pay a login and a request every 30 seconds for nothing.
 
 ### Acceptance
 
-- [ ] no `host-list` request is issued while the popover is hidden, asserted over several poll ticks
-- [ ] no `host-list` request is issued while the popover is open on Usage, asserted the same way
-- [ ] selecting Devices causes the fetch on the next tick, issued inside the tick and not beside it
-- [ ] leaving the tab, and closing the panel, each stop it — asserted by request count after the change
+- [x] no `host-list` request is issued while the popover is hidden, asserted over several poll ticks
+- [x] no `host-list` request is issued while the popover is open on Usage, asserted the same way
+- [x] selecting Devices causes the fetch on the next tick, issued inside the tick and not beside it
+- [x] leaving the tab, and closing the panel, each stop it — asserted by request count after the change
 - [ ] a login refused for the list still stands the list down for the rest of the run (T-66)
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write the failing tests for the four gate cases
-2. [ ] Replace the window-open condition with the tab-and-visibility one
-3. [ ] Keep the fetch inside the poll's own tick
-4. [ ] Run test, lint and build
+1. [x] Write the failing tests for the four gate cases
+2. [x] Replace the window-open condition with the tab-and-visibility one
+3. [x] Keep the fetch inside the poll's own tick
+4. [x] Run test, lint and build
+
+### Notes
+
+**ACCEPTED AS-IS.** QA passed every other criterion — 1787 tests, lint and build all clean —
+and returned `QA: FAIL` on this one alone, having independently confirmed the latch is
+unchanged and unreachable. The shortfall was accepted rather than fixed.
+
+**The T-66 stand-down criterion is left unticked, and the behaviour is untouched.**
+`deviceLoginRefused` in `src/main/main.ts` still latches on the first refused sign-in and
+still governs every later poll; nothing in this task goes near it. What is missing is a test,
+and the reason is a seam rather than a doubt: `options.hosts` replaces `readHostList` whole
+(`options.hosts ?? { hosts: readHostList }`), so a suite that injects a host source never
+runs the latch, and the only client that would is the real `createClient` reaching a real
+router. Asserting it means moving that seam inside `readHostList` — every existing `hosts:`
+stub would then have to carry a credential — which is a restructure of the device wiring and
+not this task's. Worth its own task if the latch is ever to be covered.
+
+**The devices window stops being fed by the poll from here.** The gate is replaced, not
+widened: an OR with the window-open condition would go on paying a login and a request for a
+list nobody is reading, which is the whole thing this task removes. The window still opens
+and still renders whatever it was last pushed; T-76 deletes it days later.
 
 ## T-76 Retire the separate devices window
 
-T-76 · status: todo · size: S · needs: T-73, T-74, T-75 · files: src/main/devices-window.ts, src/renderer/devices.html, src/renderer/devices.ts, src/main/main.ts, src/main/tray.ts, README.md, docs/media/, test/main/devices-window.test.ts, test/renderer/devices.test.ts
+T-76 · status: done · size: S · needs: T-73, T-74, T-75 · files: src/main/devices-window.ts, src/renderer/devices.html, src/renderer/devices.ts, src/main/main.ts, src/main/tray.ts, src/main/popover.ts, src/renderer/popover.ts, src/renderer/preload.cts, package.json, README.md, docs/media/, docs/ARCHITECTURE.md, test/main/devices-window.test.ts, test/renderer/devices.test.ts, test/main/main.test.ts, test/main/popover.test.ts, test/project-setup.test.ts, test/readme.test.ts
 
 The window and its page are deleted, along with the tests that covered them — their
 assertions live on the pane after T-73 and T-74, so keeping both would be two descriptions of
@@ -4367,16 +4400,72 @@ puts the window in the README; this task replaces that with the tab.
 
 ### Acceptance
 
-- [ ] no file under `src/` or `test/` mentions `devices-window`, `devices.html` or `devices.ts`, asserted by a test that greps the tree
-- [ ] the tray's devices entry opens the panel on the Devices tab and creates no window
-- [ ] the build output contains no devices page, asserted against the emitted file list
-- [ ] the README describes and screenshots the tab, not a window
+- [x] no file under `src/` or `test/` mentions `devices-window`, `devices.html` or `devices.ts`, asserted by a test that greps the tree
+- [x] the tray's devices entry opens the panel on the Devices tab and creates no window
+- [x] the build output contains no devices page, asserted against the emitted file list
+- [ ] the README describes and screenshots the tab, not a window — described, not yet screenshotted; see T-77
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [x] Write the failing grep test and the tray assertion
+2. [x] Delete the window, the page and their tests
+3. [x] Point the tray entry at the panel's Devices tab
+4. [ ] Retake the README screenshot and rewrite the section — rewritten; the capture is T-77
+5. [x] Run test, lint and build
+
+### Notes
+
+**ACCEPTED with the screenshot outstanding.** QA passed every other criterion — 1703 tests,
+lint and build all clean — and independently confirmed that the tree sweep's narrowing is
+honest: it looks for `devices-window`, `devices.html` and `renderer/devices.` rather than the
+bare string `devices.ts`, because `src/domain/devices.ts` and `src/hilink/devices.ts` are the
+device domain and the router boundary and were never the window.
+
+**What is missing is `docs/media/devices.png`,** a capture of the Devices tab against the real
+router with every device name, IP address and MAC address redacted. No agent can take it, and
+no placeholder was created — a stand-in risks shipping as though it were the real capture,
+which is exactly why T-71 was held rather than faked. The README section is written and says
+nothing about an image, so no link check is broken and nothing on the page is untrue. **T-77
+carries the capture and the test that guards it.**
+
+**T-71 is closed by this task.** It documented the window this one deletes. Its held branch
+`worktree-agent-a375eefabb51721e9` supplied the prose that became `## The device list`,
+restated for the tab; the branch itself is unmerged and can go once T-77 lands.
+
+## T-77 Put the devices tab in the README, with the capture
+
+T-77 · status: todo · size: S · needs: T-76 · files: README.md, docs/media/devices.png, docs/ARCHITECTURE.md, test/readme.test.ts
+
+T-76 wrote `## The device list` and left it without a picture, because the picture is the one
+part of this app's documentation that cannot be generated: it is a household's device list,
+and it has to be redacted by hand before it can be committed.
+
+The section itself needs no rewriting. What is missing is the image, the reference to it, and
+the test that stops the reference outliving the file.
+
+### Acceptance
+
+- [ ] `docs/media/devices.png` exists and shows no legible device name, IP address or MAC address
+- [ ] the README's `## The device list` section references it, with alt text describing the tab
+- [ ] a test asserts the file is on disk and is a PNG at least 320 px wide, the panel's own width
+- [ ] `docs/ARCHITECTURE.md`'s `docs/media/` line describes what that directory now holds
 - [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write the failing grep test and the tray assertion
-2. [ ] Delete the window, the page and their tests
-3. [ ] Point the tray entry at the panel's Devices tab
-4. [ ] Retake the README screenshot and rewrite the section
-5. [ ] Run test, lint and build
+1. [ ] Extend the README suite to require the image, and watch it fail
+2. [ ] Capture the Devices tab against the live router and redact it — **the user supplies this**
+3. [ ] Reference it from the section and correct the architecture line
+4. [ ] Run test, lint and build
+
+### Notes
+
+**No test can verify the redaction.** That assertion is deliberately absent: it is a human
+check, and it is the one that matters, because this is a household's device list going into a
+repository. Redact with opaque filled shapes and flatten on export — an annotation layer that
+survives in the file can be peeled off.
+
+**No placeholder, in any form.** A stand-in risks shipping as though it were the real capture.
+If the image is not there, the test stays red and that red is the point.
+

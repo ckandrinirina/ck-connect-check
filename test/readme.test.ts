@@ -17,7 +17,7 @@ import { calendarMonthPeriod, readPortalUsage } from "../src/domain/quota.js";
 import type { SnapshotResult } from "../src/hilink/client.js";
 import type { MonthStatistics } from "../src/hilink/types.js";
 import type { PortalStatus } from "../src/main/poller.js";
-import { buildTrayTitle } from "../src/main/tray.js";
+import { DEVICES_MENU_LABEL, buildTrayTitle } from "../src/main/tray.js";
 import { INFO_CONSO_PATH, PORTAL_BASE_URL } from "../src/orange/portal.js";
 import { selectForfait } from "../src/orange/select.js";
 import type { OrangeForfait } from "../src/orange/types.js";
@@ -951,5 +951,71 @@ describe("README.md on the Orange panel it shows", () => {
     // IHDR: width and height are big-endian uint32 at byte 16 and byte 20.
     expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
     expect(png.readUInt32BE(20)).toBe(497);
+  });
+});
+
+/**
+ * The device list, as the README describes it.
+ *
+ * T-58 left the page describing an app with one window and one pane. T-72 to
+ * T-76 gave it a second pane and took the second window away again, so the
+ * page has to describe a *tab* — a reader sent looking for a window would not
+ * find one, and the difference is the whole of what changed.
+ *
+ * Every claim below is checked against the code that has to honour it, the way
+ * the rest of this suite is: the tray label the menu actually builds, and the
+ * refusal the app really states when no password is stored.
+ */
+describe("README.md on the device list", () => {
+  const DEVICES_HEADING = "## The device list";
+
+  it("gives it a section of its own", () => {
+    expect(readme).toContain(DEVICES_HEADING);
+  });
+
+  it("calls it a tab on the panel rather than a window", () => {
+    const devices = section(DEVICES_HEADING);
+
+    expect(devices).toMatch(/\btab\b/i);
+    // The window is gone. A page still naming one sends a reader looking for
+    // something the app no longer has.
+    expect(devices).not.toMatch(/devices window|window listing/i);
+  });
+
+  it("says how the tab is reached", () => {
+    const devices = section(DEVICES_HEADING);
+
+    expect(devices).toMatch(/Devices/);
+    expect(devices).toMatch(/menu bar|tray|right-click/i);
+  });
+
+  it("says a block is written to the router's own MAC filter", () => {
+    const devices = section(DEVICES_HEADING);
+
+    // The one thing a reader cannot work out from the panel: the block is not
+    // an app-level mute, it is a write to the router.
+    expect(devices).toMatch(/MAC filter/i);
+    expect(devices).toMatch(/router password|password/i);
+  });
+
+  it("says a block outlives the app, because it lives on the router", () => {
+    const devices = section(DEVICES_HEADING);
+
+    expect(devices).toMatch(/reboot|survives|outlives/i);
+    expect(devices).toMatch(/config\.json|not stored in the app|on the router/i);
+  });
+
+  it("says this machine cannot be blocked from the list", () => {
+    const devices = section(DEVICES_HEADING);
+
+    expect(devices).toMatch(/this Mac|the Mac the app|machine the app/i);
+  });
+
+  it("names the tray entry the menu really builds", () => {
+    const devices = section(DEVICES_HEADING);
+
+    // Quoted from the constant rather than retyped, so a relabelled menu item
+    // cannot leave the page naming one nobody will find.
+    expect(devices).toContain(DEVICES_MENU_LABEL);
   });
 });

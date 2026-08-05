@@ -38,6 +38,17 @@ export const OFFLINE_TRAY_TITLE = "offline";
  */
 export const NO_TRAY_VALUE = "—";
 
+/**
+ * The right-click entry that reaches the device list, shared so the menu and
+ * the tests agree on one spelling.
+ *
+ * It used to open a window of its own. It opens the panel on its Devices tab
+ * now, and keeps its trailing ellipsis because the destination is still
+ * somewhere else — one right-click and one item is the fastest route to the
+ * list, and that has not changed even though the surface has.
+ */
+export const DEVICES_MENU_LABEL = "Connected devices…";
+
 /** Separates the used total from the percentage: `5.8G · 29%`. */
 const SEPARATOR = " · ";
 
