@@ -346,10 +346,9 @@
       </div>
 
       <!--
-        The other pane. Empty here on purpose: this task builds the strip and
-        the switching, and T-73 fills the rows in. It is in the document from
-        the start all the same — a pane built on first press would throw away
-        the row identity that keeps a device steady while it is being read.
+        The other pane. It is in the document from the start — a pane built on
+        first press would throw away the row identity that keeps a device
+        steady while it is being read.
       -->
       <div
         class="pane"
@@ -357,8 +356,71 @@
         data-pane="devices"
         role="tabpanel"
         aria-labelledby="tab-devices"
+        data-devices-state="offline"
         hidden
-      ></div>
+      >
+        <!--
+          The shell of the list. The rows are written by `popover.ts` and
+          arrive from the router, so there is nothing to declare here but the
+          container they land in — no column headers, because at 320 px the row
+          is stacked text rather than a table.
+
+          A list rather than a table for that same reason: the name and the
+          address sit one above the other and the access word beside them, and
+          a table of one column and a half is a table in name only.
+        -->
+        <ul class="devices" data-devices hidden></ul>
+
+        <!--
+          The three ways of having no rows, which are not the same answer. The
+          router saying nothing is connected is a fact about the household; the
+          router not answering is a fact about the router; and no password
+          stored is a fact about this app, which the user settles two presses
+          away. The app runs unattended, so each is a state on the pane rather
+          than a dialog.
+        -->
+        <p class="devices-notice" data-devices-notice data-devices-empty hidden>
+          No device is connected to the router.
+        </p>
+        <p
+          class="devices-notice"
+          data-devices-notice
+          data-devices-offline
+          hidden
+        >
+          Waiting for the router
+        </p>
+        <!--
+          Not a failure, and worded so it cannot read as one. The router is fine
+          and has not been asked anything: reading or changing the blocked list
+          needs the router's own password. The devices window had to send the
+          user somewhere else for it; this pane is in the panel that takes it,
+          so the sentence names the control that opens the form.
+        -->
+        <p
+          class="devices-notice"
+          data-devices-notice
+          data-devices-no-password
+          hidden
+        >
+          No router password is stored, so the router has not been asked which
+          devices it is blocking. Save it in the settings, behind the ⚙ button
+          above.
+        </p>
+        <!--
+          Why the last press changed nothing. It sits beside the list rather
+          than in place of it: a write that failed says nothing about which
+          devices are connected, so the rows stay exactly where they were. Its
+          words are written by `popover.ts`, because a router code and the
+          filter's cap are numbers only the model knows.
+        -->
+        <p
+          class="devices-notice"
+          data-devices-notice
+          data-devices-refusal
+          hidden
+        ></p>
+      </div>
     </div>
 
     <!--

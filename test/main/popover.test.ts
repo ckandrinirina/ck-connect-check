@@ -7,6 +7,8 @@ import {
   POPOVER_CHOOSE_FORFAIT_CHANNEL,
   POPOVER_HEIGHT,
   POPOVER_SAVE_PASSWORD_CHANNEL,
+  POPOVER_SET_BLOCKED_CHANNEL,
+  POPOVER_SET_TAB_CHANNEL,
   POPOVER_SYNC_CHANNEL,
   POPOVER_WIDTH,
   bindTrayToPopover,
@@ -14,6 +16,7 @@ import {
 } from "../../src/main/popover.js";
 import {
   buildPopoverModel,
+  type DevicesModel,
   type PopoverModel,
 } from "../../src/main/view-model.js";
 
@@ -204,15 +207,24 @@ function modelUsing(usedBytes: number): PopoverModel {
   });
 }
 
-/** The model the page was last handed, read back out of the injected script. */
+/**
+ * The model the page was last handed, read back out of the injected script.
+ *
+ * Picked out by name rather than taken as the last call: the panel pushes the
+ * device list and the selected pane down the same channel, so "the last script"
+ * stopped meaning "the last model" once there was more than one kind.
+ */
 function lastPushed(window: FakeWindow): PopoverModel {
-  const call = window.webContents.executeJavaScript.mock.calls.at(-1);
+  const script = (
+    window.webContents.executeJavaScript.mock.calls as [string][]
+  )
+    .map(([source]) => source)
+    .filter((source) => source.startsWith("window.applyPopoverModel("))
+    .at(-1);
 
-  if (call === undefined) {
-    throw new Error("nothing was pushed to the page");
+  if (script === undefined) {
+    throw new Error("no model was pushed to the page");
   }
-
-  const [script] = call as [string];
 
   return JSON.parse(
     script.slice(script.indexOf("(") + 1, script.lastIndexOf(")")),
@@ -603,5 +615,306 @@ describe("createPopover — the panel talking back", () => {
     send(POPOVER_SYNC_CHANNEL, sender);
 
     expect(onSync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A block pressed on the panel.
+ *
+ * The channel is the one T-68 built and the validation is the one it wrote;
+ * only the bridge it arrives on has moved, from the devices page's preload to
+ * the panel's own. Which window sent it was never what made it safe — the
+ * check against this panel's page and the payload validation are, and both are
+ * still here.
+ */
+describe("createPopover — a device blocked from the panel", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  it("reports a block pressed on its own page", () => {
+    const onSetBlocked = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetBlocked,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_BLOCKED_CHANNEL, lastWindow().webContents, {
+      mac: "A2:00:5E:00:00:01",
+      blocked: true,
+    });
+
+    expect(onSetBlocked).toHaveBeenCalledOnce();
+    expect(onSetBlocked).toHaveBeenCalledWith({
+      mac: "A2:00:5E:00:00:01",
+      blocked: true,
+    });
+
+    popover.destroy();
+  });
+
+  it("reports an unblock as the other half of the same press", () => {
+    const onSetBlocked = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetBlocked,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_BLOCKED_CHANNEL, lastWindow().webContents, {
+      mac: "00:1A:2B:00:00:02",
+      blocked: false,
+    });
+
+    expect(onSetBlocked).toHaveBeenCalledOnce();
+    expect(onSetBlocked).toHaveBeenCalledWith({
+      mac: "00:1A:2B:00:00:02",
+      blocked: false,
+    });
+
+    popover.destroy();
+  });
+
+  it("drops a message whose payload is not a MAC and a state", () => {
+    const onSetBlocked = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetBlocked,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+
+    // The page is ours and its CSP lets nothing else run in it, but a channel
+    // that ends in an authenticated `POST` to the router validates its own
+    // input rather than trusting that.
+    for (const payload of [
+      undefined,
+      null,
+      "A2:00:5E:00:00:01",
+      { mac: "A2:00:5E:00:00:01" },
+      { mac: 12, blocked: true },
+      { mac: "A2:00:5E:00:00:01", blocked: "yes" },
+      { blocked: true },
+    ]) {
+      send(POPOVER_SET_BLOCKED_CHANNEL, sender, payload);
+    }
+
+    expect(onSetBlocked).not.toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("ignores a press that did not come from its own page", () => {
+    const onSetBlocked = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetBlocked,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    // `ipcMain` is process-wide, and this channel reaches the router.
+    send(
+      POPOVER_SET_BLOCKED_CHANNEL,
+      { someone: "else" },
+      { mac: "A2:00:5E:00:00:01", blocked: true },
+    );
+
+    expect(onSetBlocked).not.toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("stops listening for presses once the panel is destroyed", () => {
+    const onSetBlocked = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetBlocked,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+    popover.destroy();
+
+    send(POPOVER_SET_BLOCKED_CHANNEL, sender, {
+      mac: "A2:00:5E:00:00:01",
+      blocked: true,
+    });
+
+    expect(onSetBlocked).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The list on its way to the page.
+ *
+ * It rides its own entry point rather than the figures' one because it arrives
+ * on its own schedule: the figures land every couple of seconds, and the list
+ * only while the Devices tab is the visible one.
+ */
+describe("createPopover — the device list it pushes", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  const LISTED: DevicesModel = {
+    state: "listed",
+    devices: [
+      {
+        name: "MacBookPro",
+        ip: "192.168.8.100",
+        mac: "A2:00:5E:00:00:01",
+        network: "HUAWEI-B310-XXXX",
+        connectedFor: "5h 52m",
+        blocked: false,
+        present: true,
+        local: false,
+      },
+    ],
+  };
+
+  it("hands the list to the page on its own entry point", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+    popover.setDevices(LISTED);
+
+    const pushed = lastWindow().webContents.executeJavaScript.mock.calls.map(
+      (call: unknown[]) => String(call[0]),
+    );
+
+    expect(
+      pushed.some((script: string) =>
+        script.startsWith("window.applyDevicesModel("),
+      ),
+    ).toBe(true);
+    expect(pushed.join("\n")).toContain("A2:00:5E:00:00:01");
+
+    popover.destroy();
+  });
+
+  it("remembers a list set before the window exists and pushes it on load", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+
+    popover.setDevices(LISTED);
+    popover.show(TRAY_BOUNDS);
+
+    const pushed = lastWindow().webContents.executeJavaScript.mock.calls.map(
+      (call: unknown[]) => String(call[0]),
+    );
+
+    expect(
+      pushed.some((script: string) =>
+        script.startsWith("window.applyDevicesModel("),
+      ),
+    ).toBe(true);
+
+    popover.destroy();
+  });
+
+  it("pushes the newest list, never a stale one", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    popover.setDevices(LISTED);
+    popover.setDevices({ state: "no-password" });
+
+    const pushed = lastWindow()
+      .webContents.executeJavaScript.mock.calls.map((call: unknown[]) =>
+        String(call[0]),
+      )
+      .filter((script: string) =>
+        script.startsWith("window.applyDevicesModel("),
+      );
+
+    expect(pushed.at(-1)).toContain("no-password");
+
+    popover.destroy();
+  });
+});
+
+/**
+ * Which pane the page is showing, reported to the main process.
+ *
+ * The tab is the page's own state — the user chose it, and a poll landing every
+ * couple of seconds must not snatch it back. But the poll needs to know it: the
+ * `host-list` request is authenticated and costs a login, and a panel on Usage
+ * is not looking at a device list. So the page says which pane it moved to, and
+ * this file remembers the last thing it said.
+ */
+describe("createPopover — which pane the page is showing", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  it("starts on Usage, the pane the page itself opens on", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+
+    // Before any window exists, and before the page has said anything: the
+    // honest answer is the one the markup ships with.
+    expect(popover.visibleTab()).toBe("usage");
+
+    popover.destroy();
+  });
+
+  it("follows the pane the page says it moved to", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_TAB_CHANNEL, lastWindow().webContents, "devices");
+
+    expect(popover.visibleTab()).toBe("devices");
+
+    send(POPOVER_SET_TAB_CHANNEL, lastWindow().webContents, "usage");
+
+    expect(popover.visibleTab()).toBe("usage");
+
+    popover.destroy();
+  });
+
+  it("ignores a pane name it does not know", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+
+    send(POPOVER_SET_TAB_CHANNEL, sender, "devices");
+
+    for (const payload of [undefined, null, 42, "settings", { tab: "usage" }]) {
+      send(POPOVER_SET_TAB_CHANNEL, sender, payload);
+    }
+
+    // The last thing the page actually said still stands. Falling back to
+    // Usage on a payload nobody understands would stand the list down under a
+    // user who is looking straight at it.
+    expect(popover.visibleTab()).toBe("devices");
+
+    popover.destroy();
+  });
+
+  it("ignores a pane reported by anything but its own page", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_TAB_CHANNEL, { someone: "else" }, "devices");
+
+    expect(popover.visibleTab()).toBe("usage");
+
+    popover.destroy();
+  });
+
+  it("stops listening for the pane once the panel is destroyed", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+    popover.destroy();
+
+    send(POPOVER_SET_TAB_CHANNEL, sender, "devices");
+
+    expect(popover.visibleTab()).toBe("usage");
   });
 });

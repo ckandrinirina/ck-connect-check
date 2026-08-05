@@ -49,20 +49,23 @@ import type {
 import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import {
-  DEVICES_MENU_LABEL,
-  buildDevicesModel,
-  createDevicesWindow,
-  type DeviceBlockRequest,
-  type DeviceRefusal,
-  type DevicesWindow,
-} from "./devices-window.js";
-import {
   UsagePoller,
   type HostListSource,
   type PortalSource,
   type SnapshotSource,
 } from "./poller.js";
-import { bindTrayToPopover, createPopover, type Popover } from "./popover.js";
+import {
+  bindTrayToPopover,
+  createPopover,
+  type DeviceBlockRequest,
+  type Popover,
+} from "./popover.js";
+import {
+  buildDevicesModel,
+  type DeviceRefusal,
+  type DevicesModel,
+} from "./view-model.js";
+import { DEVICES_MENU_LABEL } from "./tray.js";
 import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
 import {
   createAllowanceSync,
@@ -167,8 +170,6 @@ export interface MenuBarOptions {
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
   popover?: Popover;
-  /** The connected-devices window. Injected for the same reason the panel is. */
-  devices?: DevicesWindow;
 }
 
 export interface MenuBarApp {
@@ -253,6 +254,11 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       onChooseForfait: (label) => {
         setForfait(label);
       },
+      // The pane has already confirmed it; what it costs the router is settled
+      // in `setDeviceBlocked`, and a refusal there costs no request at all.
+      // Nothing is awaited because nothing is dropped: `setDeviceBlocked` puts
+      // the outcome on both surfaces before it returns one.
+      onSetBlocked: (request) => void setDeviceBlocked(request),
     });
 
   // The poller only publishes a title, so the popover's figures are gathered
@@ -291,20 +297,6 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const portalSource: PortalSource = options.portal ?? {
     read: () => readInfoConso(),
   };
-
-  // The device list is a window of its own rather than a section of the panel:
-  // the panel is 320×520 with nothing left to spend and nothing scrolls in it.
-  // Created before the poller, which asks it on every tick whether anyone is
-  // looking at the list.
-  const devices =
-    options.devices ??
-    createDevicesWindow({
-      // The page has already confirmed it; what it costs the router is settled
-      // in `setDeviceBlocked`, and a refusal there costs no request at all.
-      // Nothing is awaited here because nothing is dropped: `setDeviceBlocked`
-      // puts the outcome on the window itself before it returns one.
-      onSetBlocked: (request) => void setDeviceBlocked(request),
-    });
 
   function refreshPopover(): void {
     popover.setModel(
@@ -663,22 +655,27 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   let lastRefusal: DeviceRefusal | undefined;
 
   /**
-   * Pushes the window whatever the last list and the last filter add up to,
-   * with this machine's own interfaces named so its row can withhold the block
-   * control. The interfaces are read on each refresh rather than once at start:
-   * an adapter that comes up after launch is one this app must still recognise
-   * as its own before offering to block it.
+   * Pushes whatever the last list and the last filter add up to, with this
+   * machine's own interfaces named so its row can withhold the block control.
+   * The interfaces are read on each refresh rather than once at start: an
+   * adapter that comes up after launch is one this app must still recognise as
+   * its own before offering to block it.
    *
    * No password stored is its own state and not an unreachable router. The
-   * router is fine; it has not been asked anything, and the window says so and
+   * router is fine; it has not been asked anything, and the surface says so and
    * names where the password is set.
+   *
+   * Both surfaces are pushed while both exist. The panel's Devices tab is where
+   * the list is read from T-73 onwards and the window is deleted by T-76, so
+   * this is a fortnight of two receivers rather than a design — and pushing one
+   * of them would leave the other stating a household that had moved on.
    */
   function refreshDevices(): void {
-    devices.setDevices(
-      devicesNeedPassword
-        ? { state: "no-password" }
-        : buildDevicesModel(lastHosts, lastFilter, localMacs(), lastRefusal),
-    );
+    const model: DevicesModel = devicesNeedPassword
+      ? { state: "no-password" }
+      : buildDevicesModel(lastHosts, lastFilter, localMacs(), lastRefusal);
+
+    popover.setDevices(model);
   }
 
   /**
@@ -851,8 +848,13 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     client,
     config,
     hosts,
-    // The window being open is the only reason to ask for the list at all.
-    wantsDevices: () => devices.isOpen(),
+    // Someone actually looking at the list is the only reason to ask for it.
+    // T-66 read that off the devices window; T-76 deletes that window, so the
+    // condition is retargeted rather than dropped — the panel open *and* its
+    // Devices tab showing. A hidden panel and a panel on Usage stand the fetch
+    // down identically: neither is looking at a device list, and both would
+    // otherwise pay a login and a request every 30 seconds for nothing.
+    wantsDevices: () => popover.isOpen() && popover.visibleTab() === "devices",
     onDevices: (result) => {
       lastHosts = result;
       refreshDevices();
@@ -881,6 +883,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   const panel: Popover = {
     isOpen: () => popover.isOpen(),
     setModel: (model) => popover.setModel(model),
+    setDevices: (model) => popover.setDevices(model),
+    visibleTab: () => popover.visibleTab(),
+    showTab: (name) => popover.showTab(name),
     destroy: () => popover.destroy(),
     show(bounds) {
       popover.show(bounds);
@@ -923,7 +928,13 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     {
       label: DEVICES_MENU_LABEL,
       click: () => {
-        devices.open();
+        // The entry used to open a window. It opens the panel on the tab that
+        // replaced it — the tab first, so a panel arriving on Usage never
+        // flashes past on the way. Never a toggle: someone reaching for the
+        // list twice wants the list, not a panel that has just dismissed
+        // itself.
+        panel.showTab("devices");
+        panel.show();
       },
     },
     { type: "separator" },
@@ -946,7 +957,6 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       clearInterval(staleCheck);
       poller.stop();
       popover.destroy();
-      devices.destroy();
       tray.destroy();
     },
   };

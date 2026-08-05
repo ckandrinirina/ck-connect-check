@@ -295,6 +295,122 @@ clamp consumption to zero and leave the dial reading 0% indefinitely, with
 nothing on screen suggesting why. Withholding the dial is the honest failure; a
 confident wrong one is the dangerous one.
 
+## The device list
+
+Everything above happens on the panel's **Usage** tab. The panel has a second
+one, **Devices**, and it answers a different question: who is on the Wi-Fi, and
+who the router is refusing.
+
+Two ways in. Open the panel and press **Devices** in the strip at the top of it;
+or right-click the menu bar item and choose **Connected devices…**, which opens
+the panel already on that tab. The panel comes back on whichever tab you left it
+on, so someone who went looking for a device does not have to find it twice.
+
+Each row stacks what the router knows about one device: the name it gave the
+router on the first line, its IP address under that, and its address, network and
+how long it has been connected on a third. The word on the right — **Allowed** or
+**Blocked** — is what the router's own filter is doing about it, and the control
+beside it is what changes that. A word rather than a colour, so the row still
+says something in greyscale.
+
+A device that gives the router no name falls back to its own address rather than
+to a shared word like "Unknown": a placeholder would make every nameless device
+look like the same one. The IP address is shown but nothing in the app is ever
+keyed on it — a DHCP lease moves. The MAC address is what identifies a device
+here, and what a block is written against.
+
+There is deliberately **no column for how a device is connected** and no dot for
+whether it is doing anything. The router's host list carries no such element —
+that was captured off this device rather than assumed, and `/api/lan/HostInfo`,
+which some firmwares answer with more, does not exist on this one. A column that
+could only ever be blank is worse than no column at all.
+
+The list rides the poll that is already running, and **only while the panel is
+open on the Devices tab**. A closed panel and a panel showing Usage both stand it
+down: reading the list needs an authenticated request, and neither is looking at
+one.
+
+Four things leave the tab with no rows, and none of them is the same answer as
+the others. A router that is not answering says it is waiting — never a dialog,
+because the app runs unattended and there is nobody there to dismiss one. A list
+that is genuinely empty says so outright: no device is connected. And with no
+router password stored, the router has simply not been asked; the tab says so and
+points at the settings behind the ⚙ button, because that is where the answer is.
+
+A device that was blocked and has since disappeared **still appears**, marked
+`Blocked`, with `Not connected` where its duration would be. It has to: a blocked
+device stops associating, so a list that only showed what was connected would ask
+it to do the one thing the block prevents before it could be unblocked.
+
+### Blocking a device
+
+**Blocking writes the router's own Wi-Fi MAC filter.** It is not a rule the app
+keeps and enforces; it is the same list you would edit in the router's web
+interface, and the app is only another way of editing it.
+
+That has consequences worth knowing before the first press:
+
+- **It needs the stored router password** — the router's admin password, the one
+  the YAS sync also uses, held in the Keychain rather than in `config.json`. Not
+  only the write: even _reading_ the filter needs an authenticated session, and
+  the router answers `100003` without one. With no password stored there is
+  nothing for the access word to state and nothing for the controls to do.
+- **A refused sign-in is not retried.** The router locks the admin account after
+  **five** consecutive refusals, so a second attempt takes a deliberate second
+  press rather than a retry the app makes on your behalf. It is the same
+  reasoning that parks automatic syncing, applied with more force, because a
+  block is always something you chose to do.
+- **The write is the whole list.** The app reads the filter the router currently
+  holds, adds or removes the one address, and writes all of it back — the
+  endpoint takes every SSID block and every slot at once, so a partial write
+  would quietly unblock everyone it failed to mention. If the read fails, no
+  write happens at all.
+- **The filter holds at most ten addresses per SSID.** That is the firmware's
+  limit, not the app's. At the cap a further block is refused before any request
+  leaves the app, and the refusal names the cap rather than reporting a failure.
+- **Every block is confirmed before it is sent,** by a prompt naming the device
+  and its MAC address — two devices can share a name, and the address is what the
+  write acts on. The row does not move on the press either: it moves once the
+  filter has been read again, so what you see is what the router is doing rather
+  than what the press assumed.
+
+### This Mac cannot be blocked
+
+Asking to block the machine the app is running on is refused, always. Blocking it
+would cut this Mac off from the router the app is talking to, and nothing inside
+the app could undo it — recovery would mean the router's own web interface from
+some other device, or a factory reset. No confirmation dialog makes that a
+reasonable thing to offer.
+
+Its row carries a sentence where the control would be, rather than a greyed-out
+button: a disabled control is one attribute away from being pressed, and an empty
+space would leave the omission to be guessed at. It is identified by MAC address,
+matched against this machine's own interfaces, never by IP — a DHCP lease moves,
+and a guard that followed it would eventually protect the wrong row. Unblocking
+this Mac is not refused; only blocking it is.
+
+### A block lives on the router
+
+This is the part that surprises people. A block is stored in the router's filter,
+**not in `config.json`**, so:
+
+- it survives quitting and restarting the app;
+- it survives rebooting this Mac, and rebooting the router;
+- it is equally visible — and removable — from the router's own web interface;
+- uninstalling the app does not lift it. Unblock the device first, or clear the
+  filter from the router's web interface afterwards.
+
+There is no config key that records a block, and adding one would achieve
+nothing: the router is asked what it is refusing on every read, and its answer is
+the only one the tab shows.
+
+One honest limitation: the router states its filter mode as a number, and the
+mapping from that number to blacklist or whitelist is **inferred** from the
+router's web interface rather than observed on the wire. The app only ever writes
+a blacklist — that path has been exercised against the live router — and it
+refuses to touch a filter it reads as a whitelist rather than reason about a mode
+it cannot verify.
+
 ## The config file
 
 Settings live in a single JSON file:

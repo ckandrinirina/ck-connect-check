@@ -3,10 +3,11 @@
  *
  * The page runs under `default-src 'none'` with context isolation on, so it has
  * no `require`, no network and no Electron. This script runs beside it in the
- * isolated world and hands it exactly five sends — start a sync, store a
- * password, set the plan size, set the plan length and name the forfait to
- * measure — and nothing else: no `ipcRenderer`, no channel names, no way to
- * reach a channel this file does not name.
+ * isolated world and hands it exactly seven sends — start a sync, store a
+ * password, set the plan size, set the plan length, name the forfait to
+ * measure, block or unblock a device, and say which pane is showing — and
+ * nothing else: no `ipcRenderer`, no channel names, no way to reach a channel
+ * this file does not name.
  *
  * It is a `.cts` on purpose. The rest of the app is ESM, but a preload script is
  * loaded by Electron rather than by Node's ESM loader, so it is emitted as
@@ -24,9 +25,8 @@ const SAVE_PASSWORD_CHANNEL = "popover:save-password";
 const SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
 const SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 const CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
-
-/** Kept in step with `src/main/devices-window.ts`, which listens on this one. */
-const SET_BLOCKED_CHANNEL = "devices:set-blocked";
+const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
+const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
 
 contextBridge.exposeInMainWorld("popoverBridge", {
   sync(): void {
@@ -54,23 +54,18 @@ contextBridge.exposeInMainWorld("popoverBridge", {
     // against the next page read, not here.
     ipcRenderer.send(CHOOSE_FORFAIT_CHANNEL, String(label));
   },
-});
-
-/**
- * The devices window's own bridge, exposing one send and nothing else.
- *
- * The same file serves both pages — each loads this script and reaches only the
- * bridge it uses — so the devices page has no way to sync, store a password or
- * change a setting, and the panel has no way to block a device.
- *
- * Confirming the press is the page's business and has already happened by the
- * time this runs; deciding what it costs the router is the main process's.
- */
-contextBridge.exposeInMainWorld("devicesBridge", {
+  setTab(name: string): void {
+    // Which pane is showing is the page's own state and stays there. This only
+    // tells the main process, which needs it to decide whether the
+    // authenticated device list is worth a request this tick.
+    ipcRenderer.send(POPOVER_SET_TAB_CHANNEL, String(name));
+  },
   setBlocked(request: { mac: string; blocked: boolean }): void {
     // Rebuilt rather than forwarded, so nothing the page hangs off the object
-    // travels with it.
-    ipcRenderer.send(SET_BLOCKED_CHANNEL, {
+    // travels with it. Confirming the press is the page's business and has
+    // already happened by the time this runs; deciding what it costs the router
+    // is the main process's, which validates this payload again on arrival.
+    ipcRenderer.send(POPOVER_SET_BLOCKED_CHANNEL, {
       mac: String(request.mac),
       blocked: request.blocked === true,
     });

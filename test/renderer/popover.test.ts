@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PlanLimitRefusal } from "../../src/config/config.js";
 import { defaultConfig, type AppConfig } from "../../src/config/defaults.js";
@@ -31,6 +31,9 @@ import { selectForfait } from "../../src/orange/select.js";
 import type { OrangeForfait } from "../../src/orange/types.js";
 import {
   buildPopoverModel,
+  type DeviceRefusal,
+  type DeviceRow,
+  type DevicesModel,
   type PopoverModel,
   type PortalFailure,
 } from "../../src/main/view-model.js";
@@ -41,6 +44,12 @@ import {
  * number. `test/main/popover.test.ts` guards the window that uses it.
  */
 const POPOVER_HEIGHT = 520;
+
+/** Its width, on the same terms and for the same reason. */
+const POPOVER_WIDTH = 320;
+
+/** What `body` spends on each side, which no row inside it can have back. */
+const BODY_SIDE_PADDING = 16;
 
 /**
  * `import.meta.url` is turned into a path before anything is resolved against
@@ -58,6 +67,27 @@ function readRendererFile(name: string): string {
 
 const INDEX_HTML = readRendererFile("index.html");
 const POPOVER_CSS = readRendererFile("popover.css");
+
+/**
+ * One rule's declarations, by the exact selector it is written under.
+ *
+ * jsdom lays nothing out, so every claim about size or overflow is a claim
+ * about what the stylesheet declares — the closest an engine-less test can
+ * honestly get, and the way the two views are already asserted.
+ */
+function cssBody(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const body = new RegExp(
+    `(?:^|[},])\\s*${escaped}\\s*\\{([^}]*)\\}`,
+    "m",
+  ).exec(POPOVER_CSS)?.[1];
+
+  if (body === undefined) {
+    throw new Error(`popover.css has no rule for ${selector}`);
+  }
+
+  return body;
+}
 
 /** The page's own markup, so the tests run against what actually ships. */
 function loadPage(): void {
@@ -1029,6 +1059,8 @@ interface FakeBridge {
   setPlanLimit: ReturnType<typeof vi.fn>;
   setPlanDays: ReturnType<typeof vi.fn>;
   chooseForfait: ReturnType<typeof vi.fn>;
+  setBlocked: ReturnType<typeof vi.fn>;
+  setTab: ReturnType<typeof vi.fn>;
 }
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
@@ -1039,6 +1071,8 @@ function stubBridge(): FakeBridge {
     setPlanLimit: vi.fn(),
     setPlanDays: vi.fn(),
     chooseForfait: vi.fn(),
+    setBlocked: vi.fn(),
+    setTab: vi.fn(),
   };
 
   window.popoverBridge = bridge;
@@ -3506,5 +3540,717 @@ describe("the panel's tabs — what a reopen remembers", () => {
     window.resetPopoverView();
 
     expect(selectedTab()).toBe("devices");
+  });
+});
+
+/*
+ * The Devices pane.
+ *
+ * T-66 to T-70 built this list in a 520 px window of its own; T-72 gave the
+ * panel a tab to put it on, and these are the same claims restated at 320. What
+ * is shown does not change — the five conditions, the row a blocked-and-absent
+ * device keeps, the identity a row holds across a poll, and this machine's own
+ * sentence all come across intact. Only the shape does: the name and the address
+ * stack, the access word sits on the right, and the pane scrolls because a
+ * household's device count has no upper bound and no layout fits one.
+ */
+
+/** One device, spelled as the model hands it over. */
+function device(overrides: Partial<DeviceRow> = {}): DeviceRow {
+  return {
+    name: "MacBookPro",
+    ip: "192.168.8.100",
+    mac: "A2:00:5E:00:00:01",
+    network: "HUAWEI-B310-XXXX",
+    connectedFor: "5h 52m",
+    blocked: false,
+    present: true,
+    local: false,
+    ...overrides,
+  };
+}
+
+const LAPTOP = device();
+
+const PHONE = device({
+  name: "galaxy-s10e",
+  ip: "192.168.8.101",
+  mac: "00:1A:2B:00:00:02",
+  connectedFor: "1h 0m",
+});
+
+const TABLET = device({
+  name: "iPad",
+  ip: "192.168.8.102",
+  mac: "00:1A:2B:00:00:03",
+  connectedFor: "12m",
+});
+
+function listed(...devices: DeviceRow[]): DevicesModel {
+  return { state: "listed", devices };
+}
+
+function refused(
+  refusal: DeviceRefusal,
+  ...devices: DeviceRow[]
+): DevicesModel {
+  return { state: "listed", devices, refusal };
+}
+
+/**
+ * The cap the firmware actually enforces — ten per SSID, established against the
+ * live router in T-62. A message quoting the wrong number is worse than none.
+ */
+const FILTER_CAP = 10;
+
+/**
+ * A router code nobody here has a name for, at the endpoint a filter write goes
+ * to. Deliberately not one of the codes this codebase names, so what is asserted
+ * is the "carry it whole" path rather than a branch spelled out by hand.
+ */
+const UNNAMED_REFUSAL: DeviceRefusal = {
+  kind: "error",
+  source: "api",
+  code: 100004,
+  endpoint: "/api/wlan/multi-macfilter-settings",
+};
+
+function applyDevices(model: DevicesModel): void {
+  window.applyDevicesModel(model);
+}
+
+function deviceRows(): HTMLElement[] {
+  return [...pane("devices").querySelectorAll<HTMLElement>("[data-mac]")];
+}
+
+function deviceRow(mac: string): HTMLElement {
+  const element = pane("devices").querySelector<HTMLElement>(
+    `[data-mac="${mac}"]`,
+  );
+
+  if (element === null) {
+    throw new Error(`the Devices pane has no row for ${mac}`);
+  }
+
+  return element;
+}
+
+function partOfRow(mac: string, selector: string): string {
+  return deviceRow(mac).querySelector(selector)?.textContent?.trim() ?? "";
+}
+
+/** Which of the four the pane says it is in. */
+function devicesState(): string | undefined {
+  return pane("devices").dataset["devicesState"];
+}
+
+/** Every sentence the pane is currently showing, run together. */
+function shownDevicesNotice(): string {
+  return [
+    ...pane("devices").querySelectorAll<HTMLElement>("[data-devices-notice]"),
+  ]
+    .filter((notice) => !notice.hidden)
+    .map((notice) => notice.textContent?.trim() ?? "")
+    .filter((text) => text !== "")
+    .join(" | ");
+}
+
+/**
+ * The five conditions that are not a populated list, each named beside the model
+ * that produces it. Held in one table because the claim is about all five
+ * together: that each reads as itself and none collapses into "nothing to show".
+ */
+const DEVICE_CONDITIONS: { name: string; model: DevicesModel }[] = [
+  { name: "the router is unreachable", model: { state: "offline" } },
+  { name: "the router says nothing is connected", model: listed() },
+  { name: "no router password is stored", model: { state: "no-password" } },
+  {
+    name: "the router refused the write",
+    model: refused(UNNAMED_REFUSAL, PHONE),
+  },
+  {
+    name: "the filter is full",
+    model: refused({ kind: "full", cap: FILTER_CAP }, PHONE),
+  },
+];
+
+describe("the Devices pane — the rows", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+    tabFor("devices").click();
+  });
+
+  it("writes one row per host, in the order the model gives them", () => {
+    applyDevices(listed(LAPTOP, PHONE, TABLET));
+
+    // The ordering is the domain's, stable across polls so a row cannot move
+    // under a press. The pane sorts nothing of its own.
+    expect(deviceRows().map((row) => row.dataset["mac"])).toEqual([
+      LAPTOP.mac,
+      PHONE.mac,
+      TABLET.mac,
+    ]);
+  });
+
+  it("carries the name, the address and the access word on every row", () => {
+    applyDevices(listed(PHONE));
+
+    expect(partOfRow(PHONE.mac, ".device-name")).toBe("galaxy-s10e");
+    expect(partOfRow(PHONE.mac, ".device-ip")).toBe("192.168.8.101");
+    expect(partOfRow(PHONE.mac, ".device-access")).toBe("Allowed");
+  });
+
+  it("states a blocked device in words rather than by a colour alone", () => {
+    applyDevices(listed(device({ blocked: true })));
+
+    // A word, never a tint on its own: the panel is read in greyscale by
+    // anyone who cannot separate the hues, and by every screenshot of it.
+    expect(partOfRow(LAPTOP.mac, ".device-access")).toBe("Blocked");
+  });
+
+  it("marks the row itself, so a stylesheet has something to hang on", () => {
+    applyDevices(listed(device({ blocked: true, present: false })));
+
+    const row = deviceRow(LAPTOP.mac);
+
+    expect(row.dataset["blocked"]).toBe("true");
+    expect(row.dataset["present"]).toBe("false");
+    expect(row.dataset["local"]).toBe("false");
+  });
+
+  it("keeps a device's own row across a refresh rather than building it again", () => {
+    applyDevices(listed(LAPTOP, PHONE));
+
+    const before = deviceRow(PHONE.mac);
+
+    // A lease that moved and a name that changed, on the same address: the MAC
+    // is the only field that can key on, and the row a user is reading must not
+    // be replaced under them by a poll landing every 30 seconds.
+    applyDevices(
+      listed(LAPTOP, device({ ...PHONE, name: "Galaxy", ip: "192.168.8.120" })),
+    );
+
+    expect(deviceRow(PHONE.mac)).toBe(before);
+    expect(partOfRow(PHONE.mac, ".device-name")).toBe("Galaxy");
+    expect(partOfRow(PHONE.mac, ".device-ip")).toBe("192.168.8.120");
+  });
+
+  it("takes exactly the row of a device that has gone", () => {
+    applyDevices(listed(LAPTOP, PHONE, TABLET));
+
+    const kept = deviceRow(TABLET.mac);
+
+    applyDevices(listed(LAPTOP, TABLET));
+
+    expect(deviceRows().map((row) => row.dataset["mac"])).toEqual([
+      LAPTOP.mac,
+      TABLET.mac,
+    ]);
+    expect(deviceRow(TABLET.mac)).toBe(kept);
+  });
+
+  it("gives a device the filter blocks and the router no longer reports a row", () => {
+    // T-67. A blocked device stops associating, so it is in the list on the
+    // filter's word alone — and it is listed precisely so it can be unblocked
+    // without having to connect first, which is the one thing it cannot do.
+    applyDevices(
+      listed(device({ blocked: true, present: false, connectedFor: "" })),
+    );
+
+    expect(deviceRows()).toHaveLength(1);
+    expect(partOfRow(LAPTOP.mac, ".device-access")).toBe("Blocked");
+    expect(deviceRow(LAPTOP.mac).textContent).toContain("Not connected");
+  });
+
+  it("writes a device's own name as text, never as markup", () => {
+    applyDevices(listed(device({ name: "<img src=x onerror=alert(1)>" })));
+
+    const row = deviceRow(LAPTOP.mac);
+
+    expect(row.querySelector("img")).toBeNull();
+    expect(partOfRow(LAPTOP.mac, ".device-name")).toBe(
+      "<img src=x onerror=alert(1)>",
+    );
+  });
+
+  it("says why this machine has no control of its own", () => {
+    // T-69. Blocking the Mac the app runs on severs the connection the undo
+    // would travel over, so the row says so rather than leaving an empty space
+    // for the omission to be guessed at.
+    applyDevices(listed(device({ local: true })));
+
+    const row = deviceRow(LAPTOP.mac);
+
+    expect(row.dataset["local"]).toBe("true");
+    expect(row.textContent).toMatch(/this mac/i);
+  });
+
+  it("renders every row before a single model has been pushed", () => {
+    // The pane ships in the markup and the module renders an offline state on
+    // load, so a panel opened before the first poll says it is waiting rather
+    // than claiming the household is empty.
+    expect(devicesState()).toBeDefined();
+    expect(deviceRows()).toEqual([]);
+  });
+});
+
+describe("the Devices pane — why there is no list, or why a press changed nothing", () => {
+  beforeEach(() => {
+    stubBridge();
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+    tabFor("devices").click();
+  });
+
+  it("states an empty list rather than showing a bare pane", () => {
+    applyDevices(listed());
+
+    expect(devicesState()).toBe("empty");
+    expect(shownDevicesNotice()).toMatch(/no device is connected/i);
+  });
+
+  it("renders an unreachable router as its own state, not as an empty list", () => {
+    applyDevices({ state: "offline" });
+
+    // A router that is not answering has said nothing whatever about which
+    // devices are connected. "No devices" is printed only when it said so.
+    expect(devicesState()).toBe("offline");
+    expect(shownDevicesNotice()).not.toMatch(/no device is connected/i);
+  });
+
+  it("states a missing password as a missing password, not as a router failure", () => {
+    applyDevices({ state: "no-password" });
+
+    expect(devicesState()).toBe("no-password");
+    expect(shownDevicesNotice().toLowerCase()).toContain("password");
+  });
+
+  it("names the settings, which are now one press away rather than another window", () => {
+    applyDevices({ state: "no-password" });
+
+    // The window's own wording sent the user to the menu bar panel. This *is*
+    // the panel, so the sentence names the toggle that opens the form instead —
+    // or it states a problem with no way out of it.
+    expect(shownDevicesNotice()).toMatch(/settings/i);
+  });
+
+  it("states a refusal the router answered with a number, code and endpoint and all", () => {
+    applyDevices(refused(UNNAMED_REFUSAL, PHONE));
+
+    const said = shownDevicesNotice();
+
+    expect(said).toContain("100004");
+    expect(said).toContain("/api/wlan/multi-macfilter-settings");
+  });
+
+  it("states a full filter with the cap in it, rather than as a write that failed", () => {
+    applyDevices(refused({ kind: "full", cap: FILTER_CAP }, PHONE));
+
+    const said = shownDevicesNotice();
+
+    expect(said).toContain("10");
+    expect(said.toLowerCase()).toContain("full");
+  });
+
+  it("gives each of the five conditions a sentence of its own", () => {
+    const said: string[] = [];
+
+    for (const condition of DEVICE_CONDITIONS) {
+      applyDevices(condition.model);
+      said.push(shownDevicesNotice());
+    }
+
+    expect(said).toHaveLength(5);
+    expect(said.filter((text) => text === "")).toEqual([]);
+    // Five conditions, five different sentences: none of them collapses into
+    // the same "there is nothing to show".
+    expect(new Set(said).size).toBe(5);
+  });
+
+  it("keeps every device row when a write is refused", () => {
+    applyDevices(listed(LAPTOP, PHONE));
+
+    const kept = deviceRow(PHONE.mac);
+
+    applyDevices(refused(UNNAMED_REFUSAL, LAPTOP, PHONE));
+
+    // A write that failed has said nothing about which devices are connected,
+    // so the complaint sits beside the rows rather than in place of them.
+    expect(deviceRows()).toHaveLength(2);
+    expect(deviceRow(PHONE.mac)).toBe(kept);
+  });
+
+  it("takes the complaint back down once a press is not refused", () => {
+    applyDevices(refused(UNNAMED_REFUSAL, PHONE));
+    applyDevices(listed(PHONE));
+
+    expect(shownDevicesNotice()).toBe("");
+  });
+
+  it("writes the refusal as text, never as markup", () => {
+    applyDevices(
+      refused(
+        { ...UNNAMED_REFUSAL, endpoint: "<img src=x onerror=alert(1)>" },
+        PHONE,
+      ),
+    );
+
+    expect(pane("devices").querySelector("img")).toBeNull();
+    expect(shownDevicesNotice()).toContain("<img src=x onerror=alert(1)>");
+  });
+
+  it("raises no dialog for any of them, the app being unattended", () => {
+    const alerted = vi
+      .spyOn(window, "alert")
+      .mockImplementation(() => undefined);
+
+    for (const condition of DEVICE_CONDITIONS) {
+      applyDevices(condition.model);
+    }
+
+    expect(alerted).not.toHaveBeenCalled();
+  });
+});
+
+/** Every declaration block in `popover.css` whose selector mentions a device. */
+function deviceRuleBodies(): string[] {
+  return [...POPOVER_CSS.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+    .filter((rule) => (rule[1] ?? "").includes(".device"))
+    .map((rule) => rule[2] ?? "");
+}
+
+describe("the Devices pane — the panel it has to fit", () => {
+  it("leaves the popover the size it has always been", () => {
+    // Read out of the source rather than imported: pulling the constants in
+    // would drag Electron into a jsdom run for two numbers, and
+    // `test/main/popover.test.ts` guards the window that uses them.
+    const source = readFileSync(
+      resolve(RENDERER_DIR, "../main/popover.ts"),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      new RegExp(`POPOVER_WIDTH\\s*=\\s*${String(POPOVER_WIDTH)}`),
+    );
+    expect(source).toMatch(
+      new RegExp(`POPOVER_HEIGHT\\s*=\\s*${String(POPOVER_HEIGHT)}`),
+    );
+  });
+
+  it("declares no device rule wider than the panel's own content box", () => {
+    const bodies = deviceRuleBodies();
+
+    expect(bodies.length).toBeGreaterThan(0);
+
+    const declared = bodies.flatMap((body) =>
+      [...body.matchAll(/(?:^|[\s;])(?:min-)?width:\s*(\d+)px/g)].map((match) =>
+        Number(match[1]),
+      ),
+    );
+
+    // jsdom lays nothing out, so this is a budget rather than a measurement:
+    // 320 px of window less the 16 px of body padding either side.
+    for (const width of declared) {
+      expect(width).toBeLessThanOrEqual(POPOVER_WIDTH - BODY_SIDE_PADDING * 2);
+    }
+  });
+
+  it("truncates a long name or address rather than pushing the row sideways", () => {
+    // A device names itself and its name has no length limit, so the row has to
+    // give somewhere. It gives by ellipsis: a name that ran off the right edge
+    // would take the access word with it.
+    for (const selector of [".device-name", ".device-ip", ".device-meta"]) {
+      const body = cssBody(selector);
+
+      expect(body).toMatch(/overflow:\s*hidden/);
+      expect(body).toMatch(/text-overflow:\s*ellipsis/);
+      expect(body).toMatch(/white-space:\s*nowrap/);
+    }
+
+    // Ellipsis only truncates inside a flex item that is allowed to shrink.
+    expect(cssBody(".device-identity")).toMatch(/min-width:\s*0/);
+  });
+
+  it("scrolls the device list, and only it", () => {
+    // The one genuine departure from the Usage pane. A household's device count
+    // is unbounded and no layout fits an unknown number of rows — whereas the
+    // figures are a fixed set that was made to fit 520 px, and a popover that
+    // closes on blur cannot usefully be scrolled for them.
+    expect(cssBody('.pane[data-pane="devices"]')).toMatch(/overflow-y:\s*auto/);
+    expect(cssBody('.pane[data-pane="usage"]')).toMatch(/overflow:\s*hidden/);
+  });
+});
+
+/**
+ * The block control, on the panel's own bridge.
+ *
+ * Everything T-68 and T-69 decided about a press is carried over rather than
+ * rewritten: the confirmation, the row that waits for the re-read instead of
+ * painting itself, the control armed exactly once however many polls land on
+ * it, and this machine's row having no control at all.
+ */
+
+function blockControl(mac: string): HTMLButtonElement | null {
+  return deviceRow(mac).querySelector<HTMLButtonElement>("[data-block]");
+}
+
+function pressBlock(mac: string): void {
+  const control = blockControl(mac);
+
+  if (control === null) {
+    throw new Error(`the row for ${mac} has no block control`);
+  }
+
+  control.click();
+}
+
+describe("the Devices pane — the block control", () => {
+  let bridge: FakeBridge;
+  let confirmed: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    confirmed = vi.spyOn(window, "confirm").mockReturnValue(true);
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+    tabFor("devices").click();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("offers to block a device the router is allowing", () => {
+    applyDevices(listed(LAPTOP));
+
+    expect(blockControl(LAPTOP.mac)?.textContent?.trim()).toBe("Block");
+  });
+
+  it("offers to unblock a device the router is already refusing", () => {
+    applyDevices(listed(device({ blocked: true })));
+
+    expect(blockControl(LAPTOP.mac)?.textContent?.trim()).toBe("Unblock");
+  });
+
+  it("gives every eligible row its own control", () => {
+    applyDevices(listed(LAPTOP, PHONE, TABLET));
+
+    for (const mac of [LAPTOP.mac, PHONE.mac, TABLET.mac]) {
+      expect(blockControl(mac)).not.toBeNull();
+    }
+  });
+
+  it("gives a blocked but absent device a control, which is its only way back", () => {
+    // T-67. A blocked device stops associating, so without a control of its own
+    // it could only be unblocked by connecting first — the one thing it cannot
+    // do while it is blocked.
+    applyDevices(
+      listed(device({ blocked: true, present: false, connectedFor: "" })),
+    );
+
+    expect(blockControl(LAPTOP.mac)?.textContent?.trim()).toBe("Unblock");
+  });
+
+  it("asks before it sends anything", () => {
+    applyDevices(listed(LAPTOP));
+    pressBlock(LAPTOP.mac);
+
+    expect(confirmed).toHaveBeenCalledOnce();
+    expect(bridge.setBlocked).toHaveBeenCalledOnce();
+    expect(bridge.setBlocked).toHaveBeenCalledWith({
+      mac: LAPTOP.mac,
+      blocked: true,
+    });
+  });
+
+  it("sends nothing at all when the confirmation is declined", () => {
+    confirmed.mockReturnValue(false);
+    applyDevices(listed(LAPTOP));
+    pressBlock(LAPTOP.mac);
+
+    expect(confirmed).toHaveBeenCalledOnce();
+    expect(bridge.setBlocked).not.toHaveBeenCalled();
+  });
+
+  it("sends the unblock for a device already blocked", () => {
+    applyDevices(listed(device({ blocked: true })));
+    pressBlock(LAPTOP.mac);
+
+    expect(bridge.setBlocked).toHaveBeenCalledOnce();
+    expect(bridge.setBlocked).toHaveBeenCalledWith({
+      mac: LAPTOP.mac,
+      blocked: false,
+    });
+  });
+
+  it("names the device in what it asks, so the wrong row cannot be confirmed", () => {
+    applyDevices(listed(PHONE));
+    pressBlock(PHONE.mac);
+
+    // Two devices can share a name, and the address is what the write acts on.
+    const asked = String(confirmed.mock.calls[0]?.[0] ?? "");
+
+    expect(asked).toContain(PHONE.name);
+    expect(asked).toContain(PHONE.mac);
+  });
+
+  it("does not re-arm the same control on every poll", () => {
+    applyDevices(listed(LAPTOP));
+
+    // A row is kept between polls, so a listener added on every render would
+    // fire once per poll the row had survived — one press, a handful of writes.
+    for (let poll = 0; poll < 4; poll += 1) {
+      applyDevices(listed(LAPTOP));
+    }
+
+    pressBlock(LAPTOP.mac);
+
+    expect(bridge.setBlocked).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the row saying what the router last said, not what the press assumed", () => {
+    // T-68. The router is the only thing that knows what it is now refusing,
+    // and a row painted optimistically would state a block that may have been
+    // refused. The next pushed model is the only thing that moves it.
+    applyDevices(listed(LAPTOP));
+    pressBlock(LAPTOP.mac);
+
+    expect(partOfRow(LAPTOP.mac, ".device-access")).toBe("Allowed");
+    expect(blockControl(LAPTOP.mac)?.textContent?.trim()).toBe("Block");
+  });
+
+  it("follows the re-read when it lands, in the row it already has", () => {
+    applyDevices(listed(LAPTOP));
+
+    const before = deviceRow(LAPTOP.mac);
+
+    pressBlock(LAPTOP.mac);
+    applyDevices(listed(device({ blocked: true })));
+
+    expect(deviceRow(LAPTOP.mac)).toBe(before);
+    expect(partOfRow(LAPTOP.mac, ".device-access")).toBe("Blocked");
+    expect(blockControl(LAPTOP.mac)?.textContent?.trim()).toBe("Unblock");
+  });
+
+  it("survives a press with no bridge behind it rather than reporting an error", () => {
+    // Under jsdom, and for a split second before the bridge is installed, the
+    // panel is a display and nothing more. A missing bridge costs a press, not
+    // an exception.
+    delete window.popoverBridge;
+    applyDevices(listed(LAPTOP));
+
+    expect(() => {
+      pressBlock(LAPTOP.mac);
+    }).not.toThrow();
+  });
+
+  it("keeps every row and its control when a write is refused", () => {
+    applyDevices(listed(LAPTOP, PHONE));
+    applyDevices(refused(UNNAMED_REFUSAL, LAPTOP, PHONE));
+
+    // T-70. The complaint rides beside the list; a pane that emptied over a
+    // refused press would throw away the one thing it exists to show.
+    expect(deviceRows()).toHaveLength(2);
+    expect(blockControl(LAPTOP.mac)).not.toBeNull();
+    expect(blockControl(PHONE.mac)).not.toBeNull();
+    expect(shownDevicesNotice()).toContain("100004");
+  });
+
+  it("states a whitelist filter as itself rather than as an unexplained refusal", () => {
+    // T-68. The app only ever writes a blocked list, and a whitelist blocks
+    // every device it does not name — so the refusal names the mode and says
+    // where to change it.
+    applyDevices(refused({ kind: "whitelist" }, LAPTOP));
+
+    expect(shownDevicesNotice().toLowerCase()).toContain("whitelist");
+  });
+});
+
+describe("the Devices pane — this machine's own row", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    apply(modelSyncing({ phase: "idle" }, ANCHOR));
+    tabFor("devices").click();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("carries no block control at all", () => {
+    // T-69. Absent rather than disabled: a disabled control is one attribute
+    // away from being pressed, and blocking the Mac the app runs on severs the
+    // connection the undo would have to travel over.
+    applyDevices(listed(device({ local: true })));
+
+    expect(blockControl(LAPTOP.mac)).toBeNull();
+  });
+
+  it("states why, where the control would have been", () => {
+    applyDevices(listed(device({ local: true })));
+
+    const said = deviceRow(LAPTOP.mac).querySelector(".device-local");
+
+    expect(said?.textContent?.trim()).not.toBe("");
+    expect(said?.textContent).toMatch(/this mac/i);
+  });
+
+  it("still reads as a full row, with its access stated like any other", () => {
+    applyDevices(listed(device({ local: true })));
+
+    expect(partOfRow(LAPTOP.mac, ".device-name")).toBe(LAPTOP.name);
+    expect(partOfRow(LAPTOP.mac, ".device-ip")).toBe(LAPTOP.ip);
+    expect(partOfRow(LAPTOP.mac, ".device-access")).toBe("Allowed");
+  });
+
+  it("leaves every other row its control", () => {
+    applyDevices(listed(device({ local: true }), PHONE, TABLET));
+
+    expect(blockControl(LAPTOP.mac)).toBeNull();
+    expect(blockControl(PHONE.mac)).not.toBeNull();
+    expect(blockControl(TABLET.mac)).not.toBeNull();
+  });
+
+  it("leaves every row its control when this machine is not in the list", () => {
+    applyDevices(listed(LAPTOP, PHONE));
+
+    expect(blockControl(LAPTOP.mac)).not.toBeNull();
+    expect(blockControl(PHONE.mac)).not.toBeNull();
+  });
+
+  it("says it once however many polls land on the same row", () => {
+    for (let poll = 0; poll < 3; poll += 1) {
+      applyDevices(listed(device({ local: true })));
+    }
+
+    expect(
+      deviceRow(LAPTOP.mac).querySelectorAll(".device-local"),
+    ).toHaveLength(1);
+  });
+
+  it("puts a control back, armed exactly once, if the row stops being this machine", () => {
+    applyDevices(listed(device({ local: true })));
+    applyDevices(listed(LAPTOP));
+
+    expect(deviceRow(LAPTOP.mac).querySelector(".device-local")).toBeNull();
+
+    pressBlock(LAPTOP.mac);
+
+    expect(bridge.setBlocked).toHaveBeenCalledOnce();
+  });
+
+  it("leaves no handler behind when a control is replaced by the reason", () => {
+    applyDevices(listed(LAPTOP));
+
+    const control = blockControl(LAPTOP.mac);
+
+    applyDevices(listed(device({ local: true })));
+    control?.click();
+
+    // A row is kept between polls, so a detached control still holding a live
+    // handler is exactly the stale press this file is at pains to avoid.
+    expect(bridge.setBlocked).not.toHaveBeenCalled();
   });
 });

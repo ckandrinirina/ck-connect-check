@@ -116,13 +116,14 @@ export interface UsagePollerOptions {
    */
   hosts?: HostListSource;
   /**
-   * Whether anything is looking at the device list — the devices window being
-   * open, in the app. Read on every tick rather than set once, for the reason
-   * the panel's visibility is: a window can be closed without telling us.
+   * Whether anything is looking at the device list — the panel being open on
+   * its Devices tab, in the app. Read on every tick rather than set once, for
+   * the reason the panel's visibility is: a pane can be left without telling
+   * us.
    *
    * False, and absent, both mean no host-list request is made at all. The list
-   * costs a request the monitoring endpoints do not, and a window nobody has
-   * open is not worth one.
+   * costs an authenticated request the monitoring endpoints do not, and a pane
+   * nobody is looking at is not worth one.
    */
   wantsDevices?: () => boolean;
   /** Called after every settled device read, so the window can be re-pushed. */
@@ -280,8 +281,8 @@ export class UsagePoller {
 
     // Awaited inside the tick rather than left running beside it, so the device
     // request can no more stack on the router than a second poll can. Nothing
-    // is awaited at all when no window wants the list, so a poll that reads
-    // only the router keeps exactly the shape it had.
+    // is awaited at all when nobody wants the list, so a poll that reads only
+    // the router keeps exactly the shape it had.
     if (this.#wantsDevices?.() === true) {
       await this.#readDevices(result);
 
@@ -302,8 +303,8 @@ export class UsagePoller {
    * window is told instead, which is the whole difference between a list that
    * is unavailable and a router with nothing connected to it.
    *
-   * Only ever called with a window open — {@link UsagePoller.#tick} makes that
-   * decision, so that a closed window costs not even the await.
+   * Only ever called with someone looking — {@link UsagePoller.#tick} makes
+   * that decision, so that an unwatched list costs not even the await.
    */
   async #readDevices(result: SnapshotResult): Promise<void> {
     if (!result.online) {

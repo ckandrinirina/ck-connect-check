@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -100,7 +101,7 @@ describe("build output", () => {
     execFileSync("npm", ["run", "build"], { cwd: repoRoot, stdio: "pipe" });
   }, 180_000);
 
-  it.each(["index.html", "popover.css", "devices.html", "devices.js"])(
+  it.each(["index.html", "popover.css"])(
     "copies %s into dist/renderer/",
     (asset) => {
       expect(
@@ -137,12 +138,73 @@ describe("build output", () => {
     expect(page).not.toContain("../../dist/");
   });
 
-  it("leaves the built devices page pointing at its own directory", () => {
-    // A second window is exactly the kind of thing that works in development
-    // and 404s in the bundle, so it is held to the same rule as the panel.
-    const page = readRepoFile("dist/renderer/devices.html");
-    expect(page).toContain('src="./devices.js"');
-    expect(page).not.toContain("../../dist/");
+  it.each(["devices.html", "devices.js"])(
+    "ships no %s, the device list being a tab on the panel",
+    (asset) => {
+      // T-76. A second page left in the bundle is a page that can still be
+      // loaded — and one nothing maintains, because every assertion about the
+      // device list now lives on the pane.
+      expect(
+        existsSync(new URL(`../dist/renderer/${asset}`, import.meta.url)),
+      ).toBe(false);
+    },
+  );
+});
+
+/**
+ * Every path under `src/` and `test/`, so a claim about the tree can be made
+ * about the tree rather than about the files somebody remembered to check.
+ */
+function sourceFiles(directory: string): string[] {
+  const root = fileURLToPath(new URL(`../${directory}`, import.meta.url));
+
+  return readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name));
+}
+
+/**
+ * The devices window, gone.
+ *
+ * Its page, its renderer and its main-process module are deleted rather than
+ * left unreferenced: an unreferenced module still compiles, still lints and
+ * still reads as part of the app to the next person opening the tree. The
+ * assertions that covered them live on the Devices pane after T-73 and T-74, so
+ * keeping both would be two descriptions of one feature — one of them testing
+ * dead code.
+ *
+ * `src/domain/devices.ts` and `src/hilink/devices.ts` are untouched and stay:
+ * the domain that decides what a device *is* was never the window.
+ */
+describe("the retired devices window", () => {
+  it.each([
+    "src/renderer/devices.ts",
+    "src/renderer/devices.html",
+    "src/main/devices-window.ts",
+    "test/renderer/devices.test.ts",
+    "test/main/devices-window.test.ts",
+  ])("has no %s left in the tree", (path) => {
+    expect(existsSync(new URL(`../${path}`, import.meta.url))).toBe(false);
+  });
+
+  it.each(["devices-window", "devices.html", "renderer/devices."])(
+    "leaves no file under src/ or test/ mentioning %s",
+    (mention) => {
+      const guilty = [...sourceFiles("src"), ...sourceFiles("test")]
+        // This file names all three in the sweep itself; a test cannot state
+        // what it is looking for without holding it.
+        .filter((file) => !file.endsWith("project-setup.test.ts"))
+        .filter((file) => readFileSync(file, "utf8").includes(mention));
+
+      expect(guilty).toEqual([]);
+    },
+  );
+
+  it("keeps the domain and boundary modules that were never the window", () => {
+    // The point of the sweep above is the window, not the word "devices".
+    for (const kept of ["src/domain/devices.ts", "src/hilink/devices.ts"]) {
+      expect(existsSync(new URL(`../${kept}`, import.meta.url))).toBe(true);
+    }
   });
 });
 
