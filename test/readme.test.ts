@@ -1002,7 +1002,9 @@ describe("README.md on the device list", () => {
     const devices = section(DEVICES_HEADING);
 
     expect(devices).toMatch(/reboot|survives|outlives/i);
-    expect(devices).toMatch(/config\.json|not stored in the app|on the router/i);
+    expect(devices).toMatch(
+      /config\.json|not stored in the app|on the router/i,
+    );
   });
 
   it("says this machine cannot be blocked from the list", () => {
@@ -1017,5 +1019,83 @@ describe("README.md on the device list", () => {
     // Quoted from the constant rather than retyped, so a relabelled menu item
     // cannot leave the page naming one nobody will find.
     expect(devices).toContain(DEVICES_MENU_LABEL);
+  });
+});
+
+/*
+ * The capture that section was written around.
+ *
+ * T-76 left `## The device list` describing a tab a reader could not see. The
+ * picture is the one part of this documentation that cannot be generated: it is
+ * a household's device list, and it is redacted by hand before it is committed.
+ *
+ * Nothing here asserts the redaction, and that absence is deliberate. It is a
+ * human check, and it is the one that matters — a test claiming to verify it
+ * would be worse than no test at all, because it would be believed. What is
+ * held below is the part a test can honestly hold: that the file is there, that
+ * it is a PNG wide enough to be the panel rather than a thumbnail of it, and
+ * that the README points at it in the section it belongs to.
+ *
+ * The same reasoning rules out a placeholder. An image of the right shape would
+ * satisfy every assertion here and ship as though it were the real capture, so
+ * until the real one lands these stay red — which is the whole of their value.
+ */
+describe("README.md on the devices capture", () => {
+  const CAPTURE = "docs/media/devices.png";
+  const DEVICES_HEADING = "## The device list";
+
+  // The panel is created at POPOVER_WIDTH, which `test/main/popover.test.ts`
+  // pins at 320. Retyped rather than imported: `src/main/popover.ts` pulls in
+  // Electron at load, and this suite runs without it.
+  const PANEL_WIDTH = 320;
+
+  it("has the capture on disk", () => {
+    expect(existsSync(new URL(CAPTURE, `file://${repoRoot}`))).toBe(true);
+  });
+
+  it("is a PNG at least as wide as the panel it captures", () => {
+    const png = readFileSync(new URL(CAPTURE, `file://${repoRoot}`));
+
+    // A PNG opens with a fixed 8-byte signature whose bytes 1-3 spell "PNG";
+    // the IHDR width follows as a big-endian uint32 at byte 16.
+    expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
+    // At least, not exactly: a Retina capture of a 320 px panel is 640 px wide,
+    // and that is the better of the two images to ship. Narrower than the panel
+    // means something other than the panel — or the panel scaled down until the
+    // rows this section describes stop being legible.
+    expect(png.readUInt32BE(16)).toBeGreaterThanOrEqual(PANEL_WIDTH);
+  });
+
+  it("shows it in the device-list section, not somewhere else on the page", () => {
+    const devices = section(DEVICES_HEADING);
+
+    expect(devices).toMatch(
+      new RegExp(`!\\[[^\\]]*\\]\\(${CAPTURE.replace(/[./]/g, "\\$&")}\\)`),
+    );
+  });
+
+  it("gives it alt text describing the tab", () => {
+    const alt = new RegExp(
+      `!\\[([^\\]]*)\\]\\(${CAPTURE.replace(/[./]/g, "\\$&")}\\)`,
+    ).exec(section(DEVICES_HEADING))?.[1];
+
+    // Empty alt text says "this image carries nothing", which is false here:
+    // the picture is the only place a reader sees what a row looks like.
+    expect(alt).toBeTruthy();
+    expect(alt).toMatch(/\btab\b/i);
+    expect(alt).toMatch(/devices/i);
+  });
+
+  it("is accounted for in the architecture's docs/media line", () => {
+    const media = /^docs\/media\/\s+(.+)$/m.exec(
+      readRepoFile("docs/ARCHITECTURE.md"),
+    )?.[1];
+
+    // The directory used to hold screenshots and nothing else. It now holds one
+    // that is redacted by hand and cannot be regenerated, and the line has to
+    // say so — otherwise the next person to tidy it deletes work nobody can
+    // recreate from the repository.
+    expect(media).toBeTruthy();
+    expect(media).toMatch(/redact/i);
   });
 });

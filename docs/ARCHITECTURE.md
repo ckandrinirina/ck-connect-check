@@ -397,7 +397,7 @@ src/
 test/           mirrors src/, one .test.ts per source file
 assets/         icon sources — hand-written SVG, and the PNG/.icns rasterised from them
 scripts/        build-time scripts that are not part of the app — icon rasterisation
-docs/media/     screenshots referenced by README.md
+docs/media/     screenshots referenced by README.md — the panel and Devices tab captures are redacted by hand, and no script regenerates them
 ```
 
 ## Decisions

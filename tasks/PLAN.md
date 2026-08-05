@@ -78,7 +78,7 @@
 | T-74 | Move blocking onto the panel's own bridge                               | done   | M    | T-72, T-73                   |
 | T-75 | Read the host list only while its tab is showing                        | done   | S    | T-72, T-73                   |
 | T-76 | Retire the separate devices window                                      | done   | S    | T-73, T-74, T-75             |
-| T-77 | Put the devices tab in the README, with the capture                     | todo   | S    | T-76                         |
+| T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
 
 ## T-01 Set the project up so tests can run
 
@@ -4435,7 +4435,7 @@ restated for the tab; the branch itself is unmerged and can go once T-77 lands.
 
 ## T-77 Put the devices tab in the README, with the capture
 
-T-77 · status: todo · size: S · needs: T-76 · files: README.md, docs/media/devices.png, docs/ARCHITECTURE.md, test/readme.test.ts
+T-77 · status: done · size: S · needs: T-76 · files: README.md, docs/media/devices.png, docs/ARCHITECTURE.md, test/readme.test.ts
 
 T-76 wrote `## The device list` and left it without a picture, because the picture is the one
 part of this app's documentation that cannot be generated: it is a household's device list,
@@ -4446,18 +4446,18 @@ the test that stops the reference outliving the file.
 
 ### Acceptance
 
-- [ ] `docs/media/devices.png` exists and shows no legible device name, IP address or MAC address
-- [ ] the README's `## The device list` section references it, with alt text describing the tab
-- [ ] a test asserts the file is on disk and is a PNG at least 320 px wide, the panel's own width
-- [ ] `docs/ARCHITECTURE.md`'s `docs/media/` line describes what that directory now holds
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] `docs/media/devices.png` exists and shows no legible device name, IP address or MAC address
+- [x] the README's `## The device list` section references it, with alt text describing the tab
+- [x] a test asserts the file is on disk and is a PNG at least 320 px wide, the panel's own width
+- [x] `docs/ARCHITECTURE.md`'s `docs/media/` line describes what that directory now holds
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Extend the README suite to require the image, and watch it fail
-2. [ ] Capture the Devices tab against the live router and redact it — **the user supplies this**
-3. [ ] Reference it from the section and correct the architecture line
-4. [ ] Run test, lint and build
+1. [x] Extend the README suite to require the image, and watch it fail
+2. [x] Capture the Devices tab against the live router and redact it — **the user supplies this**
+3. [x] Reference it from the section and correct the architecture line
+4. [x] Run test, lint and build
 
 ### Notes
 
@@ -4469,3 +4469,11 @@ survives in the file can be peeled off.
 **No placeholder, in any form.** A stand-in risks shipping as though it were the real capture.
 If the image is not there, the test stays red and that red is the point.
 
+**How the capture landed.** Shot against the live router on the Devices tab, cropped to the
+panel's own 320×520 bounds — the first two attempts were drag selections that clipped the
+panel and caught a neighbouring window, and 312 px of panel would not have been the panel.
+The six bars are `#4a4a4d`, drawn into the raster with ImageMagick rather than laid over it,
+gapped so the three-line row anatomy still reads. `-strip` left only IHDR, tIME, IDAT and
+IEND, and `3h …` was kept visible so the third line still shows a duration. Padding a short
+capture out to 320 was considered and rejected: it would pass the width assertion on invented
+pixels, which is the placeholder problem wearing a different hat.

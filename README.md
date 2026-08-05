@@ -313,6 +313,14 @@ how long it has been connected on a third. The word on the right — **Allowed**
 beside it is what changes that. A word rather than a colour, so the row still
 says something in greyscale.
 
+![The panel's Devices tab: two connected devices, each row stacking its name, IP
+address and MAC address over three lines, with Allowed on the right and a Block
+button beside the second](docs/media/devices.png)
+
+Names and addresses are covered over in that capture — it is a real household's
+list, and only the shape of the rows is the point. The first row is this Mac,
+which is why it carries a sentence where its Block button would be.
+
 A device that gives the router no name falls back to its own address rather than
 to a shared word like "Unknown": a placeholder would make every nameless device
 look like the same one. The IP address is shown but nothing in the app is ever
