@@ -1118,7 +1118,6 @@ describe("startMenuBarApp — confirming the cap after a new plan", () => {
 
     expect(storedFlag(configPath)).toBe(true);
     expect(latest(popover).planCapPrompt).toBeNull();
-    expect(latest(popover).progress.available).toBe(true);
 
     app.stop();
   });

@@ -232,12 +232,17 @@ function movedLater(next: Date | null, previous: Date | null): boolean {
  *
  * - the carrier renamed the offer;
  * - the expiry moved later, which only a new period can do;
- * - the remaining volume passed the configured cap, which catches a top-up the
- *   carrier labelled identically and dated the same way.
+ * - the remaining volume passed the configured cap when the anchor it replaces
+ *   had not, which catches a top-up the carrier labelled identically and dated
+ *   the same way.
  *
  * The last is gated on a cap being configured at all: with none there is
- * nothing for a larger remainder to contradict. A first-ever sync replaces no
- * anchor and so contradicts nothing either.
+ * nothing for a larger remainder to contradict. It is also read against the
+ * anchor being replaced, never against the cap alone: a remainder already
+ * above the cap was flagged by the sync that first brought it, and a cap the
+ * user confirmed after that must not be cleared again by the same plan
+ * syncing a second time. A first-ever sync replaces no anchor and so
+ * contradicts nothing either.
  */
 export function isNewPlan(
   anchor: AllowanceAnchor,
@@ -249,7 +254,9 @@ export function isNewPlan(
   return (
     anchor.planLabel !== previous.planLabel ||
     movedLater(anchor.expiresAt, previous.expiresAt) ||
-    (planLimitBytes !== null && anchor.remainingBytes > planLimitBytes)
+    (planLimitBytes !== null &&
+      anchor.remainingBytes > planLimitBytes &&
+      previous.remainingBytes <= planLimitBytes)
   );
 }
 

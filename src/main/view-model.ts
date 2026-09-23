@@ -44,6 +44,7 @@ import { isRouterRefusal } from "../hilink/ussd.js";
 import {
   confirmedPlanLimit,
   planLimitInGigaoctets,
+  type PlanCapRefusal,
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
@@ -338,6 +339,12 @@ export interface PopoverPlanCapPrompt {
   confirmLabel: string;
   /** That control's accessible name — a sentence, not a word. */
   description: string;
+  /**
+   * Why the last Confirm was refused, or empty. On the prompt itself rather
+   * than in the settings view's error line: the press came from here, and the
+   * settings view is hidden while this shows.
+   */
+  refusal: string;
 }
 
 /**
@@ -567,6 +574,8 @@ export interface PopoverInput {
   planLimitProblem?: PlanLimitRefusal | undefined;
   /** Why the last typed plan length was refused, if one was. */
   planDaysProblem?: PlanDaysRefusal | undefined;
+  /** Why the last Confirm on the new-plan prompt was refused, if one was. */
+  planCapProblem?: PlanCapRefusal | undefined;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -655,22 +664,49 @@ function dialDescription(
 }
 
 /**
+ * Why a Confirm was refused, in the words the prompt shows. Each names the fix,
+ * and the fix is in the settings: Confirm vouches for the stored size, so a
+ * size that is missing or wrong has to be typed there.
+ */
+function planCapRefusalText(
+  problem: PlanCapRefusal | undefined,
+  config: AppConfig,
+): string {
+  if (problem === undefined) return "";
+
+  const remaining = config.allowanceAnchor?.remainingBytes;
+
+  if (
+    problem === "below-remaining" &&
+    config.planLimitBytes !== null &&
+    remaining !== undefined
+  ) {
+    return `The stored size, ${formatBytes(config.planLimitBytes)}, is below the ${formatBytes(remaining)} the carrier says is left — set the new size in Settings.`;
+  }
+
+  return "No plan size is stored yet — set one in Settings.";
+}
+
+/**
  * The confirmation, or null while the cap is believed.
  *
  * The wording names the cause rather than the symptom: a user who topped up
- * knows they did, and "confirm its size" is the one action that clears it. The
- * field beside it already holds the stored cap, so an unchanged plan size is
- * confirmed with a single press rather than retyped.
+ * knows they did, and "confirm its size" is the one action that clears it.
+ * Confirm vouches for the stored cap, so an unchanged plan size costs a single
+ * press rather than a retype — and a refused one says why right here.
  */
 function buildPlanCapPrompt(
   capUnconfirmed: boolean,
+  problem: PlanCapRefusal | undefined,
+  config: AppConfig,
 ): PopoverPlanCapPrompt | null {
   if (!capUnconfirmed) return null;
 
   return {
     message: `${PLAN_CAP_PROMPT} The dial and the pace stay hidden until it is.`,
     confirmLabel: "Confirm",
-    description: "Confirm the plan size shown in the field beside this",
+    description: "Confirm the stored plan size for this plan",
+    refusal: planCapRefusalText(problem, config),
   };
 }
 
@@ -1605,7 +1641,11 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   // dial's wording, and which cap the arithmetic may use. Only an explicit
   // `false` withdraws the cap, the same test {@link confirmedPlanLimit} makes.
   const capUnconfirmed = config.planCapConfirmed === false;
-  const planCapPrompt = buildPlanCapPrompt(capUnconfirmed);
+  const planCapPrompt = buildPlanCapPrompt(
+    capUnconfirmed,
+    input.planCapProblem,
+    config,
+  );
   // The cap the panel may actually measure against. A sync that brought back a
   // different plan leaves the stored one unbelievable, and an unbelievable cap
   // reads as no cap: the dial and the share go, the tier 1 pace stays.

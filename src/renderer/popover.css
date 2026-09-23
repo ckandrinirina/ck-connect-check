@@ -630,6 +630,33 @@ body {
   font-size: 11px;
 }
 
+/* A refused Confirm, worded like the settings' own refusal lines and collapsed
+   the same way when there is none. */
+.plan-cap-refusal {
+  color: var(--over);
+  font-size: 11px;
+}
+
+.plan-cap-refusal:empty {
+  display: none;
+}
+
+/* Put on a refusal line by the answer to a press, and taken off by the press
+   itself — so an identical second refusal still visibly arrives. */
+.refused {
+  animation: refusal-arrives 600ms ease-out;
+}
+
+@keyframes refusal-arrives {
+  from {
+    background: color-mix(in srgb, var(--over) 25%, transparent);
+  }
+
+  to {
+    background: transparent;
+  }
+}
+
 .plan-cap-confirm {
   padding: 3px 10px;
   border: 1px solid var(--accent);

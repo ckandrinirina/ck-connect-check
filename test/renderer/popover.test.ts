@@ -1696,11 +1696,12 @@ describe("the new-plan confirmation", () => {
     expect(document.documentElement.dataset["limit"]).toBe("set");
   });
 
-  it("confirms by re-submitting the stored cap, so one click is enough", () => {
+  it("confirms the stored cap with one click, sending no figure of its own", () => {
     apply(modelConfirming(false));
     confirmButton().click();
 
-    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+    expect(bridge.confirmPlanCap).toHaveBeenCalledTimes(1);
+    expect(bridge.setPlanLimit).not.toHaveBeenCalled();
   });
 
   it("is reachable without a mouse and says what it does", () => {

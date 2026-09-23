@@ -3,9 +3,10 @@
  *
  * The page runs under `default-src 'none'` with context isolation on, so it has
  * no `require`, no network and no Electron. This script runs beside it in the
- * isolated world and hands it exactly seven sends — start a sync, store a
- * password, set the plan size, set the plan length, name the forfait to
- * measure, block or unblock a device, and say which pane is showing — and
+ * isolated world and hands it exactly eight sends — start a sync, store a
+ * password, set the plan size, confirm the stored plan size, set the plan
+ * length, name the forfait to measure, block or unblock a device, and say
+ * which pane is showing — and
  * nothing else: no `ipcRenderer`, no channel names, no way to reach a channel
  * this file does not name.
  *
@@ -23,6 +24,7 @@ import { contextBridge, ipcRenderer } from "electron";
 const SYNC_CHANNEL = "popover:sync";
 const SAVE_PASSWORD_CHANNEL = "popover:save-password";
 const SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
+const CONFIRM_PLAN_CAP_CHANNEL = "popover:confirm-plan-cap";
 const SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 const CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
 const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
@@ -44,6 +46,11 @@ contextBridge.exposeInMainWorld("popoverBridge", {
     // The characters as typed. What a Go is worth in bytes is settled in the
     // main process, which is also where the refusal is worded.
     ipcRenderer.send(SET_PLAN_LIMIT_CHANNEL, String(value));
+  },
+  confirmPlanCap(): void {
+    // Nothing travels: Confirm vouches for the cap already stored, and the
+    // main process checks that one for itself.
+    ipcRenderer.send(CONFIRM_PLAN_CAP_CHANNEL);
   },
   setPlanDays(value: string): void {
     // The characters as typed, for the same reason as the cap beside it.

@@ -379,7 +379,7 @@ a remainder above a stale cap clamps consumption to zero and the dial reads 0% f
 
 So the new plan is _detected_ instead. A synced anchor belongs to a different plan when its
 `planLabel` differs from the previous one, its `expiresAt` moves later, or its
-`remainingBytes` exceeds the configured cap. Any of those marks the cap unconfirmed: the
+`remainingBytes` exceeds the configured cap when the previous anchor's did not. Any of those marks the cap unconfirmed: the
 panel keeps the tier 1 reading, drops the dial and the pace rather than drawing them from a
 contradicted cap, and asks for the cap and length to be confirmed.
 
@@ -457,6 +457,8 @@ Append-only. One line each, always with the reason.
 - Only the band and `affordedPerDay` still require a cap and a plan length — those two are genuinely un-derivable from the carrier's reply, whereas the sustainable daily figure is not
 - Loading a new plan needs no reset control — every sync replaces the whole anchor through `anchorFrom`, so a reset button would clear nothing a sync does not already overwrite
 - **Reversed (T-79):** a new plan re-derives the cap instead of marking it unconfirmed — a new plan still must never keep a stale cap (a top-up above it clamps the dial to 0%), but the fix is to take the carrier's own figure, not to ask for a retype; each value records whether its source is `carrier` or `user`, and a `user` value lasts until the next new plan
+- The new-plan contradiction is read against the anchor being replaced, not against the cap alone, and Confirm is its own message that vouches for the stored cap — re-sending the hidden settings field confirmed the *old* cap, and every later sync of the same bigger plan re-read the same contradiction and cleared the confirmation again (T-78)
+- A refused Confirm is worded on the new-plan prompt itself, and every refusal line is re-marked on each refused press — a refusal written into the hidden settings view, or repeated word for word, reads as a press that did nothing
 - The `over` band starts at 1.20 rather than above it — 150 Go over 30 days affords 5 Go a day and the ratio for 6 Go is exactly 1.20, so the intended verdict sat on the wrong side of an inclusive bound
 - The pace states `averagePerDay` beside `affordedPerDay` as well as the ratio — "6.1 Go a day against 5.0" is the sentence the user reasons in, and the ratio alone made them do the division
 - `averagePerDay` is derived from the same cumulative used volume and elapsed days as the ratio, never accumulated separately — two independent counters of the same thing eventually disagree, and only one of them would be right
