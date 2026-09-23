@@ -63,6 +63,8 @@ describe("defaults", () => {
       planLimitBytes: null,
       planDays: null,
       planCapConfirmed: true,
+      planLimitSource: "user",
+      planDaysSource: "user",
       syncStaleAfterMinutes: 30,
     });
   });
@@ -103,6 +105,8 @@ describe("save and load round-trip", () => {
       planLimitBytes: gigabytesToBytes(20),
       planDays: 30,
       planCapConfirmed: true,
+      planLimitSource: "carrier",
+      planDaysSource: "user",
       syncStaleAfterMinutes: 45,
     };
 
@@ -348,6 +352,46 @@ describe("planCapConfirmed — whether the stored cap still describes the plan",
       expect(parseConfig({ planCapConfirmed: value }).planCapConfirmed).toBe(
         true,
       );
+    },
+  );
+});
+
+describe("planLimitSource / planDaysSource — where each plan value came from", () => {
+  it("loads a config written before sources existed as typed by the user", () => {
+    const loaded = parseConfig({
+      planLimitBytes: 50_000_000_000,
+      planDays: 30,
+    });
+
+    expect(loaded.planLimitSource).toBe("user");
+    expect(loaded.planDaysSource).toBe("user");
+    expect(defaultConfig().planLimitSource).toBe("user");
+    expect(defaultConfig().planDaysSource).toBe("user");
+  });
+
+  it("round-trips a carrier source through save and load", () => {
+    saveConfig(path(), {
+      ...defaultConfig(),
+      planLimitSource: "carrier",
+      planDaysSource: "carrier",
+    });
+
+    const loaded = loadConfig(path()).config;
+
+    expect(loaded.planLimitSource).toBe("carrier");
+    expect(loaded.planDaysSource).toBe("carrier");
+  });
+
+  it.each([0, "Carrier", null, true, "router"])(
+    "reads %s as the user's own value rather than refusing the file",
+    (value) => {
+      const loaded = parseConfig({
+        planLimitSource: value,
+        planDaysSource: value,
+      });
+
+      expect(loaded.planLimitSource).toBe("user");
+      expect(loaded.planDaysSource).toBe("user");
     },
   );
 });

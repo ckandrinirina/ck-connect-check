@@ -1057,6 +1057,7 @@ interface FakeBridge {
   sync: ReturnType<typeof vi.fn>;
   savePassword: ReturnType<typeof vi.fn>;
   setPlanLimit: ReturnType<typeof vi.fn>;
+  confirmPlanCap: ReturnType<typeof vi.fn>;
   setPlanDays: ReturnType<typeof vi.fn>;
   chooseForfait: ReturnType<typeof vi.fn>;
   setBlocked: ReturnType<typeof vi.fn>;
@@ -1069,6 +1070,7 @@ function stubBridge(): FakeBridge {
     sync: vi.fn(),
     savePassword: vi.fn(),
     setPlanLimit: vi.fn(),
+    confirmPlanCap: vi.fn(),
     setPlanDays: vi.fn(),
     chooseForfait: vi.fn(),
     setBlocked: vi.fn(),
@@ -1694,11 +1696,12 @@ describe("the new-plan confirmation", () => {
     expect(document.documentElement.dataset["limit"]).toBe("set");
   });
 
-  it("confirms by re-submitting the stored cap, so one click is enough", () => {
+  it("confirms the stored cap with one click, sending no figure of its own", () => {
     apply(modelConfirming(false));
     confirmButton().click();
 
-    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+    expect(bridge.confirmPlanCap).toHaveBeenCalledTimes(1);
+    expect(bridge.setPlanLimit).not.toHaveBeenCalled();
   });
 
   it("is reachable without a mouse and says what it does", () => {
@@ -2452,6 +2455,26 @@ describe("the typed settings — driven from inside the settings view", () => {
     expect(error?.closest("[data-settings-view]")).toBe(settingsView());
   });
 
+  it("marks the refusal afresh on every refused Set, even an identical one", () => {
+    // The same refusal twice is the same text twice: without a mark that is
+    // taken off by the press and put back by the answer, the second press
+    // would change nothing on the screen and look ignored.
+    const error = document.querySelector('[data-field="planLimitError"]');
+
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "abc");
+    apply(modelRefusing("not-a-number"));
+
+    expect(error?.classList.contains("refused")).toBe(true);
+
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "abc");
+
+    expect(error?.classList.contains("refused")).toBe(false);
+
+    apply(modelRefusing("not-a-number"));
+
+    expect(error?.classList.contains("refused")).toBe(true);
+  });
+
   it("still shows a refused plan length beside its own field", () => {
     apply(
       buildPopoverModel({
@@ -2519,11 +2542,88 @@ describe("the new-plan confirmation — which view it belongs to", () => {
     const bridge = stubBridge();
     apply(modelUnconfirmed());
 
-    document
-      .querySelector<HTMLButtonElement>("[data-plan-cap-confirm]")
-      ?.click();
+    confirmButton().click();
 
-    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+    // Its own message: the hidden settings field is not what is confirmed,
+    // and a refusal has to come back to this prompt rather than to that field.
+    expect(bridge.confirmPlanCap).toHaveBeenCalledTimes(1);
+    expect(bridge.setPlanLimit).not.toHaveBeenCalled();
+  });
+
+  /** The same prompt, after a Confirm the main process refused. */
+  function modelRefused(): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(50 * GB),
+        planCapConfirmed: false,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 145 * GB,
+          expiresAt: new Date(2026, 7, 6),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      planCapProblem: "below-remaining",
+      clock,
+    });
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    const button = document.querySelector<HTMLButtonElement>(
+      "[data-plan-cap-confirm]",
+    );
+
+    if (button === null) {
+      throw new Error("the panel has no confirm button");
+    }
+
+    return button;
+  }
+
+  function refusalLine(): HTMLElement {
+    const line = document.querySelector<HTMLElement>(
+      '[data-field="planCapRefusal"]',
+    );
+
+    if (line === null) {
+      throw new Error("the plan-cap prompt has no refusal line");
+    }
+
+    return line;
+  }
+
+  it("shows a refused Confirm inside the prompt, in the view the press came from", () => {
+    apply(modelUnconfirmed());
+
+    expect(refusalLine().textContent).toBe("");
+
+    apply(modelRefused());
+
+    expect(refusalLine().textContent).not.toBe("");
+    expect(refusalLine().closest("[data-plan-cap-prompt]")).not.toBeNull();
+    expect(refusalLine().closest("[data-main-view]")).toBe(mainView());
+  });
+
+  it("marks the refusal afresh on every refused Confirm, even an identical one", () => {
+    apply(modelRefused());
+
+    expect(refusalLine().classList.contains("refused")).toBe(true);
+
+    confirmButton().click();
+
+    expect(refusalLine().classList.contains("refused")).toBe(false);
+
+    apply(modelRefused());
+
+    expect(refusalLine().classList.contains("refused")).toBe(true);
+  });
+
+  it("gives the refusal mark a visible rule in the stylesheet", () => {
+    expect(POPOVER_CSS).toMatch(/\.refused\s*\{/);
   });
 });
 
@@ -4252,5 +4352,67 @@ describe("the Devices pane — this machine's own row", () => {
     // A row is kept between polls, so a detached control still holding a live
     // handler is exactly the stale press this file is at pains to avoid.
     expect(bridge.setBlocked).not.toHaveBeenCalled();
+  });
+});
+
+describe("the plan fields — where each value came from", () => {
+  function modelWithSources(
+    limitSource: "carrier" | "user",
+    daysSource: "carrier" | "user",
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(150 * GB),
+        planDays: 30,
+        planLimitSource: limitSource,
+        planDaysSource: daysSource,
+      },
+      clock,
+    });
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("shows the carrier's marker beside each field the carrier filled", () => {
+    apply(modelWithSources("carrier", "carrier"));
+
+    expect(textOf("planLimitSource")).toBe("carrier");
+    expect(textOf("planDaysSource")).toBe("carrier");
+  });
+
+  it("shows the user's marker beside each field that was typed", () => {
+    apply(modelWithSources("user", "user"));
+
+    expect(textOf("planLimitSource")).toBe("set by you");
+    expect(textOf("planDaysSource")).toBe("set by you");
+  });
+
+  it("changes the marker as soon as a model with the new source lands", () => {
+    apply(modelWithSources("carrier", "carrier"));
+    apply(modelWithSources("user", "carrier"));
+
+    expect(textOf("planLimitSource")).toBe("set by you");
+    expect(textOf("planDaysSource")).toBe("carrier");
+  });
+
+  it("puts each marker inside its own field's row, beside the unit", () => {
+    const capMarker = document.querySelector('[data-field="planLimitSource"]');
+    const daysMarker = document.querySelector('[data-field="planDaysSource"]');
+
+    expect(capMarker).not.toBeNull();
+    expect(daysMarker).not.toBeNull();
+    expect(capMarker?.closest("form[data-plan-limit]")).not.toBeNull();
+    expect(daysMarker?.closest("form[data-plan-days]")).not.toBeNull();
+  });
+
+  it("keeps the length's marker off the Orange panel along with its field", () => {
+    apply(orangeModel());
+
+    expect(document.querySelector('[data-field="planDaysSource"]')).toBeNull();
+    expect(textOf("planLimitSource")).toBe("set by you");
   });
 });

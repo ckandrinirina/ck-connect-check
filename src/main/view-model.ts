@@ -44,12 +44,13 @@ import { isRouterRefusal } from "../hilink/ussd.js";
 import {
   confirmedPlanLimit,
   planLimitInGigaoctets,
+  type PlanCapRefusal,
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
 import type { PortalReading, PortalStatus } from "./poller.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
-import type { AppConfig } from "../config/defaults.js";
+import type { AppConfig, PlanValueSource } from "../config/defaults.js";
 import type {
   HostListResult,
   RouterFailure,
@@ -211,8 +212,9 @@ export interface PopoverSync {
 /**
  * The plan-size field beside the dial.
  *
- * The cap is the one figure the carrier never states, so it has to be typed in.
- * The field is always on the panel rather than appearing only when unset: a
+ * The cap is derived from the sync that detects a new plan, or typed in; the
+ * field stays as the override, and {@link PopoverPlanLimit.source} says which
+ * of the two it holds. The field is always on the panel rather than appearing only when unset: a
  * plan that changes has to be correctable, and an editor you have to discover
  * how to reopen is one nobody reopens.
  */
@@ -227,6 +229,11 @@ export interface PopoverPlanLimit {
   error: string;
   /** The field's accessible name. */
   description: string;
+  /**
+   * Whose figure the field holds — {@link PLAN_SOURCE_TEXT}, spelled here so a
+   * typed override is never mistaken for the carrier's. Empty when unset.
+   */
+  source: string;
 }
 
 /**
@@ -245,6 +252,11 @@ export interface PopoverPlanDays {
   error: string;
   /** The field's accessible name. */
   description: string;
+  /**
+   * Whose figure the field holds — {@link PLAN_SOURCE_TEXT}, spelled here so a
+   * typed override is never mistaken for the carrier's. Empty when unset.
+   */
+  source: string;
 }
 
 /**
@@ -338,6 +350,12 @@ export interface PopoverPlanCapPrompt {
   confirmLabel: string;
   /** That control's accessible name — a sentence, not a word. */
   description: string;
+  /**
+   * Why the last Confirm was refused, or empty. On the prompt itself rather
+   * than in the settings view's error line: the press came from here, and the
+   * settings view is hidden while this shows.
+   */
+  refusal: string;
 }
 
 /**
@@ -567,6 +585,8 @@ export interface PopoverInput {
   planLimitProblem?: PlanLimitRefusal | undefined;
   /** Why the last typed plan length was refused, if one was. */
   planDaysProblem?: PlanDaysRefusal | undefined;
+  /** Why the last Confirm on the new-plan prompt was refused, if one was. */
+  planCapProblem?: PlanCapRefusal | undefined;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -655,22 +675,49 @@ function dialDescription(
 }
 
 /**
+ * Why a Confirm was refused, in the words the prompt shows. Each names the fix,
+ * and the fix is in the settings: Confirm vouches for the stored size, so a
+ * size that is missing or wrong has to be typed there.
+ */
+function planCapRefusalText(
+  problem: PlanCapRefusal | undefined,
+  config: AppConfig,
+): string {
+  if (problem === undefined) return "";
+
+  const remaining = config.allowanceAnchor?.remainingBytes;
+
+  if (
+    problem === "below-remaining" &&
+    config.planLimitBytes !== null &&
+    remaining !== undefined
+  ) {
+    return `The stored size, ${formatBytes(config.planLimitBytes)}, is below the ${formatBytes(remaining)} the carrier says is left — set the new size in Settings.`;
+  }
+
+  return "No plan size is stored yet — set one in Settings.";
+}
+
+/**
  * The confirmation, or null while the cap is believed.
  *
  * The wording names the cause rather than the symptom: a user who topped up
- * knows they did, and "confirm its size" is the one action that clears it. The
- * field beside it already holds the stored cap, so an unchanged plan size is
- * confirmed with a single press rather than retyped.
+ * knows they did, and "confirm its size" is the one action that clears it.
+ * Confirm vouches for the stored cap, so an unchanged plan size costs a single
+ * press rather than a retype — and a refused one says why right here.
  */
 function buildPlanCapPrompt(
   capUnconfirmed: boolean,
+  problem: PlanCapRefusal | undefined,
+  config: AppConfig,
 ): PopoverPlanCapPrompt | null {
   if (!capUnconfirmed) return null;
 
   return {
     message: `${PLAN_CAP_PROMPT} The dial and the pace stay hidden until it is.`,
     confirmLabel: "Confirm",
-    description: "Confirm the plan size shown in the field beside this",
+    description: "Confirm the stored plan size for this plan",
+    refusal: planCapRefusalText(problem, config),
   };
 }
 
@@ -874,9 +921,24 @@ const PLAN_LIMIT_ERROR_TEXT: Record<PlanLimitRefusal, string> = {
   "not-positive": "A plan has to be larger than zero.",
 };
 
+/**
+ * Whose figure a plan field holds, in the words beside it. A word rather than a
+ * style alone, so the difference survives a colourblind eye.
+ */
+const PLAN_SOURCE_TEXT: Record<PlanValueSource, string> = {
+  carrier: "carrier",
+  user: "set by you",
+};
+
+/** The marker for one field: nothing while it is empty, since nobody set it. */
+function planSourceText(value: number | null, source: PlanValueSource): string {
+  return value === null ? "" : PLAN_SOURCE_TEXT[source];
+}
+
 /** The plan-size field for one stored cap, and whatever the last entry left behind. */
 function buildPlanLimit(
   limitBytes: number | null,
+  source: PlanValueSource,
   problem: PlanLimitRefusal | undefined,
 ): PopoverPlanLimit {
   return {
@@ -885,6 +947,7 @@ function buildPlanLimit(
     needsValue: limitBytes === null,
     error: problem === undefined ? "" : PLAN_LIMIT_ERROR_TEXT[problem],
     description: "The size of your plan, in Go",
+    source: planSourceText(limitBytes, source),
   };
 }
 
@@ -903,6 +966,7 @@ const PLAN_DAYS_ERROR_TEXT: Record<PlanDaysRefusal, string> = {
 /** The plan-length field for one stored period, and the last entry's complaint. */
 function buildPlanDays(
   days: number | null,
+  source: PlanValueSource,
   problem: PlanDaysRefusal | undefined,
 ): PopoverPlanDays {
   return {
@@ -911,6 +975,7 @@ function buildPlanDays(
     needsValue: days === null,
     error: problem === undefined ? "" : PLAN_DAYS_ERROR_TEXT[problem],
     description: "How many days your plan runs for",
+    source: planSourceText(days, source),
   };
 }
 
@@ -1598,14 +1663,23 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   // panel even before the first reading arrives.
   const planLimit = buildPlanLimit(
     config.planLimitBytes,
+    config.planLimitSource,
     input.planLimitProblem,
   );
-  const planDays = buildPlanDays(config.planDays, input.planDaysProblem);
+  const planDays = buildPlanDays(
+    config.planDays,
+    config.planDaysSource,
+    input.planDaysProblem,
+  );
   // One flag drives all three of the panel's responses — the confirmation, the
   // dial's wording, and which cap the arithmetic may use. Only an explicit
   // `false` withdraws the cap, the same test {@link confirmedPlanLimit} makes.
   const capUnconfirmed = config.planCapConfirmed === false;
-  const planCapPrompt = buildPlanCapPrompt(capUnconfirmed);
+  const planCapPrompt = buildPlanCapPrompt(
+    capUnconfirmed,
+    input.planCapProblem,
+    config,
+  );
   // The cap the panel may actually measure against. A sync that brought back a
   // different plan leaves the stored one unbelievable, and an unbelievable cap
   // reads as no cap: the dial and the share go, the tier 1 pace stays.

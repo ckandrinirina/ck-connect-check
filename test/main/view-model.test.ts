@@ -1582,6 +1582,50 @@ describe("buildPopoverModel — an unconfirmed plan cap", () => {
     expect(unconfirmed.planLimit.value).toBe("150");
   });
 
+  it("states no refusal until a Confirm has been refused", () => {
+    expect(unconfirmed.planCapPrompt?.refusal).toBe("");
+  });
+
+  /** The same unconfirmed plan, after a Confirm the main process refused. */
+  function refused(
+    planLimitBytes: number | null,
+    remainingGo: number,
+    problem: "no-cap" | "below-remaining",
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes,
+        planDays: 30,
+        planCapConfirmed: false,
+        allowanceAnchor: anchorOf(remainingGo * GO, { expiresAt: IN_TEN_DAYS }),
+      },
+      planCapProblem: problem,
+      clock,
+    });
+  }
+
+  it("states why a Confirm below the remaining was refused, on the prompt itself", () => {
+    const model = refused(50 * GO, 145.8, "below-remaining");
+
+    // Both figures, and where the fix is: the stored cap is the thing wrong.
+    expect(model.planCapPrompt?.refusal).toContain("50.00 Go");
+    expect(model.planCapPrompt?.refusal).toContain("145.80 Go");
+    expect(model.planCapPrompt?.refusal).toMatch(/Settings/);
+    // Not in the settings view's error line, which is hidden behind the toggle.
+    expect(model.planLimit.error).toBe("");
+  });
+
+  it("states why a Confirm with no stored cap was refused", () => {
+    const model = refused(null, 145.8, "no-cap");
+
+    expect(model.planCapPrompt?.refusal).not.toBe("");
+    expect(model.planCapPrompt?.refusal).toMatch(/Settings/);
+    expect(model.planLimit.error).toBe("");
+  });
+
   it("hands the renderer only strings and numbers it need not format", () => {
     for (const leaf of leaves(unconfirmed.planCapPrompt)) {
       expect(typeof leaf === "string" || typeof leaf === "number").toBe(true);
@@ -2548,5 +2592,126 @@ describe("buildPopoverModel — the expiry row the portal cannot fill", () => {
     });
 
     expect(model.controls.expiry).toBe(true);
+  });
+});
+
+describe("buildPopoverModel — where each plan field's value came from", () => {
+  const CAP = 150_000_000_000;
+
+  function modelFrom(config: AppConfig): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config,
+      clock,
+    });
+  }
+
+  it("marks a cap the carrier gave as the carrier's", () => {
+    const model = modelFrom({
+      ...configWith(CAP, anchorOf(12_000_000_000)),
+      planLimitSource: "carrier",
+    });
+
+    expect(model.planLimit.source).toBe("carrier");
+  });
+
+  it("marks a typed cap as the user's own", () => {
+    const model = modelFrom({
+      ...configWith(CAP, anchorOf(12_000_000_000)),
+      planLimitSource: "user",
+    });
+
+    expect(model.planLimit.source).toBe("set by you");
+  });
+
+  it("marks a length the carrier gave as the carrier's, and a typed one as the user's", () => {
+    const base = { ...configWith(CAP, anchorOf(12_000_000_000)), planDays: 30 };
+
+    expect(modelFrom({ ...base, planDaysSource: "carrier" }).planDays.source).toBe(
+      "carrier",
+    );
+    expect(modelFrom({ ...base, planDaysSource: "user" }).planDays.source).toBe(
+      "set by you",
+    );
+  });
+
+  it("reads each field's marker from its own source, not the other's", () => {
+    const model = modelFrom({
+      ...configWith(CAP, anchorOf(12_000_000_000)),
+      planDays: 30,
+      planLimitSource: "carrier",
+      planDaysSource: "user",
+    });
+
+    expect(model.planLimit.source).toBe("carrier");
+    expect(model.planDays.source).toBe("set by you");
+  });
+
+  it("claims no source for a field that holds nothing", () => {
+    // An empty field was set by nobody: "set by you" beside a blank would lie.
+    const model = modelFrom({
+      ...configWith(null, anchorOf(12_000_000_000)),
+      planDays: null,
+      planLimitSource: "user",
+      planDaysSource: "user",
+    });
+
+    expect(model.planLimit.source).toBe("");
+    expect(model.planDays.source).toBe("");
+  });
+
+  it("carries the marker before the first reading, like the value beside it", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes: CAP,
+        planLimitSource: "carrier",
+      },
+      clock,
+    });
+
+    expect(model.planLimit.source).toBe("carrier");
+  });
+});
+
+describe("buildPopoverModel — no plan-limit prompt once the carrier gave a cap", () => {
+  const CARRIER_CAP = {
+    planLimitSource: "carrier",
+    planCapConfirmed: true,
+  } as const;
+
+  it("asks for nothing on Yas", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...configWith(150_000_000_000, anchorOf(12_000_000_000)),
+        ...CARRIER_CAP,
+      },
+      clock,
+    });
+
+    expect(model.progress.prompt).not.toMatch(/limit/i);
+    expect(model.progress.available).toBe(true);
+    expect(model.planCapPrompt).toBeNull();
+    expect(model.planLimit.needsValue).toBe(false);
+  });
+
+  it("asks for nothing on Orange", () => {
+    const model = buildPopoverModel({
+      result: ORANGE_ONLINE,
+      lastReading: null,
+      config: { ...configWith(20_000_000_000), ...CARRIER_CAP },
+      portal: portal(true),
+      clock,
+    });
+
+    expect(model.progress.prompt).not.toMatch(/limit/i);
+    expect(model.progress.available).toBe(true);
+    expect(model.planCapPrompt).toBeNull();
+    expect(model.planLimit.needsValue).toBe(false);
   });
 });

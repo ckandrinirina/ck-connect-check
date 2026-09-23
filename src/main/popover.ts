@@ -34,6 +34,12 @@ export const POPOVER_SAVE_PASSWORD_CHANNEL = "popover:save-password";
 /** The plan-size field's submit, carrying the characters typed into it. */
 export const POPOVER_SET_PLAN_LIMIT_CHANNEL = "popover:set-plan-limit";
 
+/**
+ * The new-plan prompt's Confirm. Carries nothing: it vouches for the cap
+ * already stored, which the main process checks for itself.
+ */
+export const POPOVER_CONFIRM_PLAN_CAP_CHANNEL = "popover:confirm-plan-cap";
+
 /** The plan-length field's submit, carrying the characters typed into it. */
 export const POPOVER_SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 
@@ -115,6 +121,8 @@ export interface PopoverOptions {
   onSavePassword?: (credential: RouterCredential) => void;
   /** The user submitted the plan-size field, with whatever they typed into it. */
   onSetPlanLimit?: (value: string) => void;
+  /** The user pressed Confirm on the new-plan prompt. */
+  onConfirmPlanCap?: () => void;
   /** The user submitted the plan-length field, on the same terms. */
   onSetPlanDays?: (value: string) => void;
   /** The user picked one of the carrier's other forfaits, by its own label. */
@@ -260,6 +268,12 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onConfirmPlanCapMessage(event: IpcMainEvent): void {
+    if (fromThisPanel(event)) {
+      options.onConfirmPlanCap?.();
+    }
+  }
+
   function onSetPlanDaysMessage(event: IpcMainEvent, payload: unknown): void {
     if (fromThisPanel(event) && typeof payload === "string") {
       options.onSetPlanDays?.(payload);
@@ -296,6 +310,7 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   ipcMain.on(POPOVER_SYNC_CHANNEL, onSyncMessage);
   ipcMain.on(POPOVER_SAVE_PASSWORD_CHANNEL, onSavePasswordMessage);
   ipcMain.on(POPOVER_SET_PLAN_LIMIT_CHANNEL, onSetPlanLimitMessage);
+  ipcMain.on(POPOVER_CONFIRM_PLAN_CAP_CHANNEL, onConfirmPlanCapMessage);
   ipcMain.on(POPOVER_SET_PLAN_DAYS_CHANNEL, onSetPlanDaysMessage);
   ipcMain.on(POPOVER_CHOOSE_FORFAIT_CHANNEL, onChooseForfaitMessage);
   ipcMain.on(POPOVER_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
@@ -496,6 +511,10 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       ipcMain.removeListener(
         POPOVER_SET_PLAN_LIMIT_CHANNEL,
         onSetPlanLimitMessage,
+      );
+      ipcMain.removeListener(
+        POPOVER_CONFIRM_PLAN_CAP_CHANNEL,
+        onConfirmPlanCapMessage,
       );
       ipcMain.removeListener(
         POPOVER_SET_PLAN_DAYS_CHANNEL,

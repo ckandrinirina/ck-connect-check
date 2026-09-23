@@ -155,12 +155,17 @@
 
             <!--
             Shown only when a sync brought back a plan the stored cap cannot
-            describe. Confirming re-submits whatever is already in the field
-            above, so an unchanged plan size costs one press rather than a
-            retype — the panel has no separate "confirm" message to send.
+            describe. Confirm vouches for the stored cap, so an unchanged plan
+            size costs one press rather than a retype; a refused Confirm says
+            why on the line below, here, where the press was made.
           -->
             <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
               <p class="plan-cap-message" data-field="planCapMessage"></p>
+              <p
+                class="plan-cap-refusal"
+                data-field="planCapRefusal"
+                role="status"
+              ></p>
               <button
                 class="plan-cap-confirm"
                 type="button"
@@ -450,6 +455,7 @@
           placeholder="150"
         />
         <span class="plan-limit-unit" data-field="planLimitUnit">Go</span>
+        <span class="plan-limit-source" data-field="planLimitSource"></span>
         <button class="plan-limit-submit" type="submit">Set</button>
       </form>
       <p class="plan-limit-error" data-field="planLimitError" role="status"></p>
@@ -472,6 +478,7 @@
           placeholder="30"
         />
         <span class="plan-limit-unit" data-field="planDaysUnit">days</span>
+        <span class="plan-limit-source" data-field="planDaysSource"></span>
         <button class="plan-limit-submit" type="submit">Set</button>
       </form>
       <p class="plan-limit-error" data-field="planDaysError" role="status"></p>

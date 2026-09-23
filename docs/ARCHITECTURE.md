@@ -379,9 +379,13 @@ a remainder above a stale cap clamps consumption to zero and the dial reads 0% f
 
 So the new plan is _detected_ instead. A synced anchor belongs to a different plan when its
 `planLabel` differs from the previous one, its `expiresAt` moves later, or its
-`remainingBytes` exceeds the configured cap. Any of those marks the cap unconfirmed: the
-panel keeps the tier 1 reading, drops the dial and the pace rather than drawing them from a
-contradicted cap, and asks for the cap and length to be confirmed.
+`remainingBytes` exceeds the configured cap when the previous anchor's did not. Any of those
+re-derives both values through `derivePlan` (T-79): the cap becomes the synced
+`remainingBytes`, the length the whole days from `syncedAt` to `expiresAt` rounded up, each
+recorded with source `carrier`, and the cap is confirmed on the spot — so the dial and the pace
+show right after that sync with nothing to confirm. The first sync with no cap stored derives
+the same way. A sync of the same plan leaves both values alone, whether derived or typed
+(`user`), so a derived cap never shrinks to a later, smaller remaining.
 
 ## Folder structure
 
@@ -451,12 +455,14 @@ Append-only. One line each, always with the reason.
 - Staleness is checked on panel open and on a background timer, not on every poll tick — the poll runs every 30 seconds and would otherwise turn one stale window into a dialogue attempt loop
 - The stale clock restarts only on a successful sync, and a failure parks automatic syncing until an explicit press — otherwise a wrong password would be re-offered every 30 minutes and lock the account within three hours
 - The pace compares the share of the allowance spent against the share of the period elapsed, both cumulative — a per-day comparison would need stored daily usage, and cumulative shares already give the weekend-offsets-a-heavy-Monday behaviour for free
-- The plan's length in days is entered by the user next to the cap, not derived — the period start is `expiresAt − planDays`, and the carrier's USSD reply states the expiry but never the duration
+- **Reversed (T-79):** the plan's size and length are derived from the sync that detects a new plan (`remainingBytes`, and whole days to `expiresAt`), and a typed value is only an override — at that moment the carrier's remaining *is* the plan size, and a hand-typed number was the thing that went stale on every top-up
 - The pace is absent, not `safe`, until both a cap and a plan length are set — the same reason the dial is absent before the first sync
 - **Supersedes the line above:** the pace reading is tiered, and a synced anchor alone already yields `remainingNow / daysUntilExpiry` — the app holds a remaining volume and an expiry date from its first sync, so gating the most useful daily figure behind two typed values withheld an answer it could already give
 - Only the band and `affordedPerDay` still require a cap and a plan length — those two are genuinely un-derivable from the carrier's reply, whereas the sustainable daily figure is not
 - Loading a new plan needs no reset control — every sync replaces the whole anchor through `anchorFrom`, so a reset button would clear nothing a sync does not already overwrite
-- A synced anchor that contradicts the stored cap marks the cap unconfirmed instead of being reconciled — `usedBytes` is `max(0, cap − remaining)`, so a top-up above a stale cap silently clamps the dial to 0%, and a silently corrected number is the unreliability the anchor design exists to remove
+- **Reversed (T-79):** a new plan re-derives the cap instead of marking it unconfirmed — a new plan still must never keep a stale cap (a top-up above it clamps the dial to 0%), but the fix is to take the carrier's own figure, not to ask for a retype; each value records whether its source is `carrier` or `user`, and a `user` value lasts until the next new plan
+- The new-plan contradiction is read against the anchor being replaced, not against the cap alone, and Confirm is its own message that vouches for the stored cap — re-sending the hidden settings field confirmed the *old* cap, and every later sync of the same bigger plan re-read the same contradiction and cleared the confirmation again (T-78)
+- A refused Confirm is worded on the new-plan prompt itself, and every refusal line is re-marked on each refused press — a refusal written into the hidden settings view, or repeated word for word, reads as a press that did nothing
 - The `over` band starts at 1.20 rather than above it — 150 Go over 30 days affords 5 Go a day and the ratio for 6 Go is exactly 1.20, so the intended verdict sat on the wrong side of an inclusive bound
 - The pace states `averagePerDay` beside `affordedPerDay` as well as the ratio — "6.1 Go a day against 5.0" is the sentence the user reasons in, and the ratio alone made them do the division
 - `averagePerDay` is derived from the same cumulative used volume and elapsed days as the ratio, never accumulated separately — two independent counters of the same thing eventually disagree, and only one of them would be right
@@ -471,7 +477,7 @@ Append-only. One line each, always with the reason.
 - The Orange portal is scraped from server-rendered HTML, not from a JSON API — the page ships the figure in its markup and there is no API behind it to call, so the parse is the integration
 - The Orange parse reads whatever forfaits the page lists rather than assuming one shape — `full.infoconso.js` renders a percentage ring for capped bundles and none for Wifiber Go+ SSE, so a single hard-coded layout would break on the next plan the user buys
 - The Internet forfait is auto-selected and voice, SMS and credit bundles are ignored — the app measures a data allowance, and the other three answer a question the menu bar was never asked
-- On Orange the plan period is the calendar month, derived, and only the cap is typed — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly
+- On Orange the plan period is the calendar month, derived — Wifiber renews on the first, so a typed plan length would be a second source of truth for something the calendar already states exactly; **the cap too is derived (T-80)** when the forfait's page states a total or a percentage ring, and is typed only for a forfait whose page states neither
 - The router's month counter has no role at all on Orange — it read 51.1 Go against the portal's 7.37 Go on the same day, so the two count different traffic and joining them would produce a confident wrong number
 - An unreachable portal is rendered like an unreachable router, as a state and not an error — the portal only answers on the Orange network, so a laptop on any other Wi-Fi is an ordinary condition
 - **Reverses the separate-window decision this line used to state (T-72):** the connected devices are a second tab inside the popover, not a window of their own — a window was chosen because the panel had 497 of its 520 px spent, but a tab spends none of them: the two panes never draw at once, so the list gets the whole 320×520 and the app stays one screen with nothing to summon and nothing left open behind the menu bar

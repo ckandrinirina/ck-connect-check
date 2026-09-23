@@ -21,7 +21,7 @@ import {
   MIN_POLL_INTERVAL_SECONDS,
   defaultConfig,
 } from "./defaults.js";
-import type { AppConfig } from "./defaults.js";
+import type { AppConfig, PlanValueSource } from "./defaults.js";
 import type { AllowanceAnchor } from "../domain/allowance.js";
 
 /** A config value the app refuses to run on. `field` names the culprit. */
@@ -262,6 +262,48 @@ function readPlanCapConfirmed(raw: Record<string, unknown>): boolean {
 }
 
 /**
+ * Where a plan value came from. Falls back to `"user"` rather than throwing:
+ * every config written before sources existed holds values the user typed, and
+ * anything but the two known words is a file nobody wrote deliberately.
+ */
+function readPlanValueSource(
+  raw: Record<string, unknown>,
+  field: "planLimitSource" | "planDaysSource",
+): PlanValueSource {
+  return raw[field] === "carrier" ? "carrier" : "user";
+}
+
+/**
+ * Why the new-plan prompt's Confirm could not confirm the stored cap. A token,
+ * like {@link PlanLimitRefusal}, and for the same reason: the sentence belongs
+ * to `main/view-model.ts`.
+ */
+export type PlanCapRefusal = "no-cap" | "below-remaining";
+
+/**
+ * Whether Confirm may confirm the stored cap, or why it may not.
+ *
+ * Confirm sends no figure — it vouches for the one already stored — so the only
+ * things to check are that there is one, and that the plan the prompt is about
+ * does not already contradict it. A cap below the carrier's remaining is the
+ * cap from the previous plan: confirming it would put the dial on 0% and keep
+ * it there.
+ */
+export function planCapRefusal(config: AppConfig): PlanCapRefusal | null {
+  if (config.planLimitBytes === null) {
+    return "no-cap";
+  }
+
+  const anchor = config.allowanceAnchor;
+
+  if (anchor !== undefined && anchor.remainingBytes > config.planLimitBytes) {
+    return "below-remaining";
+  }
+
+  return null;
+}
+
+/**
  * The cap the app may actually measure against: the stored one, or none at all
  * while a sync has left it unconfirmed.
  *
@@ -488,6 +530,8 @@ export function parseConfig(raw: unknown): AppConfig {
     planLimitBytes: readPlanLimit(record),
     planDays: readPlanDays(record),
     planCapConfirmed: readPlanCapConfirmed(record),
+    planLimitSource: readPlanValueSource(record, "planLimitSource"),
+    planDaysSource: readPlanValueSource(record, "planDaysSource"),
     syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),

@@ -269,31 +269,35 @@ On Orange a top-up needs nothing: the portal states the new plan on the next
 read, and the panel offers it as a forfait to measure if the old one is still
 live beside it. Only the cap has to be retyped, and only if the size changed.
 
-On YAS, loading a new plan takes two actions, and there is **no reset button** —
+On YAS, loading a new plan takes one action, and there is **no reset button** —
 by design, because there is nothing left for one to clear.
 
-1. **Press Sync.** A sync rebuilds the entire anchor — offer name, remaining
-   volume, expiry and both router counters — so everything the carrier states is
-   replaced already.
-2. **Confirm the plan size.** It is the one value a sync cannot refresh, because
-   you typed it. Same size as before? One press of **Confirm**. Different size?
-   Retype it in the settings view, which confirms it too.
+1. **Press Sync** (or let the automatic sync do it). A sync rebuilds the entire
+   anchor — offer name, remaining volume, expiry and both router counters — so
+   everything the carrier states is replaced already.
 
-You will be asked rather than having to remember. The app spots a new plan from
-any one of three signs: the carrier renamed the offer, the expiry moved later, or
-the remaining volume came back **larger than the cap you typed** — and that last
-one catches a top-up the carrier labelled identically.
+The sync that spots the new plan also works out its size and length. At that
+moment the carrier's remaining volume _is_ the plan size, and the time from the
+sync to the carrier's expiry, in whole days rounded up, _is_ the plan's length.
+Both are stored and the dial and the pace show straight away, with nothing to
+type or confirm. The same happens on the very first sync when no size is stored.
 
-Until it is confirmed, `planCapConfirmed` is false and the panel withholds
-everything computed from the cap: no dial, no share in the menu bar, no coloured
-meter. The tier 1 daily figure stays, because it is read from the carrier's own
-remaining volume and needs no cap to be true.
+The app spots a new plan from any one of three signs: the carrier renamed the
+offer, the expiry moved later, or the remaining volume came back **larger than
+the stored size** — and that last one catches a top-up the carrier labelled
+identically.
+
+A later sync of the same plan never touches either value, so the derived size
+does not shrink as you use the plan. A size or length you type yourself is kept
+across syncs of the same plan, and replaced by the carrier's figures only when
+the next new plan is detected. The derived size is only exact when the sync lands
+soon after the top-up — traffic in between makes it smaller by that much — which
+is what typing your own is for.
 
 This is not housekeeping. On YAS, consumption is worked out as `cap − remaining`,
-so topping up from a 50 Go plan to a 150 Go one without retyping the cap would
+so topping up from a 50 Go plan to a 150 Go one while keeping the old cap would
 clamp consumption to zero and leave the dial reading 0% indefinitely, with
-nothing on screen suggesting why. Withholding the dial is the honest failure; a
-confident wrong one is the dangerous one.
+nothing on screen suggesting why.
 
 ## The device list
 
@@ -439,7 +443,9 @@ read off the router on every poll.
 | `warnThresholdPercent`      | Share of the plan at which the menu bar starts warning. Default `90`                                                                                                                   |
 | `planLimitBytes`            | Your plan size in bytes, or `null` when unset. Set it from the settings view. Needed on both carriers                                                                                  |
 | `planDays`                  | How long your plan runs, in whole days, or `null` when unset. YAS only — on Orange the calendar month supplies it. An unusable value reads as unset rather than taking the config down |
-| `planCapConfirmed`          | Whether `planLimitBytes` still describes the current plan. Cleared by a sync that finds a new one, set again by confirming the size on the panel. Default `true`                       |
+| `planCapConfirmed`          | Whether `planLimitBytes` still describes the current plan. A YAS sync that derives the size sets it; only a config from before that can hold it cleared. Default `true`                |
+| `planLimitSource`           | Where `planLimitBytes` came from: `"carrier"` (derived by a sync) or `"user"` (typed). Anything else reads as `"user"`                                                                 |
+| `planDaysSource`            | Where `planDays` came from, on the same terms as `planLimitSource`                                                                                                                     |
 | `syncStaleAfterMinutes`     | Minutes before the carrier figure counts as old and is re-anchored on its own. YAS only. Default `30`. An unusable value falls back to that default                                    |
 | `routerUsername`            | Router admin username. Absent until a credential has been saved, which only the YAS sync ever needs                                                                                    |
 | `routerPasswordBlob`        | The password **as encrypted by the Keychain**, base64-encoded — see below                                                                                                              |

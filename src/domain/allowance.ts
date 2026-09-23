@@ -232,12 +232,17 @@ function movedLater(next: Date | null, previous: Date | null): boolean {
  *
  * - the carrier renamed the offer;
  * - the expiry moved later, which only a new period can do;
- * - the remaining volume passed the configured cap, which catches a top-up the
- *   carrier labelled identically and dated the same way.
+ * - the remaining volume passed the configured cap when the anchor it replaces
+ *   had not, which catches a top-up the carrier labelled identically and dated
+ *   the same way.
  *
  * The last is gated on a cap being configured at all: with none there is
- * nothing for a larger remainder to contradict. A first-ever sync replaces no
- * anchor and so contradicts nothing either.
+ * nothing for a larger remainder to contradict. It is also read against the
+ * anchor being replaced, never against the cap alone: a remainder already
+ * above the cap was flagged by the sync that first brought it, and a cap the
+ * user confirmed after that must not be cleared again by the same plan
+ * syncing a second time. A first-ever sync replaces no anchor and so
+ * contradicts nothing either.
  */
 export function isNewPlan(
   anchor: AllowanceAnchor,
@@ -249,8 +254,41 @@ export function isNewPlan(
   return (
     anchor.planLabel !== previous.planLabel ||
     movedLater(anchor.expiresAt, previous.expiresAt) ||
-    (planLimitBytes !== null && anchor.remainingBytes > planLimitBytes)
+    (planLimitBytes !== null &&
+      anchor.remainingBytes > planLimitBytes &&
+      previous.remainingBytes <= planLimitBytes)
   );
+}
+
+/** A plan's size and length, as read off the sync that detected it. */
+export interface DerivedPlan {
+  /** The carrier's remaining volume at that sync — the plan size, untouched yet. */
+  planLimitBytes: number;
+  /**
+   * Whole days from the sync to the expiry, a part day rounded up. Null when
+   * the carrier stated no expiry, or one at or before the sync.
+   */
+  planDays: number | null;
+}
+
+/**
+ * What the plan is, derived from the sync that first sees it.
+ *
+ * A new plan shows up in the first sync after a top-up, so at that moment the
+ * remaining volume *is* the plan size and the time left to the expiry *is* its
+ * length. The size is only exact when the sync lands soon after the top-up;
+ * traffic in between makes it too small by that much.
+ */
+export function derivePlan(anchor: AllowanceAnchor): DerivedPlan {
+  const span =
+    anchor.expiresAt === null
+      ? 0
+      : anchor.expiresAt.getTime() - anchor.syncedAt.getTime();
+
+  return {
+    planLimitBytes: anchor.remainingBytes,
+    planDays: span > 0 ? Math.ceil(span / MILLISECONDS_PER_DAY) : null,
+  };
 }
 
 /** Record one USSD reading against the router's counter at this instant. */

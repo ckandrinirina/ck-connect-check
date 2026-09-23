@@ -13,9 +13,11 @@ import { networkInterfaces } from "node:os";
 
 import {
   loadConfig,
+  planCapRefusal,
   readPlanDaysEntry,
   readPlanLimitEntry,
   saveConfig,
+  type PlanCapRefusal,
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
@@ -185,6 +187,11 @@ export interface MenuBarApp {
    * can drive it without an Electron window.
    */
   setPlanLimit(value: string): void;
+  /**
+   * The new-plan prompt's Confirm: vouches for the stored cap, or says on the
+   * prompt why it cannot. Exposed for the same reason as the two either side.
+   */
+  confirmPlanCap(): void;
   /** Stores a plan length the same way, and for the same reason. */
   setPlanDays(value: string): void;
   /**
@@ -248,6 +255,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       onSetPlanLimit: (value) => {
         setPlanLimit(value);
       },
+      onConfirmPlanCap: () => {
+        confirmPlanCap();
+      },
       onSetPlanDays: (value) => {
         setPlanDays(value);
       },
@@ -283,6 +293,13 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   let planDaysProblem: PlanDaysRefusal | undefined;
 
   /**
+   * Why the last Confirm on the new-plan prompt was refused, if it was. Kept
+   * apart from {@link planLimitProblem} because it is shown apart: on the
+   * prompt the press came from, not in the settings view hidden behind it.
+   */
+  let planCapProblem: PlanCapRefusal | undefined;
+
+  /**
    * Why the last portal fetch produced no page, when it produced none.
    *
    * Read off the fetch on its way past rather than asked of the poller: the
@@ -309,6 +326,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         portal: { ...poller.portal, failure: portalFailure },
         planLimitProblem,
         planDaysProblem,
+        planCapProblem,
       }),
     );
   }
@@ -343,9 +361,37 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     planLimitProblem = undefined;
     config.planLimitBytes = entry.bytes;
-    // Submitting the cap *is* confirming it, whether the figure changed or not
-    // — which is what lets the new-plan prompt cost a single press when the
-    // plan size did not actually move.
+    config.planLimitSource = "user";
+    // Submitting the cap *is* confirming it, whether the figure changed or not.
+    // A typed figure is the user's own, so it is never refused for being below
+    // the carrier's remaining — only Confirm, which types nothing, is.
+    recordConfirmedCap();
+  }
+
+  /**
+   * Confirms the stored cap from the new-plan prompt, or says why it cannot.
+   *
+   * No figure travels with the press: the settings field it used to re-send is
+   * hidden while the prompt shows, and held the *old* cap — which is exactly
+   * the one a bigger new plan contradicts. So the stored cap is checked here,
+   * and a refusal goes to the prompt itself.
+   */
+  function confirmPlanCap(): void {
+    const refusal = planCapRefusal(config);
+
+    if (refusal !== null) {
+      planCapProblem = refusal;
+      refreshPopover();
+
+      return;
+    }
+
+    recordConfirmedCap();
+  }
+
+  /** Marks the stored cap confirmed, writes it down and redraws the panel. */
+  function recordConfirmedCap(): void {
+    planCapProblem = undefined;
     config.planCapConfirmed = true;
 
     try {
@@ -378,6 +424,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     planDaysProblem = undefined;
     config.planDays = entry.days;
+    config.planDaysSource = "user";
 
     try {
       saveConfig(configPath, config);
@@ -950,6 +997,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   return {
     sync: () => sync.start(),
     setPlanLimit,
+    confirmPlanCap,
     setPlanDays,
     setForfait,
     setDeviceBlocked,

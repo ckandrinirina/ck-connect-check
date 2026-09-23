@@ -43,6 +43,11 @@ export interface PopoverBridge {
    * not read it, convert it or judge it — that is all decided the other side.
    */
   setPlanLimit(value: string): void;
+  /**
+   * Confirm the plan size already stored, from the new-plan prompt. Nothing is
+   * sent with it: whether that size can be confirmed is decided the other side.
+   */
+  confirmPlanCap(): void;
   /** Hand the plan length over on exactly the same terms. */
   setPlanDays(value: string): void;
   /**
@@ -106,9 +111,12 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     connectedDevices: model.connectedDevices,
     planLimitUnit: model.planLimit.unit,
     planLimitError: model.planLimit.error,
+    planLimitSource: model.planLimit.source,
     planDaysUnit: model.planDays.unit,
     planDaysError: model.planDays.error,
+    planDaysSource: model.planDays.source,
     planCapMessage: model.planCapPrompt?.message ?? "",
+    planCapRefusal: model.planCapPrompt?.refusal ?? "",
     paceSustainable: model.pace?.sustainable ?? "",
     paceAverage: model.pace?.meter?.average ?? "",
     paceAfforded: model.pace?.meter?.afforded ?? "",
@@ -345,6 +353,37 @@ function fieldValue(selector: string): string {
  * so a bare attribute selector matches the root element first and the form
  * never gets its listener — the submit only arrived at all because it bubbles.
  */
+/** The two lines a refused press writes to, each in the view its press came from. */
+const REFUSAL_LINES = [
+  '[data-field="planLimitError"]',
+  '[data-field="planCapRefusal"]',
+] as const;
+
+/**
+ * Takes the refusal mark off a line as its press goes out, so the answer puts
+ * it back on. A second refusal is the same sentence as the first, and without
+ * this the press behind it would change nothing on the screen and look
+ * ignored. The forced style read makes the removal land before the answer
+ * does, so the mark's animation plays again rather than being coalesced away.
+ */
+function withdrawRefusalMark(selector: (typeof REFUSAL_LINES)[number]): void {
+  const line = document.querySelector<HTMLElement>(selector);
+
+  if (line !== null) {
+    line.classList.remove("refused");
+    void line.offsetWidth;
+  }
+}
+
+/** Marks every refusal line that holds a refusal, and clears the rest. */
+function applyRefusalMarks(): void {
+  for (const selector of REFUSAL_LINES) {
+    const line = document.querySelector<HTMLElement>(selector);
+
+    line?.classList.toggle("refused", (line.textContent ?? "") !== "");
+  }
+}
+
 function planLimitForm(): HTMLFormElement | null {
   return document.querySelector<HTMLFormElement>("form[data-plan-limit]");
 }
@@ -622,6 +661,7 @@ function bindControls(): void {
       // Sent exactly as typed. Whether it is a number, and what it is worth in
       // bytes, are both decided in the main process — the panel's rule is that
       // the renderer works nothing out for itself.
+      withdrawRefusalMark('[data-field="planLimitError"]');
       window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
     });
   }
@@ -652,10 +692,11 @@ function bindControls(): void {
   if (confirm !== null && confirm.dataset["bound"] !== "true") {
     confirm.dataset["bound"] = "true";
     confirm.addEventListener("click", () => {
-      // Confirming is re-submitting: the field above already holds the stored
-      // cap, and the main process treats any successful entry as a
-      // confirmation. That is why there is no fifth message on the bridge.
-      window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
+      // Its own message rather than a re-submit of the settings field: that
+      // field is hidden while this shows and holds the old cap, and a refusal
+      // has to come back to this prompt, where the press was made.
+      withdrawRefusalMark('[data-field="planCapRefusal"]');
+      window.popoverBridge?.confirmPlanCap();
     });
   }
 }
@@ -1436,6 +1477,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPlanLimit(model);
   applyPlanDays(model);
   applyPlanCapPrompt(model);
+  applyRefusalMarks();
   applyPace(model);
   applyForfait(model);
   applyNotice(model);

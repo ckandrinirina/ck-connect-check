@@ -585,6 +585,20 @@ body {
   border-color: var(--accent);
 }
 
+/* Whose figure the field holds — "carrier" or "set by you" — in words, so a
+   typed override is never mistaken for the carrier's figure. Collapsed while
+   empty, so an unset field keeps its old spacing. */
+.plan-limit-source {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.plan-limit-source:empty {
+  display: none;
+}
+
 .plan-limit-submit {
   padding: 2px 8px;
   border: 1px solid var(--line);
@@ -628,6 +642,33 @@ body {
 .plan-cap-message {
   color: var(--text);
   font-size: 11px;
+}
+
+/* A refused Confirm, worded like the settings' own refusal lines and collapsed
+   the same way when there is none. */
+.plan-cap-refusal {
+  color: var(--over);
+  font-size: 11px;
+}
+
+.plan-cap-refusal:empty {
+  display: none;
+}
+
+/* Put on a refusal line by the answer to a press, and taken off by the press
+   itself — so an identical second refusal still visibly arrives. */
+.refused {
+  animation: refusal-arrives 600ms ease-out;
+}
+
+@keyframes refusal-arrives {
+  from {
+    background: color-mix(in srgb, var(--over) 25%, transparent);
+  }
+
+  to {
+    background: transparent;
+  }
 }
 
 .plan-cap-confirm {
