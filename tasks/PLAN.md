@@ -79,8 +79,8 @@
 | T-75 | Read the host list only while its tab is showing                        | done   | S    | T-72, T-73                   |
 | T-76 | Retire the separate devices window                                      | done   | S    | T-73, T-74, T-75             |
 | T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
-| T-78 | A confirmed cap stays confirmed across the next sync                    | doing  | S    | —                            |
-| T-79 | YAS works out the plan size and length from the sync itself             | todo   | M    | T-78                         |
+| T-78 | A confirmed cap stays confirmed across the next sync                    | done   | S    | —                            |
+| T-79 | YAS works out the plan size and length from the sync itself             | doing  | M    | T-78                         |
 | T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
 | T-81 | Settings shows the carrier's figures and a typed value overrides them   | todo   | S    | T-79, T-80                   |
 
@@ -4484,7 +4484,7 @@ pixels, which is the placeholder problem wearing a different hat.
 
 ## T-78 A confirmed cap stays confirmed across the next sync
 
-T-78 · status: doing · size: S · needs: — · files: src/main/main.ts, src/main/sync.ts, src/domain/allowance.ts, src/main/view-model.ts, src/renderer/popover.ts, test/main/sync.test.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts
+T-78 · status: done · size: S · needs: — · files: src/main/main.ts, src/main/sync.ts, src/domain/allowance.ts, src/main/view-model.ts, src/renderer/popover.ts, test/main/sync.test.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts, src/config/config.ts, src/main/popover.ts, src/renderer/preload.cts, src/renderer/index.html, src/renderer/popover.css, docs/ARCHITECTURE.md, test/main/main.test.ts, test/main/popover.test.ts, test/renderer/popover.test.ts
 
 Reported on 2026-09-23 after a new forfait: pressing Set or Confirm seems to do nothing, and the
 next Sync asks for the limit again. The likely cause is in the code. **Confirm** re-sends
@@ -4497,18 +4497,18 @@ happened.
 
 ### Acceptance
 
-- [ ] a test replays the reported sequence (new plan with remaining above the old cap → Confirm → Sync of the same plan) and the cap is still confirmed afterwards
-- [ ] `isNewPlan` flags a contradiction only against the anchor it replaces, so the same plan synced twice is never a new plan, whatever the cap
-- [ ] Confirm with a cap below the anchor's remaining is refused with a reason the model states in the prompt itself, not in the hidden settings view
-- [ ] a refused Set or Confirm always changes something visible in the view the press came from
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] a test replays the reported sequence (new plan with remaining above the old cap → Confirm → Sync of the same plan) and the cap is still confirmed afterwards
+- [x] `isNewPlan` flags a contradiction only against the anchor it replaces, so the same plan synced twice is never a new plan, whatever the cap
+- [x] Confirm with a cap below the anchor's remaining is refused with a reason the model states in the prompt itself, not in the hidden settings view
+- [x] a refused Set or Confirm always changes something visible in the view the press came from
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write the failing tests that replay the sequence above, and watch them fail for the reason diagnosed, not some other one
-2. [ ] Narrow the `remaining > cap` clause in `isNewPlan` so a plan the user has already confirmed is not re-flagged by the same anchor shape
-3. [ ] Give the cap prompt its own refusal line and route Confirm's refusal to it
-4. [ ] Run test, lint and build
+1. [x] Write the failing tests that replay the sequence above, and watch them fail for the reason diagnosed, not some other one
+2. [x] Narrow the `remaining > cap` clause in `isNewPlan` so a plan the user has already confirmed is not re-flagged by the same anchor shape
+3. [x] Give the cap prompt its own refusal line and route Confirm's refusal to it
+4. [x] Run test, lint and build
 
 ### Notes
 
@@ -4517,7 +4517,7 @@ changing anything. The diagnosis above comes from reading the code, not from a l
 
 ## T-79 YAS works out the plan size and length from the sync itself
 
-T-79 · status: todo · size: M · needs: T-78 · files: src/domain/allowance.ts, src/config/defaults.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts
+T-79 · status: doing · size: M · needs: T-78 · files: src/domain/allowance.ts, src/config/defaults.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts
 
 A new plan shows up in the first sync after a top-up. At that moment the carrier's remaining
 volume *is* the plan size, and the time from that sync to the carrier's expiry *is* the plan's
