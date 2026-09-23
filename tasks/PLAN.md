@@ -79,6 +79,10 @@
 | T-75 | Read the host list only while its tab is showing                        | done   | S    | T-72, T-73                   |
 | T-76 | Retire the separate devices window                                      | done   | S    | T-73, T-74, T-75             |
 | T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
+| T-78 | A confirmed cap stays confirmed across the next sync                    | todo   | S    | —                            |
+| T-79 | YAS works out the plan size and length from the sync itself             | todo   | M    | T-78                         |
+| T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
+| T-81 | Settings shows the carrier's figures and a typed value overrides them   | todo   | S    | T-79, T-80                   |
 
 ## T-01 Set the project up so tests can run
 
@@ -4477,3 +4481,127 @@ gapped so the three-line row anatomy still reads. `-strip` left only IHDR, tIME,
 IEND, and `3h …` was kept visible so the third line still shows a duration. Padding a short
 capture out to 320 was considered and rejected: it would pass the width assertion on invented
 pixels, which is the placeholder problem wearing a different hat.
+
+## T-78 A confirmed cap stays confirmed across the next sync
+
+T-78 · status: todo · size: S · needs: — · files: src/main/main.ts, src/main/sync.ts, src/domain/allowance.ts, src/main/view-model.ts, src/renderer/popover.ts, test/main/sync.test.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts
+
+Reported on 2026-09-23 after a new forfait: pressing Set or Confirm seems to do nothing, and the
+next Sync asks for the limit again. The likely cause is in the code. **Confirm** re-sends
+whatever the hidden Settings field holds, which is the *old* cap. `isNewPlan` treats any anchor
+whose `remainingBytes` is above the cap as a new plan, so when the new forfait is bigger than the
+old one, every later sync clears `planCapConfirmed` again. The press did work, but only until the
+next sync, which is 30 minutes at most. A refused entry is also written to `planLimitError`,
+which sits inside the hidden settings view, so from the Usage view a refusal looks like nothing
+happened.
+
+### Acceptance
+
+- [ ] a test replays the reported sequence (new plan with remaining above the old cap → Confirm → Sync of the same plan) and the cap is still confirmed afterwards
+- [ ] `isNewPlan` flags a contradiction only against the anchor it replaces, so the same plan synced twice is never a new plan, whatever the cap
+- [ ] Confirm with a cap below the anchor's remaining is refused with a reason the model states in the prompt itself, not in the hidden settings view
+- [ ] a refused Set or Confirm always changes something visible in the view the press came from
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Write the failing tests that replay the sequence above, and watch them fail for the reason diagnosed, not some other one
+2. [ ] Narrow the `remaining > cap` clause in `isNewPlan` so a plan the user has already confirmed is not re-flagged by the same anchor shape
+3. [ ] Give the cap prompt its own refusal line and route Confirm's refusal to it
+4. [ ] Run test, lint and build
+
+### Notes
+
+If step 1 cannot reproduce it, stop and capture `config.json` from the running app before
+changing anything. The diagnosis above comes from reading the code, not from a live repro.
+
+## T-79 YAS works out the plan size and length from the sync itself
+
+T-79 · status: todo · size: M · needs: T-78 · files: src/domain/allowance.ts, src/config/defaults.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts
+
+A new plan shows up in the first sync after a top-up. At that moment the carrier's remaining
+volume *is* the plan size, and the time from that sync to the carrier's expiry *is* the plan's
+length. So nothing has to be typed on YAS: the sync that detects a new plan can derive both
+values and store them.
+
+### Acceptance
+
+- [ ] a sync that detects a new plan (or the first sync with no cap stored) stores `planLimitBytes = anchor.remainingBytes` and `planDays` = whole days from `syncedAt` to `expiresAt`, rounded up
+- [ ] config records where each value came from (`"carrier"` or `"user"`), and a config written before this task loads as `"user"`
+- [ ] a derived cap is confirmed as soon as it is stored: the dial and the pace show right after that sync with no prompt
+- [ ] a later sync of the same plan never overwrites a derived cap with a smaller remaining
+- [ ] a value the user typed survives syncs of the same plan and is replaced only when a new plan is detected
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Write failing tests for a pure `derivePlan(anchor, clock)` and for `recordAnchor`'s new-plan branch
+2. [ ] Add `planLimitSource` / `planDaysSource` to `AppConfig`, with a lenient load that defaults to `"user"`
+3. [ ] Implement `derivePlan` in `src/domain/allowance.ts`
+4. [ ] Call it from `recordAnchor` in place of clearing `planCapConfirmed` on a new plan
+5. [ ] Run test, lint and build
+
+### Notes
+
+The derived size is only exact when the sync lands soon after the top-up. The automatic
+first sync runs as soon as there is no usable anchor, so this is normally minutes later.
+Traffic in between makes the cap too small by that amount, which is why a typed override
+(T-81) stays.
+
+## T-80 Orange works out the plan size from the portal's own figures
+
+T-80 · status: todo · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
+
+On Orange the period is already the calendar month, so only the size is missing.
+`full.infoconso.js` draws a percentage ring (`data-bundle-pcvalue`) for capped bundles, and
+the parser already reads it as `percent`. With the consumed figure beside it, the size follows.
+This needs checking against the new forfait's real page first: nothing in the repo shows whether
+`pcvalue` is the consumed share or the remaining share, or whether the page states the total
+outright.
+
+### Acceptance
+
+- [ ] a capture of the new forfait's `info-conso` page is committed under `test/fixtures/orange/` with the MSISDN redacted
+- [ ] when the page states a total volume, the parser returns it and the cap is that figure
+- [ ] otherwise, when it states a percentage, the cap is derived from the consumed figure and that percentage, rounded to the nearest whole Go
+- [ ] Wifiber Go+ SSE's page (no ring, no total) still derives nothing, and the panel behaves as it does today
+- [ ] a derived Orange cap is stored with source `"carrier"`, and a typed cap still overrides it
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Capture the live page and commit it redacted — **the user runs this from behind the router**
+2. [ ] Write failing parser tests against the capture, stating which way `pcvalue` reads
+3. [ ] Parse a stated total if there is one, and add `totalBytes?` to the forfait type
+4. [ ] Derive the cap in one pure function and apply it on the poll where the portal result lands
+5. [ ] Run test, lint and build
+
+### Notes
+
+A percentage near 0 makes the division unstable: 0.5 Go consumed at 0 % gives no cap at all.
+Below 1 %, derive nothing and wait for a later poll. Never divide by zero or guess.
+
+## T-81 Settings shows the carrier's figures and a typed value overrides them
+
+T-81 · status: todo · size: S · needs: T-79, T-80 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/main/main.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+
+Once the size and the length are derived, the Plan and Lasts fields stay as an override
+(settled in the start clarify round, 2026-09-23). The panel shows which kind of value it is
+using, so a typed override is never mistaken for the carrier's figure.
+
+### Acceptance
+
+- [ ] each field shows a `carrier` or `set by you` marker taken from its source in config
+- [ ] pressing Set stores the value with source `"user"` and the marker changes in the same model push
+- [ ] no "set a plan limit" prompt shows once a carrier-derived cap exists, on either carrier
+- [ ] the Lasts field stays hidden on Orange, as it is today
+- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [ ] Write failing view-model and renderer tests for the marker and for the missing prompt
+2. [ ] Add `source` to `PopoverPlanLimit` and the plan-days model
+3. [ ] Render the marker beside each field's unit
+4. [ ] Set the source to `"user"` in `setPlanLimit` / `setPlanDays`
+5. [ ] Check it against the live router: sync the new forfait and see the dial with nothing typed — **manual gate**
+6. [ ] Run test, lint and build
