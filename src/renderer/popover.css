@@ -622,6 +622,25 @@ body {
   display: none;
 }
 
+/* A Set that was stored, said on the line a refusal would use — in the safe
+   colour, and in words, so it never reads as a complaint. Put on by the answer
+   and taken off by the press, like the refusal mark, so an identical second
+   "Saved" still visibly arrives. */
+.plan-limit-error.saved {
+  color: var(--safe);
+  animation: saved-arrives 600ms ease-out;
+}
+
+@keyframes saved-arrives {
+  from {
+    background: color-mix(in srgb, var(--safe) 25%, transparent);
+  }
+
+  to {
+    background: transparent;
+  }
+}
+
 /* The new-plan confirmation. It sits under the two fields it is about, and is
    hidden through the `hidden` attribute rather than a class, so it costs no
    height at all until a sync contradicts the stored cap. */

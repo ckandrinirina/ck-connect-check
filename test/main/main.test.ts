@@ -37,7 +37,7 @@ import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
 import { trayImageFor } from "../../src/main/tray-icon.js";
 import type { Popover, PopoverTab } from "../../src/main/popover.js";
-import type { PopoverModel } from "../../src/main/view-model.js";
+import { SAVED_FOR_MS, type PopoverModel } from "../../src/main/view-model.js";
 
 /** Electron is never loaded for real here — only the surface `main.ts` touches. */
 const electron = vi.hoisted(() => ({
@@ -3154,6 +3154,90 @@ describe("startMenuBarApp — the tray's devices entry", () => {
     });
 
     expect(menuTemplate().some((entry) => entry.label === "Quit")).toBe(true);
+
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — saying a Set was saved", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** An app on a healthy anchor, settled past its first poll. */
+  async function settledApp(): Promise<{
+    app: ReturnType<typeof startMenuBarApp>;
+    popover: RecordingPopover;
+  }> {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: configHolding(HEALTHY_ANCHOR),
+      client: countingClient(),
+      popover,
+      allowance: allowanceRouter(() =>
+        Promise.resolve({ ok: true, allowance: CARRIER_ALLOWANCE }),
+      ),
+      credentials: storeHolding(CREDENTIAL),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { app, popover };
+  }
+
+  it("says the size was saved, even when it did not change", async () => {
+    const { app, popover } = await settledApp();
+
+    app.setPlanLimit("150");
+    expect(latest(popover).planLimit.saved).toBe("Saved — 150 Go");
+
+    const pushes = popover.models.length;
+
+    app.setPlanLimit("150");
+    expect(popover.models.length).toBeGreaterThan(pushes);
+    expect(latest(popover).planLimit.saved).toBe("Saved — 150 Go");
+
+    app.stop();
+  });
+
+  it("says the length was saved", async () => {
+    const { app, popover } = await settledApp();
+
+    app.setPlanDays("30");
+    expect(latest(popover).planDays.saved).toBe("Saved — 30 days");
+
+    app.stop();
+  });
+
+  it("replaces the confirmation with a refusal, and a refusal with a later success", async () => {
+    const { app, popover } = await settledApp();
+
+    app.setPlanLimit("150");
+    app.setPlanLimit("abc");
+    expect(latest(popover).planLimit.saved).toBe("");
+    expect(latest(popover).planLimit.error).not.toBe("");
+
+    app.setPlanLimit("150");
+    expect(latest(popover).planLimit.error).toBe("");
+    expect(latest(popover).planLimit.saved).toBe("Saved — 150 Go");
+
+    app.stop();
+  });
+
+  it("takes the confirmation away on its own after a few seconds", async () => {
+    const { app, popover } = await settledApp();
+
+    app.setPlanLimit("150");
+    app.setPlanDays("30");
+    await vi.advanceTimersByTimeAsync(SAVED_FOR_MS);
+
+    expect(latest(popover).planLimit.saved).toBe("");
+    expect(latest(popover).planDays.saved).toBe("");
 
     app.stop();
   });

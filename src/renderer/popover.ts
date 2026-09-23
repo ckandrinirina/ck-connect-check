@@ -110,10 +110,10 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     uploadRate: model.uploadRate,
     connectedDevices: model.connectedDevices,
     planLimitUnit: model.planLimit.unit,
-    planLimitError: model.planLimit.error,
+    planLimitError: model.planLimit.error || model.planLimit.saved,
     planLimitSource: model.planLimit.source,
     planDaysUnit: model.planDays.unit,
-    planDaysError: model.planDays.error,
+    planDaysError: model.planDays.error || model.planDays.saved,
     planDaysSource: model.planDays.source,
     planCapMessage: model.planCapPrompt?.message ?? "",
     planCapRefusal: model.planCapPrompt?.refusal ?? "",
@@ -375,12 +375,75 @@ function withdrawRefusalMark(selector: (typeof REFUSAL_LINES)[number]): void {
   }
 }
 
+/**
+ * The two field lines a successful Set writes its confirmation to — the same
+ * lines a refusal uses, so the answer to a press is always under the field
+ * pressed, whichever answer it is.
+ */
+const SAVED_LINES = [
+  { line: '[data-field="planLimitError"]', of: (m: PopoverModel) => m.planLimit },
+  { line: '[data-field="planDaysError"]', of: (m: PopoverModel) => m.planDays },
+] as const;
+
+/**
+ * Readies a field line for the answer to a press: the confirmation mark comes
+ * off so an identical second "Saved" still visibly arrives, and a dismissal
+ * left by editing is lifted, since a new press is a new answer.
+ */
+function withdrawSavedMark(selector: string): void {
+  const line = document.querySelector<HTMLElement>(selector);
+
+  if (line !== null) {
+    line.classList.remove("saved");
+    delete line.dataset["dismissed"];
+    void line.offsetWidth;
+  }
+}
+
+/**
+ * Hides a showing confirmation once its field is edited again: the figure it
+ * names is no longer the one in the box. A refusal stays — it still describes
+ * what is wrong with the entry being corrected.
+ */
+function dismissSaved(selector: string): void {
+  const line = document.querySelector<HTMLElement>(selector);
+
+  if (line !== null && line.classList.contains("saved")) {
+    line.dataset["dismissed"] = "true";
+    line.classList.remove("saved");
+    line.textContent = "";
+  }
+}
+
+/** Marks each line showing a confirmation, unless an edit has dismissed it. */
+function applySavedMarks(model: PopoverModel): void {
+  for (const { line: selector, of } of SAVED_LINES) {
+    const line = document.querySelector<HTMLElement>(selector);
+    const field = of(model);
+    const showing = field.error === "" && field.saved !== "";
+
+    if (line === null) continue;
+
+    if (showing && line.dataset["dismissed"] === "true") {
+      line.textContent = "";
+    }
+
+    line.classList.toggle(
+      "saved",
+      showing && line.dataset["dismissed"] !== "true",
+    );
+  }
+}
+
 /** Marks every refusal line that holds a refusal, and clears the rest. */
 function applyRefusalMarks(): void {
   for (const selector of REFUSAL_LINES) {
     const line = document.querySelector<HTMLElement>(selector);
 
-    line?.classList.toggle("refused", (line.textContent ?? "") !== "");
+    line?.classList.toggle(
+      "refused",
+      (line.textContent ?? "") !== "" && !line.classList.contains("saved"),
+    );
   }
 }
 
@@ -662,7 +725,11 @@ function bindControls(): void {
       // bytes, are both decided in the main process — the panel's rule is that
       // the renderer works nothing out for itself.
       withdrawRefusalMark('[data-field="planLimitError"]');
+      withdrawSavedMark('[data-field="planLimitError"]');
       window.popoverBridge?.setPlanLimit(fieldValue("[data-plan-limit-input]"));
+    });
+    planLimit.addEventListener("input", () => {
+      dismissSaved('[data-field="planLimitError"]');
     });
   }
 
@@ -674,7 +741,11 @@ function bindControls(): void {
       // The page must never navigate: it is the app, not a document.
       event.preventDefault();
 
+      withdrawSavedMark('[data-field="planDaysError"]');
       window.popoverBridge?.setPlanDays(fieldValue("[data-plan-days-input]"));
+    });
+    planDays.addEventListener("input", () => {
+      dismissSaved('[data-field="planDaysError"]');
     });
   }
 
@@ -1477,6 +1548,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPlanLimit(model);
   applyPlanDays(model);
   applyPlanCapPrompt(model);
+  applySavedMarks(model);
   applyRefusalMarks();
   applyPace(model);
   applyForfait(model);
