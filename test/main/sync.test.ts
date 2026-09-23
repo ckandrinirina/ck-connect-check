@@ -540,21 +540,38 @@ describe("recordAnchor — writing down the anchor a sync produced", () => {
     expect(config.allowanceAnchor?.syncedAt).toEqual(NOW);
   });
 
-  it("clears the cap flag when the anchor belongs to a new plan", () => {
-    // 30 Go left under a 50 Go cap, then 145 Go: the cap cannot describe this
-    // plan, and `usedBytes` would clamp to zero and read 0% for as long as it
-    // stood.
+  it("takes the new plan's size and length from the sync that detects it", () => {
+    // 30 Go left under a 50 Go cap, then 145 Go: at that moment the carrier's
+    // remaining *is* the plan size, and the time to its expiry the length.
     const config = configWith(
       anchor({ remainingBytes: 30_000_000_000 }),
       50_000_000_000,
     );
+    config.planDays = 7;
 
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 
-    expect(config.planCapConfirmed).toBe(false);
+    expect(config.planLimitBytes).toBe(ALLOWANCE.remainingBytes);
+    // 27/07 17:46 to 12/08 00:00 is 15 days and a part: rounded up.
+    expect(config.planDays).toBe(16);
+    expect(config.planLimitSource).toBe("carrier");
+    expect(config.planDaysSource).toBe("carrier");
   });
 
-  it("clears it for a relabelled plan too", () => {
+  it("confirms a derived cap the moment it is stored, so nothing prompts", () => {
+    const config = configWith(
+      anchor({ remainingBytes: 30_000_000_000 }),
+      50_000_000_000,
+    );
+    // Left unconfirmed by a sync from before caps were derived.
+    config.planCapConfirmed = false;
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.planCapConfirmed).toBe(true);
+  });
+
+  it("re-derives both values for a relabelled plan too", () => {
     const config = configWith(
       anchor({ planLabel: "NET WEEK 20 000" }),
       200_000_000_000,
@@ -562,14 +579,57 @@ describe("recordAnchor — writing down the anchor a sync produced", () => {
 
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 
-    expect(config.planCapConfirmed).toBe(false);
+    expect(config.planLimitBytes).toBe(ALLOWANCE.remainingBytes);
+    expect(config.planDays).toBe(16);
+    expect(config.planCapConfirmed).toBe(true);
   });
 
-  it("leaves the flag untouched when the plan has not changed", () => {
-    const config = configWith(anchor(), 200_000_000_000);
+  it("derives both values on a first-ever sync with no cap stored", () => {
+    const config = configWith(undefined, null);
 
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 
+    expect(config.planLimitBytes).toBe(ALLOWANCE.remainingBytes);
+    expect(config.planDays).toBe(16);
+    expect(config.planLimitSource).toBe("carrier");
+    expect(config.planDaysSource).toBe("carrier");
+    expect(config.planCapConfirmed).toBe(true);
+  });
+
+  it("never overwrites a derived cap with the smaller remaining of a later sync", () => {
+    const config = configWith(anchor(), ALLOWANCE.remainingBytes);
+    config.planLimitSource = "carrier";
+    config.planDays = 16;
+    config.planDaysSource = "carrier";
+
+    recordAnchor(
+      config,
+      { ...ALLOWANCE, remainingBytes: 120_000_000_000 },
+      MONTH,
+      clock,
+    );
+
+    expect(config.planLimitBytes).toBe(ALLOWANCE.remainingBytes);
+    expect(config.planDays).toBe(16);
+    expect(config.planLimitSource).toBe("carrier");
+  });
+
+  it("keeps a typed cap and length across syncs of the same plan", () => {
+    const config = configWith(anchor(), 200_000_000_000);
+    config.planDays = 30;
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+    recordAnchor(
+      config,
+      { ...ALLOWANCE, remainingBytes: 120_000_000_000 },
+      MONTH,
+      clock,
+    );
+
+    expect(config.planLimitBytes).toBe(200_000_000_000);
+    expect(config.planDays).toBe(30);
+    expect(config.planLimitSource).toBe("user");
+    expect(config.planDaysSource).toBe("user");
     expect(config.planCapConfirmed).toBe(true);
   });
 
@@ -582,15 +642,32 @@ describe("recordAnchor — writing down the anchor a sync produced", () => {
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 
     expect(config.planCapConfirmed).toBe(true);
+    expect(config.planLimitBytes).toBe(50_000_000_000);
   });
 
-  it("leaves it untouched on a first-ever sync, which replaces nothing", () => {
+  it("keeps a typed cap on a first-ever sync, which replaces nothing", () => {
     const config = configWith(undefined, 50_000_000_000);
 
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 
     expect(config.planCapConfirmed).toBe(true);
+    expect(config.planLimitBytes).toBe(50_000_000_000);
+    expect(config.planLimitSource).toBe("user");
     expect(config.allowanceAnchor).toBeDefined();
+  });
+
+  it("keeps the stored length when the new plan states no expiry", () => {
+    const config = configWith(
+      anchor({ planLabel: "NET WEEK 20 000" }),
+      200_000_000_000,
+    );
+    config.planDays = 30;
+
+    recordAnchor(config, { ...ALLOWANCE, expiresAt: null }, MONTH, clock);
+
+    expect(config.planLimitBytes).toBe(ALLOWANCE.remainingBytes);
+    expect(config.planDays).toBe(30);
+    expect(config.planDaysSource).toBe("user");
   });
 });
 

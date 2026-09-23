@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as allowanceModule from "../../src/domain/allowance.js";
 import {
   anchorFrom,
+  derivePlan,
   isAnchorStale,
   isNewPlan,
   needsAutomaticSync,
@@ -694,6 +695,51 @@ describe("the carrier's last valid day, read end to end from its own reply", () 
 
   it("leaves one day on the stated day itself, not none", () => {
     expect(readAt(new Date(2026, 7, 25, 9, 30, 0)).daysUntilExpiry).toBe(1);
+  });
+
+  it("derives the 30-day plan it was bought as from the sync that detected it", () => {
+    // Synced at 18:00 on 27/07, valid through the whole of 25/08: 29¼ days,
+    // which rounds up to the 30 the carrier sold.
+    expect(derivePlan(anchored)).toEqual({
+      planLimitBytes: stated.remainingBytes,
+      planDays: 30,
+    });
+  });
+});
+
+describe("derivePlan — the plan's size and length, read off the sync that found it", () => {
+  it("takes the carrier's remaining volume as the plan's size", () => {
+    expect(derivePlan(anchor()).planLimitBytes).toBe(ANCHORED_REMAINING);
+  });
+
+  it("counts whole days from the sync to the expiry, rounding a part day up", () => {
+    // 27/07 10:00 to 12/08 00:00 is 15 days and 14 hours.
+    expect(derivePlan(anchor()).planDays).toBe(16);
+  });
+
+  it("does not round up a span that is already whole days", () => {
+    const whole = anchor({
+      syncedAt: new Date(2026, 6, 27, 0, 0, 0),
+      expiresAt: new Date(2026, 7, 26, 0, 0, 0),
+    });
+
+    expect(derivePlan(whole).planDays).toBe(30);
+  });
+
+  it("derives no length when the carrier stated no expiry", () => {
+    expect(derivePlan(anchor({ expiresAt: null })).planDays).toBeNull();
+  });
+
+  it("derives no length from an expiry at or before the sync", () => {
+    const syncedAt = new Date(2026, 6, 27, 10, 0, 0);
+
+    expect(
+      derivePlan(anchor({ syncedAt, expiresAt: syncedAt })).planDays,
+    ).toBeNull();
+    expect(
+      derivePlan(anchor({ syncedAt, expiresAt: new Date(2026, 6, 20) }))
+        .planDays,
+    ).toBeNull();
   });
 });
 
