@@ -79,7 +79,7 @@
 | T-75 | Read the host list only while its tab is showing                        | done   | S    | T-72, T-73                   |
 | T-76 | Retire the separate devices window                                      | done   | S    | T-73, T-74, T-75             |
 | T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
-| T-78 | A confirmed cap stays confirmed across the next sync                    | todo   | S    | —                            |
+| T-78 | A confirmed cap stays confirmed across the next sync                    | doing  | S    | —                            |
 | T-79 | YAS works out the plan size and length from the sync itself             | todo   | M    | T-78                         |
 | T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
 | T-81 | Settings shows the carrier's figures and a typed value overrides them   | todo   | S    | T-79, T-80                   |
@@ -4484,7 +4484,7 @@ pixels, which is the placeholder problem wearing a different hat.
 
 ## T-78 A confirmed cap stays confirmed across the next sync
 
-T-78 · status: todo · size: S · needs: — · files: src/main/main.ts, src/main/sync.ts, src/domain/allowance.ts, src/main/view-model.ts, src/renderer/popover.ts, test/main/sync.test.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts
+T-78 · status: doing · size: S · needs: — · files: src/main/main.ts, src/main/sync.ts, src/domain/allowance.ts, src/main/view-model.ts, src/renderer/popover.ts, test/main/sync.test.ts, test/domain/allowance.test.ts, test/main/view-model.test.ts
 
 Reported on 2026-09-23 after a new forfait: pressing Set or Confirm seems to do nothing, and the
 next Sync asks for the limit again. The likely cause is in the code. **Confirm** re-sends
