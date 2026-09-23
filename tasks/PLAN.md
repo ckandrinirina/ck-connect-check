@@ -80,8 +80,8 @@
 | T-76 | Retire the separate devices window                                      | done   | S    | T-73, T-74, T-75             |
 | T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
 | T-78 | A confirmed cap stays confirmed across the next sync                    | done   | S    | —                            |
-| T-79 | YAS works out the plan size and length from the sync itself             | doing  | M    | T-78                         |
-| T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
+| T-79 | YAS works out the plan size and length from the sync itself             | done   | M    | T-78                         |
+| T-80 | Orange works out the plan size from the portal's own figures            | doing  | M    | T-78                         |
 | T-81 | Settings shows the carrier's figures and a typed value overrides them   | todo   | S    | T-79, T-80                   |
 
 ## T-01 Set the project up so tests can run
@@ -4517,7 +4517,7 @@ changing anything. The diagnosis above comes from reading the code, not from a l
 
 ## T-79 YAS works out the plan size and length from the sync itself
 
-T-79 · status: doing · size: M · needs: T-78 · files: src/domain/allowance.ts, src/config/defaults.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts
+T-79 · status: done · size: M · needs: T-78 · files: src/domain/allowance.ts, src/config/defaults.ts, src/config/config.ts, src/main/sync.ts, src/main/view-model.ts, test/domain/allowance.test.ts, test/config/config.test.ts, test/main/sync.test.ts, src/main/main.ts, README.md, docs/ARCHITECTURE.md, test/main/main.test.ts
 
 A new plan shows up in the first sync after a top-up. At that moment the carrier's remaining
 volume *is* the plan size, and the time from that sync to the carrier's expiry *is* the plan's
@@ -4526,20 +4526,20 @@ values and store them.
 
 ### Acceptance
 
-- [ ] a sync that detects a new plan (or the first sync with no cap stored) stores `planLimitBytes = anchor.remainingBytes` and `planDays` = whole days from `syncedAt` to `expiresAt`, rounded up
-- [ ] config records where each value came from (`"carrier"` or `"user"`), and a config written before this task loads as `"user"`
-- [ ] a derived cap is confirmed as soon as it is stored: the dial and the pace show right after that sync with no prompt
-- [ ] a later sync of the same plan never overwrites a derived cap with a smaller remaining
-- [ ] a value the user typed survives syncs of the same plan and is replaced only when a new plan is detected
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] a sync that detects a new plan (or the first sync with no cap stored) stores `planLimitBytes = anchor.remainingBytes` and `planDays` = whole days from `syncedAt` to `expiresAt`, rounded up
+- [x] config records where each value came from (`"carrier"` or `"user"`), and a config written before this task loads as `"user"`
+- [x] a derived cap is confirmed as soon as it is stored: the dial and the pace show right after that sync with no prompt
+- [x] a later sync of the same plan never overwrites a derived cap with a smaller remaining
+- [x] a value the user typed survives syncs of the same plan and is replaced only when a new plan is detected
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write failing tests for a pure `derivePlan(anchor, clock)` and for `recordAnchor`'s new-plan branch
-2. [ ] Add `planLimitSource` / `planDaysSource` to `AppConfig`, with a lenient load that defaults to `"user"`
-3. [ ] Implement `derivePlan` in `src/domain/allowance.ts`
-4. [ ] Call it from `recordAnchor` in place of clearing `planCapConfirmed` on a new plan
-5. [ ] Run test, lint and build
+1. [x] Write failing tests for a pure `derivePlan(anchor, clock)` and for `recordAnchor`'s new-plan branch
+2. [x] Add `planLimitSource` / `planDaysSource` to `AppConfig`, with a lenient load that defaults to `"user"`
+3. [x] Implement `derivePlan` in `src/domain/allowance.ts`
+4. [x] Call it from `recordAnchor` in place of clearing `planCapConfirmed` on a new plan
+5. [x] Run test, lint and build
 
 ### Notes
 
@@ -4550,7 +4550,7 @@ Traffic in between makes the cap too small by that amount, which is why a typed 
 
 ## T-80 Orange works out the plan size from the portal's own figures
 
-T-80 · status: todo · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
+T-80 · status: doing · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
 
 On Orange the period is already the calendar month, so only the size is missing.
 `full.infoconso.js` draws a percentage ring (`data-bundle-pcvalue`) for capped bundles, and
