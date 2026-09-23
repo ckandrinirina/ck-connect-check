@@ -4354,3 +4354,65 @@ describe("the Devices pane — this machine's own row", () => {
     expect(bridge.setBlocked).not.toHaveBeenCalled();
   });
 });
+
+describe("the plan fields — where each value came from", () => {
+  function modelWithSources(
+    limitSource: "carrier" | "user",
+    daysSource: "carrier" | "user",
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(150 * GB),
+        planDays: 30,
+        planLimitSource: limitSource,
+        planDaysSource: daysSource,
+      },
+      clock,
+    });
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("shows the carrier's marker beside each field the carrier filled", () => {
+    apply(modelWithSources("carrier", "carrier"));
+
+    expect(textOf("planLimitSource")).toBe("carrier");
+    expect(textOf("planDaysSource")).toBe("carrier");
+  });
+
+  it("shows the user's marker beside each field that was typed", () => {
+    apply(modelWithSources("user", "user"));
+
+    expect(textOf("planLimitSource")).toBe("set by you");
+    expect(textOf("planDaysSource")).toBe("set by you");
+  });
+
+  it("changes the marker as soon as a model with the new source lands", () => {
+    apply(modelWithSources("carrier", "carrier"));
+    apply(modelWithSources("user", "carrier"));
+
+    expect(textOf("planLimitSource")).toBe("set by you");
+    expect(textOf("planDaysSource")).toBe("carrier");
+  });
+
+  it("puts each marker inside its own field's row, beside the unit", () => {
+    const capMarker = document.querySelector('[data-field="planLimitSource"]');
+    const daysMarker = document.querySelector('[data-field="planDaysSource"]');
+
+    expect(capMarker).not.toBeNull();
+    expect(daysMarker).not.toBeNull();
+    expect(capMarker?.closest("form[data-plan-limit]")).not.toBeNull();
+    expect(daysMarker?.closest("form[data-plan-days]")).not.toBeNull();
+  });
+
+  it("keeps the length's marker off the Orange panel along with its field", () => {
+    apply(orangeModel());
+
+    expect(document.querySelector('[data-field="planDaysSource"]')).toBeNull();
+    expect(textOf("planLimitSource")).toBe("set by you");
+  });
+});

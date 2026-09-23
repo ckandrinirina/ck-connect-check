@@ -1190,6 +1190,56 @@ describe("startMenuBarApp — confirming the cap after a new plan", () => {
     app.stop();
   });
 
+  it("marks the cap as the user's in the same push that stores it", async () => {
+    vi.setSystemTime(new Date(2026, 6, 28, 9, 0, 0));
+    const configPath = configUnconfirming(
+      50_000_000_000,
+      true,
+      OLD_PLAN_ANCHOR,
+    );
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(latest(popover).planLimit.source).toBe("carrier");
+
+    const pushes = popover.models.length;
+    app.setPlanLimit("100");
+
+    expect(popover.models.length).toBe(pushes + 1);
+    expect(stored(configPath).planLimitSource).toBe("user");
+    expect(latest(popover).planLimit.source).toBe("set by you");
+
+    app.stop();
+  });
+
+  it("marks the length as the user's in the same push that stores it", async () => {
+    vi.setSystemTime(new Date(2026, 6, 28, 9, 0, 0));
+    const configPath = configUnconfirming(
+      50_000_000_000,
+      true,
+      OLD_PLAN_ANCHOR,
+    );
+    const popover = recordingPopover();
+    const app = appOn(configPath, popover);
+
+    await vi.advanceTimersByTimeAsync(0);
+    await app.sync();
+
+    expect(latest(popover).planDays.source).toBe("carrier");
+
+    const pushes = popover.models.length;
+    app.setPlanDays("30");
+
+    expect(popover.models.length).toBe(pushes + 1);
+    expect(stored(configPath).planDaysSource).toBe("user");
+    expect(latest(popover).planDays.source).toBe("set by you");
+
+    app.stop();
+  });
+
   it("records a typed length as the user's own", async () => {
     const configPath = configUnconfirming(200_000_000_000, true);
     const popover = recordingPopover();
