@@ -82,7 +82,7 @@
 | T-78 | A confirmed cap stays confirmed across the next sync                    | done   | S    | —                            |
 | T-79 | YAS works out the plan size and length from the sync itself             | done   | M    | T-78                         |
 | T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
-| T-81 | Settings shows the carrier's figures and a typed value overrides them   | doing  | S    | T-79                         |
+| T-81 | Settings shows the carrier's figures and a typed value overrides them   | done   | S    | T-79                         |
 
 ## T-01 Set the project up so tests can run
 
@@ -4587,7 +4587,7 @@ from the Orange network.
 
 ## T-81 Settings shows the carrier's figures and a typed value overrides them
 
-T-81 · status: doing · size: S · needs: T-79 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/main/main.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-81 · status: done · size: S · needs: T-79 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/main/main.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts, src/renderer/popover.css, test/main/main.test.ts
 
 Once the size and the length are derived, the Plan and Lasts fields stay as an override
 (settled in the start clarify round, 2026-09-23). The panel shows which kind of value it is
@@ -4595,20 +4595,20 @@ using, so a typed override is never mistaken for the carrier's figure.
 
 ### Acceptance
 
-- [ ] each field shows a `carrier` or `set by you` marker taken from its source in config
-- [ ] pressing Set stores the value with source `"user"` and the marker changes in the same model push
-- [ ] no "set a plan limit" prompt shows once a carrier-derived cap exists, on either carrier
-- [ ] the Lasts field stays hidden on Orange, as it is today
-- [ ] `npm test`, `npm run lint` and `npm run build` all exit 0
+- [x] each field shows a `carrier` or `set by you` marker taken from its source in config
+- [x] pressing Set stores the value with source `"user"` and the marker changes in the same model push
+- [x] no "set a plan limit" prompt shows once a carrier-derived cap exists, on either carrier
+- [x] the Lasts field stays hidden on Orange, as it is today
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
 
 ### Tasks
 
-1. [ ] Write failing view-model and renderer tests for the marker and for the missing prompt
-2. [ ] Add `source` to `PopoverPlanLimit` and the plan-days model
-3. [ ] Render the marker beside each field's unit
-4. [ ] Set the source to `"user"` in `setPlanLimit` / `setPlanDays`
-5. [ ] Check it against the live router: sync the new forfait and see the dial with nothing typed — **manual gate**
-6. [ ] Run test, lint and build
+1. [x] Write failing view-model and renderer tests for the marker and for the missing prompt
+2. [x] Add `source` to `PopoverPlanLimit` and the plan-days model
+3. [x] Render the marker beside each field's unit
+4. [x] Set the source to `"user"` in `setPlanLimit` / `setPlanDays`
+5. [x] Check it against the live router: sync the new forfait and see the dial with nothing typed — **manual gate**
+6. [x] Run test, lint and build
 
 ### Notes
 
