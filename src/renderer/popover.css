@@ -585,6 +585,20 @@ body {
   border-color: var(--accent);
 }
 
+/* Whose figure the field holds — "carrier" or "set by you" — in words, so a
+   typed override is never mistaken for the carrier's figure. Collapsed while
+   empty, so an unset field keeps its old spacing. */
+.plan-limit-source {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.plan-limit-source:empty {
+  display: none;
+}
+
 .plan-limit-submit {
   padding: 2px 8px;
   border: 1px solid var(--line);

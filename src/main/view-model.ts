@@ -50,7 +50,7 @@ import {
 } from "../config/config.js";
 import type { PortalReading, PortalStatus } from "./poller.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
-import type { AppConfig } from "../config/defaults.js";
+import type { AppConfig, PlanValueSource } from "../config/defaults.js";
 import type {
   HostListResult,
   RouterFailure,
@@ -212,8 +212,9 @@ export interface PopoverSync {
 /**
  * The plan-size field beside the dial.
  *
- * The cap is the one figure the carrier never states, so it has to be typed in.
- * The field is always on the panel rather than appearing only when unset: a
+ * The cap is derived from the sync that detects a new plan, or typed in; the
+ * field stays as the override, and {@link PopoverPlanLimit.source} says which
+ * of the two it holds. The field is always on the panel rather than appearing only when unset: a
  * plan that changes has to be correctable, and an editor you have to discover
  * how to reopen is one nobody reopens.
  */
@@ -228,6 +229,11 @@ export interface PopoverPlanLimit {
   error: string;
   /** The field's accessible name. */
   description: string;
+  /**
+   * Whose figure the field holds — {@link PLAN_SOURCE_TEXT}, spelled here so a
+   * typed override is never mistaken for the carrier's. Empty when unset.
+   */
+  source: string;
 }
 
 /**
@@ -246,6 +252,11 @@ export interface PopoverPlanDays {
   error: string;
   /** The field's accessible name. */
   description: string;
+  /**
+   * Whose figure the field holds — {@link PLAN_SOURCE_TEXT}, spelled here so a
+   * typed override is never mistaken for the carrier's. Empty when unset.
+   */
+  source: string;
 }
 
 /**
@@ -910,9 +921,24 @@ const PLAN_LIMIT_ERROR_TEXT: Record<PlanLimitRefusal, string> = {
   "not-positive": "A plan has to be larger than zero.",
 };
 
+/**
+ * Whose figure a plan field holds, in the words beside it. A word rather than a
+ * style alone, so the difference survives a colourblind eye.
+ */
+const PLAN_SOURCE_TEXT: Record<PlanValueSource, string> = {
+  carrier: "carrier",
+  user: "set by you",
+};
+
+/** The marker for one field: nothing while it is empty, since nobody set it. */
+function planSourceText(value: number | null, source: PlanValueSource): string {
+  return value === null ? "" : PLAN_SOURCE_TEXT[source];
+}
+
 /** The plan-size field for one stored cap, and whatever the last entry left behind. */
 function buildPlanLimit(
   limitBytes: number | null,
+  source: PlanValueSource,
   problem: PlanLimitRefusal | undefined,
 ): PopoverPlanLimit {
   return {
@@ -921,6 +947,7 @@ function buildPlanLimit(
     needsValue: limitBytes === null,
     error: problem === undefined ? "" : PLAN_LIMIT_ERROR_TEXT[problem],
     description: "The size of your plan, in Go",
+    source: planSourceText(limitBytes, source),
   };
 }
 
@@ -939,6 +966,7 @@ const PLAN_DAYS_ERROR_TEXT: Record<PlanDaysRefusal, string> = {
 /** The plan-length field for one stored period, and the last entry's complaint. */
 function buildPlanDays(
   days: number | null,
+  source: PlanValueSource,
   problem: PlanDaysRefusal | undefined,
 ): PopoverPlanDays {
   return {
@@ -947,6 +975,7 @@ function buildPlanDays(
     needsValue: days === null,
     error: problem === undefined ? "" : PLAN_DAYS_ERROR_TEXT[problem],
     description: "How many days your plan runs for",
+    source: planSourceText(days, source),
   };
 }
 
@@ -1634,9 +1663,14 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   // panel even before the first reading arrives.
   const planLimit = buildPlanLimit(
     config.planLimitBytes,
+    config.planLimitSource,
     input.planLimitProblem,
   );
-  const planDays = buildPlanDays(config.planDays, input.planDaysProblem);
+  const planDays = buildPlanDays(
+    config.planDays,
+    config.planDaysSource,
+    input.planDaysProblem,
+  );
   // One flag drives all three of the panel's responses — the confirmation, the
   // dial's wording, and which cap the arithmetic may use. Only an explicit
   // `false` withdraws the cap, the same test {@link confirmedPlanLimit} makes.
