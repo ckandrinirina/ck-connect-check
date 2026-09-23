@@ -1057,6 +1057,7 @@ interface FakeBridge {
   sync: ReturnType<typeof vi.fn>;
   savePassword: ReturnType<typeof vi.fn>;
   setPlanLimit: ReturnType<typeof vi.fn>;
+  confirmPlanCap: ReturnType<typeof vi.fn>;
   setPlanDays: ReturnType<typeof vi.fn>;
   chooseForfait: ReturnType<typeof vi.fn>;
   setBlocked: ReturnType<typeof vi.fn>;
@@ -1069,6 +1070,7 @@ function stubBridge(): FakeBridge {
     sync: vi.fn(),
     savePassword: vi.fn(),
     setPlanLimit: vi.fn(),
+    confirmPlanCap: vi.fn(),
     setPlanDays: vi.fn(),
     chooseForfait: vi.fn(),
     setBlocked: vi.fn(),
@@ -2452,6 +2454,26 @@ describe("the typed settings — driven from inside the settings view", () => {
     expect(error?.closest("[data-settings-view]")).toBe(settingsView());
   });
 
+  it("marks the refusal afresh on every refused Set, even an identical one", () => {
+    // The same refusal twice is the same text twice: without a mark that is
+    // taken off by the press and put back by the answer, the second press
+    // would change nothing on the screen and look ignored.
+    const error = document.querySelector('[data-field="planLimitError"]');
+
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "abc");
+    apply(modelRefusing("not-a-number"));
+
+    expect(error?.classList.contains("refused")).toBe(true);
+
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "abc");
+
+    expect(error?.classList.contains("refused")).toBe(false);
+
+    apply(modelRefusing("not-a-number"));
+
+    expect(error?.classList.contains("refused")).toBe(true);
+  });
+
   it("still shows a refused plan length beside its own field", () => {
     apply(
       buildPopoverModel({
@@ -2519,11 +2541,88 @@ describe("the new-plan confirmation — which view it belongs to", () => {
     const bridge = stubBridge();
     apply(modelUnconfirmed());
 
-    document
-      .querySelector<HTMLButtonElement>("[data-plan-cap-confirm]")
-      ?.click();
+    confirmButton().click();
 
-    expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
+    // Its own message: the hidden settings field is not what is confirmed,
+    // and a refusal has to come back to this prompt rather than to that field.
+    expect(bridge.confirmPlanCap).toHaveBeenCalledTimes(1);
+    expect(bridge.setPlanLimit).not.toHaveBeenCalled();
+  });
+
+  /** The same prompt, after a Confirm the main process refused. */
+  function modelRefused(): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(50 * GB),
+        planCapConfirmed: false,
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 145 * GB,
+          expiresAt: new Date(2026, 7, 6),
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      planCapProblem: "below-remaining",
+      clock,
+    });
+  }
+
+  function confirmButton(): HTMLButtonElement {
+    const button = document.querySelector<HTMLButtonElement>(
+      "[data-plan-cap-confirm]",
+    );
+
+    if (button === null) {
+      throw new Error("the panel has no confirm button");
+    }
+
+    return button;
+  }
+
+  function refusalLine(): HTMLElement {
+    const line = document.querySelector<HTMLElement>(
+      '[data-field="planCapRefusal"]',
+    );
+
+    if (line === null) {
+      throw new Error("the plan-cap prompt has no refusal line");
+    }
+
+    return line;
+  }
+
+  it("shows a refused Confirm inside the prompt, in the view the press came from", () => {
+    apply(modelUnconfirmed());
+
+    expect(refusalLine().textContent).toBe("");
+
+    apply(modelRefused());
+
+    expect(refusalLine().textContent).not.toBe("");
+    expect(refusalLine().closest("[data-plan-cap-prompt]")).not.toBeNull();
+    expect(refusalLine().closest("[data-main-view]")).toBe(mainView());
+  });
+
+  it("marks the refusal afresh on every refused Confirm, even an identical one", () => {
+    apply(modelRefused());
+
+    expect(refusalLine().classList.contains("refused")).toBe(true);
+
+    confirmButton().click();
+
+    expect(refusalLine().classList.contains("refused")).toBe(false);
+
+    apply(modelRefused());
+
+    expect(refusalLine().classList.contains("refused")).toBe(true);
+  });
+
+  it("gives the refusal mark a visible rule in the stylesheet", () => {
+    expect(POPOVER_CSS).toMatch(/\.refused\s*\{/);
   });
 });
 

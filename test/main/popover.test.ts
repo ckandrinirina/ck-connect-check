@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultConfig } from "../../src/config/defaults.js";
 import {
   POPOVER_CHOOSE_FORFAIT_CHANNEL,
+  POPOVER_CONFIRM_PLAN_CAP_CHANNEL,
   POPOVER_HEIGHT,
   POPOVER_SAVE_PASSWORD_CHANNEL,
   POPOVER_SET_BLOCKED_CHANNEL,
@@ -602,6 +603,28 @@ describe("createPopover — the panel talking back", () => {
     expect(onChooseForfait).not.toHaveBeenCalled();
 
     popover.destroy();
+  });
+
+  it("hands a Confirm on the plan-cap prompt to the caller, from this panel only", () => {
+    const onConfirmPlanCap = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onConfirmPlanCap,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_CONFIRM_PLAN_CAP_CHANNEL, { someone: "else" });
+
+    expect(onConfirmPlanCap).not.toHaveBeenCalled();
+
+    send(POPOVER_CONFIRM_PLAN_CAP_CHANNEL, lastWindow().webContents);
+
+    expect(onConfirmPlanCap).toHaveBeenCalledTimes(1);
+
+    popover.destroy();
+    send(POPOVER_CONFIRM_PLAN_CAP_CHANNEL, lastWindow().webContents);
+
+    expect(onConfirmPlanCap).toHaveBeenCalledTimes(1);
   });
 
   it("stops listening once the panel is destroyed", () => {

@@ -1582,6 +1582,50 @@ describe("buildPopoverModel — an unconfirmed plan cap", () => {
     expect(unconfirmed.planLimit.value).toBe("150");
   });
 
+  it("states no refusal until a Confirm has been refused", () => {
+    expect(unconfirmed.planCapPrompt?.refusal).toBe("");
+  });
+
+  /** The same unconfirmed plan, after a Confirm the main process refused. */
+  function refused(
+    planLimitBytes: number | null,
+    remainingGo: number,
+    problem: "no-cap" | "below-remaining",
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: {
+        ...defaultConfig(),
+        planLimitBytes,
+        planDays: 30,
+        planCapConfirmed: false,
+        allowanceAnchor: anchorOf(remainingGo * GO, { expiresAt: IN_TEN_DAYS }),
+      },
+      planCapProblem: problem,
+      clock,
+    });
+  }
+
+  it("states why a Confirm below the remaining was refused, on the prompt itself", () => {
+    const model = refused(50 * GO, 145.8, "below-remaining");
+
+    // Both figures, and where the fix is: the stored cap is the thing wrong.
+    expect(model.planCapPrompt?.refusal).toContain("50.00 Go");
+    expect(model.planCapPrompt?.refusal).toContain("145.80 Go");
+    expect(model.planCapPrompt?.refusal).toMatch(/Settings/);
+    // Not in the settings view's error line, which is hidden behind the toggle.
+    expect(model.planLimit.error).toBe("");
+  });
+
+  it("states why a Confirm with no stored cap was refused", () => {
+    const model = refused(null, 145.8, "no-cap");
+
+    expect(model.planCapPrompt?.refusal).not.toBe("");
+    expect(model.planCapPrompt?.refusal).toMatch(/Settings/);
+    expect(model.planLimit.error).toBe("");
+  });
+
   it("hands the renderer only strings and numbers it need not format", () => {
     for (const leaf of leaves(unconfirmed.planCapPrompt)) {
       expect(typeof leaf === "string" || typeof leaf === "number").toBe(true);

@@ -541,9 +541,13 @@ describe("recordAnchor — writing down the anchor a sync produced", () => {
   });
 
   it("clears the cap flag when the anchor belongs to a new plan", () => {
-    // A 50 Go cap against 145 Go left: the cap cannot describe this plan, and
-    // `usedBytes` would clamp to zero and read 0% for as long as it stood.
-    const config = configWith(anchor(), 50_000_000_000);
+    // 30 Go left under a 50 Go cap, then 145 Go: the cap cannot describe this
+    // plan, and `usedBytes` would clamp to zero and read 0% for as long as it
+    // stood.
+    const config = configWith(
+      anchor({ remainingBytes: 30_000_000_000 }),
+      50_000_000_000,
+    );
 
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 
@@ -563,6 +567,17 @@ describe("recordAnchor — writing down the anchor a sync produced", () => {
 
   it("leaves the flag untouched when the plan has not changed", () => {
     const config = configWith(anchor(), 200_000_000_000);
+
+    recordAnchor(config, ALLOWANCE, MONTH, clock);
+
+    expect(config.planCapConfirmed).toBe(true);
+  });
+
+  it("keeps a confirmed cap confirmed when the same plan syncs again", () => {
+    // The reported fault: the user confirmed a 50 Go cap against a plan with
+    // 145 Go left, and the next sync of that same plan cleared it again —
+    // the contradiction was re-read from the cap, not from the anchor replaced.
+    const config = configWith(anchor(), 50_000_000_000);
 
     recordAnchor(config, ALLOWANCE, MONTH, clock);
 

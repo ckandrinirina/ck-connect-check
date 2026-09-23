@@ -576,10 +576,34 @@ describe("isNewPlan", () => {
     expect(isNewPlan(topped, anchor(), CAP)).toBe(true);
   });
 
-  it("is true when the remaining volume passes the configured cap", () => {
-    // The case a carrier that reuses its offer name would otherwise hide: a
-    // 50 Go cap with 145 Go left is a cap that no longer describes the plan.
-    expect(isNewPlan(anchor(), anchor(), 50_000_000_000)).toBe(true);
+  it("is true when the remaining volume passes a cap the replaced anchor fitted", () => {
+    // The case a carrier that reuses its offer name would otherwise hide: 30 Go
+    // left under a 50 Go cap, then 145 Go left — a top-up the cap no longer
+    // describes.
+    const before = anchor({ remainingBytes: 30_000_000_000 });
+
+    expect(isNewPlan(anchor(), before, 50_000_000_000)).toBe(true);
+  });
+
+  it("is false for the same plan synced twice, whatever the cap", () => {
+    // The reported fault: a new forfait bigger than the old cap was flagged by
+    // its first sync — rightly — and then by every sync after it, clearing a
+    // cap the user had confirmed in between. The contradiction belongs to the
+    // anchor it replaces, and the same plan a second time contradicts nothing.
+    const later = anchor({ remainingBytes: ANCHORED_REMAINING - 1_000_000_000 });
+    const caps = [
+      null,
+      1_000_000_000,
+      50_000_000_000,
+      ANCHORED_REMAINING - 500_000_000,
+      ANCHORED_REMAINING,
+      200_000_000_000,
+    ];
+
+    for (const cap of caps) {
+      expect(isNewPlan(anchor(), anchor(), cap), String(cap)).toBe(false);
+      expect(isNewPlan(later, anchor(), cap), String(cap)).toBe(false);
+    }
   });
 
   it("is false when the label, the expiry and the remaining are unchanged", () => {
