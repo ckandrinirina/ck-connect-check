@@ -21,7 +21,7 @@ import {
   MIN_POLL_INTERVAL_SECONDS,
   defaultConfig,
 } from "./defaults.js";
-import type { AppConfig } from "./defaults.js";
+import type { AppConfig, PlanValueSource } from "./defaults.js";
 import type { AllowanceAnchor } from "../domain/allowance.js";
 
 /** A config value the app refuses to run on. `field` names the culprit. */
@@ -259,6 +259,18 @@ function readPlanCapConfirmed(raw: Record<string, unknown>): boolean {
   return typeof raw.planCapConfirmed === "boolean"
     ? raw.planCapConfirmed
     : true;
+}
+
+/**
+ * Where a plan value came from. Falls back to `"user"` rather than throwing:
+ * every config written before sources existed holds values the user typed, and
+ * anything but the two known words is a file nobody wrote deliberately.
+ */
+function readPlanValueSource(
+  raw: Record<string, unknown>,
+  field: "planLimitSource" | "planDaysSource",
+): PlanValueSource {
+  return raw[field] === "carrier" ? "carrier" : "user";
 }
 
 /**
@@ -518,6 +530,8 @@ export function parseConfig(raw: unknown): AppConfig {
     planLimitBytes: readPlanLimit(record),
     planDays: readPlanDays(record),
     planCapConfirmed: readPlanCapConfirmed(record),
+    planLimitSource: readPlanValueSource(record, "planLimitSource"),
+    planDaysSource: readPlanValueSource(record, "planDaysSource"),
     syncStaleAfterMinutes: readSyncStaleAfter(record),
     ...(routerUsername === undefined ? {} : { routerUsername }),
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),

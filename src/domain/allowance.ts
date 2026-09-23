@@ -260,6 +260,37 @@ export function isNewPlan(
   );
 }
 
+/** A plan's size and length, as read off the sync that detected it. */
+export interface DerivedPlan {
+  /** The carrier's remaining volume at that sync — the plan size, untouched yet. */
+  planLimitBytes: number;
+  /**
+   * Whole days from the sync to the expiry, a part day rounded up. Null when
+   * the carrier stated no expiry, or one at or before the sync.
+   */
+  planDays: number | null;
+}
+
+/**
+ * What the plan is, derived from the sync that first sees it.
+ *
+ * A new plan shows up in the first sync after a top-up, so at that moment the
+ * remaining volume *is* the plan size and the time left to the expiry *is* its
+ * length. The size is only exact when the sync lands soon after the top-up;
+ * traffic in between makes it too small by that much.
+ */
+export function derivePlan(anchor: AllowanceAnchor): DerivedPlan {
+  const span =
+    anchor.expiresAt === null
+      ? 0
+      : anchor.expiresAt.getTime() - anchor.syncedAt.getTime();
+
+  return {
+    planLimitBytes: anchor.remainingBytes,
+    planDays: span > 0 ? Math.ceil(span / MILLISECONDS_PER_DAY) : null,
+  };
+}
+
 /** Record one USSD reading against the router's counter at this instant. */
 export function anchorFrom(
   allowance: Allowance,

@@ -591,7 +591,9 @@ describe("isNewPlan", () => {
     // its first sync — rightly — and then by every sync after it, clearing a
     // cap the user had confirmed in between. The contradiction belongs to the
     // anchor it replaces, and the same plan a second time contradicts nothing.
-    const later = anchor({ remainingBytes: ANCHORED_REMAINING - 1_000_000_000 });
+    const later = anchor({
+      remainingBytes: ANCHORED_REMAINING - 1_000_000_000,
+    });
     const caps = [
       null,
       1_000_000_000,

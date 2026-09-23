@@ -11,6 +11,12 @@ import { join } from "node:path";
 
 import type { AllowanceAnchor } from "../domain/allowance.js";
 
+/**
+ * Where a stored plan value came from: read off the sync that detected the
+ * plan (`"carrier"`), or typed by the user (`"user"`).
+ */
+export type PlanValueSource = "carrier" | "user";
+
 /** Everything the app remembers between launches. */
 export interface AppConfig {
   /** Router address — hostname or IP, no scheme. */
@@ -36,13 +42,22 @@ export interface AppConfig {
   planDays: number | null;
   /**
    * Whether {@link AppConfig.planLimitBytes} still describes the plan the
-   * carrier is reporting. Cleared by a sync whose anchor belongs to a different
-   * plan, and set again by confirming or retyping the cap.
+   * carrier is reporting. Set by confirming or retyping the cap, and by a sync
+   * that derives the cap from a new plan. Only a config written before caps
+   * were derived can still hold it cleared.
    *
    * True by default, so a config written before this existed is not flagged the
    * first time it is loaded.
    */
   planCapConfirmed: boolean;
+  /**
+   * Where {@link AppConfig.planLimitBytes} came from. A sync that detects a new
+   * plan replaces the value whatever its source; a sync of the same plan
+   * replaces neither. `"user"` for a config written before sources existed.
+   */
+  planLimitSource: PlanValueSource;
+  /** Where {@link AppConfig.planDays} came from, on the same terms. */
+  planDaysSource: PlanValueSource;
   /**
    * How many minutes a carrier reading may age before the app re-anchors it by
    * itself. Never below one minute — a window of zero would mean every anchor
@@ -128,6 +143,8 @@ export function defaultConfig(): AppConfig {
     planLimitBytes: null,
     planDays: null,
     planCapConfirmed: true,
+    planLimitSource: "user",
+    planDaysSource: "user",
     syncStaleAfterMinutes: DEFAULT_SYNC_STALE_AFTER_MINUTES,
   };
 }

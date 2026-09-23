@@ -379,9 +379,13 @@ a remainder above a stale cap clamps consumption to zero and the dial reads 0% f
 
 So the new plan is _detected_ instead. A synced anchor belongs to a different plan when its
 `planLabel` differs from the previous one, its `expiresAt` moves later, or its
-`remainingBytes` exceeds the configured cap when the previous anchor's did not. Any of those marks the cap unconfirmed: the
-panel keeps the tier 1 reading, drops the dial and the pace rather than drawing them from a
-contradicted cap, and asks for the cap and length to be confirmed.
+`remainingBytes` exceeds the configured cap when the previous anchor's did not. Any of those
+re-derives both values through `derivePlan` (T-79): the cap becomes the synced
+`remainingBytes`, the length the whole days from `syncedAt` to `expiresAt` rounded up, each
+recorded with source `carrier`, and the cap is confirmed on the spot — so the dial and the pace
+show right after that sync with nothing to confirm. The first sync with no cap stored derives
+the same way. A sync of the same plan leaves both values alone, whether derived or typed
+(`user`), so a derived cap never shrinks to a later, smaller remaining.
 
 ## Folder structure
 

@@ -358,7 +358,10 @@ describe("planCapConfirmed — whether the stored cap still describes the plan",
 
 describe("planLimitSource / planDaysSource — where each plan value came from", () => {
   it("loads a config written before sources existed as typed by the user", () => {
-    const loaded = parseConfig({ planLimitBytes: 50_000_000_000, planDays: 30 });
+    const loaded = parseConfig({
+      planLimitBytes: 50_000_000_000,
+      planDays: 30,
+    });
 
     expect(loaded.planLimitSource).toBe("user");
     expect(loaded.planDaysSource).toBe("user");

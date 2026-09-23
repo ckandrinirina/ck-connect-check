@@ -915,10 +915,14 @@ describe("startMenuBarApp — setting the plan limit", () => {
 
     await vi.advanceTimersByTimeAsync(0);
 
+    // The automatic first sync has already derived a cap from the carrier; a
+    // refused entry must leave that one exactly as it was.
+    const before = storedLimit(configPath);
+
     for (const entry of ["", "abc", "0", "-5"]) {
       app.setPlanLimit(entry);
 
-      expect(storedLimit(configPath), entry).toBeNull();
+      expect(storedLimit(configPath), entry).toBe(before);
       expect(latest(popover).planLimit.error, entry).not.toBe("");
     }
 
@@ -1082,7 +1086,14 @@ describe("startMenuBarApp — confirming the cap after a new plan", () => {
   it("takes the size from a sync that brings back a plan the cap cannot describe", async () => {
     // 30 Go left under a 50 Go cap, then the 145.8 Go the carrier reports left:
     // that remaining is the new plan's size, so nothing needs confirming.
-    const configPath = configUnconfirming(50_000_000_000, true, OLD_PLAN_ANCHOR);
+    // The day after the old plan's last anchor, well inside the new plan, so
+    // the dial has a live anchor to be drawn from.
+    vi.setSystemTime(new Date(2026, 6, 28, 9, 0, 0));
+    const configPath = configUnconfirming(
+      50_000_000_000,
+      true,
+      OLD_PLAN_ANCHOR,
+    );
     const popover = recordingPopover();
     const app = appOn(configPath, popover);
 
@@ -1093,6 +1104,9 @@ describe("startMenuBarApp — confirming the cap after a new plan", () => {
       CARRIER_ALLOWANCE.remainingBytes,
     );
     expect(stored(configPath).planLimitSource).toBe("carrier");
+    // 28/07 09:00 to 12/08 00:00, rounded up.
+    expect(stored(configPath).planDays).toBe(15);
+    expect(latest(popover).pace?.meter).not.toBeNull();
     expect(storedFlag(configPath)).toBe(true);
     expect(latest(popover).planCapPrompt).toBeNull();
     expect(latest(popover).progress.available).toBe(true);
@@ -1103,7 +1117,11 @@ describe("startMenuBarApp — confirming the cap after a new plan", () => {
   it("replays the report: a bigger new plan needs no Confirm, and the next sync keeps it", async () => {
     // A 50 Go cap from the last forfait, 30 Go of it left; the new forfait
     // brings 145.8 Go.
-    const configPath = configUnconfirming(50_000_000_000, true, OLD_PLAN_ANCHOR);
+    const configPath = configUnconfirming(
+      50_000_000_000,
+      true,
+      OLD_PLAN_ANCHOR,
+    );
     const popover = recordingPopover();
     const app = appOn(configPath, popover);
 
@@ -1128,7 +1146,11 @@ describe("startMenuBarApp — confirming the cap after a new plan", () => {
   it("keeps a cap typed after a new plan across the next sync", async () => {
     // The user's own figure, even one the carrier's remaining exceeds, is not
     // replaced by the same plan syncing again.
-    const configPath = configUnconfirming(50_000_000_000, true, OLD_PLAN_ANCHOR);
+    const configPath = configUnconfirming(
+      50_000_000_000,
+      true,
+      OLD_PLAN_ANCHOR,
+    );
     const popover = recordingPopover();
     const app = appOn(configPath, popover);
 
@@ -2872,12 +2894,14 @@ describe("startMenuBarApp — the device list on the panel", () => {
     const model = popover.deviceModels.at(-1);
 
     expect(model?.state).toBe("listed");
-    expect(model?.state === "listed" ? model.devices.length : 0).toBeGreaterThan(
-      0,
+    expect(
+      model?.state === "listed" ? model.devices.length : 0,
+    ).toBeGreaterThan(0);
+    expect(model?.state === "listed" ? model.refusal : undefined).toMatchObject(
+      {
+        code: UNNAMED_CODE,
+      },
     );
-    expect(model?.state === "listed" ? model.refusal : undefined).toMatchObject({
-      code: UNNAMED_CODE,
-    });
 
     app.stop();
   });
@@ -3018,7 +3042,6 @@ describe("startMenuBarApp — reading the host list only while its tab shows", (
 
     app.stop();
   });
-
 });
 
 /**

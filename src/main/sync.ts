@@ -23,7 +23,7 @@
  * whole sequence be tested without either.
  */
 
-import { anchorFrom, isNewPlan } from "../domain/allowance.js";
+import { anchorFrom, derivePlan, isNewPlan } from "../domain/allowance.js";
 import type { Carrier } from "../domain/carrier.js";
 import { systemClock, type Clock } from "../domain/quota.js";
 import type { AppConfig } from "../config/defaults.js";
@@ -123,17 +123,18 @@ export interface AllowanceSync {
 
 /**
  * Writes down the anchor a successful dialogue produced, and decides on the way
- * past whether the typed-in cap still describes the plan.
+ * past whether the stored plan values still describe the plan.
  *
  * The two belong together because the comparison only exists here: `previous`
  * is the anchor being replaced, so the one instant it can be read is the one in
- * which it is overwritten. A new plan clears {@link AppConfig.planCapConfirmed}
- * and nothing else — the panel then keeps the tier 1 reading, which needs no
- * cap, and drops the dial and the band rather than drawing either from a figure
- * the carrier has contradicted.
+ * which it is overwritten.
  *
- * Only ever clears the flag. Setting it back is a decision the user makes, in
- * `main.ts`, by confirming or retyping the cap.
+ * A new plan replaces both values with the ones {@link derivePlan} reads off
+ * this sync, whatever their source, and confirms the cap — the carrier's own
+ * figure contradicts nothing, so there is nothing to ask. With no new plan, a
+ * value is only filled where none is stored; one already there, derived or
+ * typed, is kept, so a later sync never shrinks a derived cap to what is left.
+ * A length the carrier gives no expiry for is left as it was.
  */
 export function recordAnchor(
   config: AppConfig,
@@ -143,11 +144,20 @@ export function recordAnchor(
 ): void {
   const previous = config.allowanceAnchor;
   const anchor = anchorFrom(allowance, month, clock);
+  const newPlan = isNewPlan(anchor, previous, config.planLimitBytes);
+  const derived = derivePlan(anchor);
 
   config.allowanceAnchor = anchor;
 
-  if (isNewPlan(anchor, previous, config.planLimitBytes)) {
-    config.planCapConfirmed = false;
+  if (newPlan || config.planLimitBytes === null) {
+    config.planLimitBytes = derived.planLimitBytes;
+    config.planLimitSource = "carrier";
+    config.planCapConfirmed = true;
+  }
+
+  if (derived.planDays !== null && (newPlan || config.planDays === null)) {
+    config.planDays = derived.planDays;
+    config.planDaysSource = "carrier";
   }
 }
 

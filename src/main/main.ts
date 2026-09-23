@@ -361,6 +361,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     planLimitProblem = undefined;
     config.planLimitBytes = entry.bytes;
+    config.planLimitSource = "user";
     // Submitting the cap *is* confirming it, whether the figure changed or not.
     // A typed figure is the user's own, so it is never refused for being below
     // the carrier's remaining — only Confirm, which types nothing, is.
@@ -423,6 +424,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
     planDaysProblem = undefined;
     config.planDays = entry.days;
+    config.planDaysSource = "user";
 
     try {
       saveConfig(configPath, config);
