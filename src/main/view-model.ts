@@ -227,6 +227,12 @@ export interface PopoverPlanLimit {
   needsValue: boolean;
   /** Why the last entry was refused, as a sentence. Empty when it was not. */
   error: string;
+  /**
+   * That the last Set was stored, with the figure — for {@link SAVED_FOR_MS}
+   * after the press, then empty. A press that moves nothing else on screen
+   * would otherwise read as a dead button.
+   */
+  saved: string;
   /** The field's accessible name. */
   description: string;
   /**
@@ -250,6 +256,12 @@ export interface PopoverPlanDays {
   needsValue: boolean;
   /** Why the last entry was refused, as a sentence. Empty when it was not. */
   error: string;
+  /**
+   * That the last Set was stored, with the figure — for {@link SAVED_FOR_MS}
+   * after the press, then empty. A press that moves nothing else on screen
+   * would otherwise read as a dead button.
+   */
+  saved: string;
   /** The field's accessible name. */
   description: string;
   /**
@@ -585,6 +597,10 @@ export interface PopoverInput {
   planLimitProblem?: PlanLimitRefusal | undefined;
   /** Why the last typed plan length was refused, if one was. */
   planDaysProblem?: PlanDaysRefusal | undefined;
+  /** When the plan size was last stored from a Set, if it was. */
+  planLimitSavedAt?: Date | undefined;
+  /** When the plan length was last stored from a Set, if it was. */
+  planDaysSavedAt?: Date | undefined;
   /** Why the last Confirm on the new-plan prompt was refused, if one was. */
   planCapProblem?: PlanCapRefusal | undefined;
   /** Injected so the reset countdown and the staleness age are testable. */
@@ -930,6 +946,26 @@ const PLAN_SOURCE_TEXT: Record<PlanValueSource, string> = {
   user: "set by you",
 };
 
+/** How long a Set's confirmation stays under its field. */
+export const SAVED_FOR_MS = 4_000;
+
+/**
+ * The confirmation for one field: its figure while the press is recent, and
+ * nothing once it has had its time or a refusal has spoken since.
+ */
+function savedText(
+  figure: string,
+  savedAt: Date | undefined,
+  problem: string | undefined,
+  now: Date,
+): string {
+  if (savedAt === undefined || problem !== undefined) return "";
+
+  return now.getTime() - savedAt.getTime() < SAVED_FOR_MS
+    ? `Saved — ${figure}`
+    : "";
+}
+
 /** The marker for one field: nothing while it is empty, since nobody set it. */
 function planSourceText(value: number | null, source: PlanValueSource): string {
   return value === null ? "" : PLAN_SOURCE_TEXT[source];
@@ -940,12 +976,17 @@ function buildPlanLimit(
   limitBytes: number | null,
   source: PlanValueSource,
   problem: PlanLimitRefusal | undefined,
+  savedAt: Date | undefined,
+  now: Date,
 ): PopoverPlanLimit {
+  const value = limitBytes === null ? "" : planLimitInGigaoctets(limitBytes);
+
   return {
-    value: limitBytes === null ? "" : planLimitInGigaoctets(limitBytes),
+    value,
     unit: PLAN_LIMIT_UNIT,
     needsValue: limitBytes === null,
     error: problem === undefined ? "" : PLAN_LIMIT_ERROR_TEXT[problem],
+    saved: savedText(`${value} ${PLAN_LIMIT_UNIT}`, savedAt, problem, now),
     description: "The size of your plan, in Go",
     source: planSourceText(limitBytes, source),
   };
@@ -968,12 +1009,22 @@ function buildPlanDays(
   days: number | null,
   source: PlanValueSource,
   problem: PlanDaysRefusal | undefined,
+  savedAt: Date | undefined,
+  now: Date,
 ): PopoverPlanDays {
+  const value = days === null ? "" : String(days);
+
   return {
-    value: days === null ? "" : String(days),
+    value,
     unit: PLAN_DAYS_UNIT,
     needsValue: days === null,
     error: problem === undefined ? "" : PLAN_DAYS_ERROR_TEXT[problem],
+    saved: savedText(
+      days === null ? "" : formatDays(days),
+      savedAt,
+      problem,
+      now,
+    ),
     description: "How many days your plan runs for",
     source: planSourceText(days, source),
   };
@@ -1665,11 +1716,15 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     config.planLimitBytes,
     config.planLimitSource,
     input.planLimitProblem,
+    input.planLimitSavedAt,
+    now,
   );
   const planDays = buildPlanDays(
     config.planDays,
     config.planDaysSource,
     input.planDaysProblem,
+    input.planDaysSavedAt,
+    now,
   );
   // One flag drives all three of the panel's responses — the confirmation, the
   // dial's wording, and which cap the arithmetic may use. Only an explicit

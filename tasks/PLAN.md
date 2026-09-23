@@ -83,6 +83,7 @@
 | T-79 | YAS works out the plan size and length from the sync itself             | done   | M    | T-78                         |
 | T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
 | T-81 | Settings shows the carrier's figures and a typed value overrides them   | done   | S    | T-79                         |
+| T-82 | Pressing Set always says it was saved                                   | done   | S    | —                            |
 
 ## T-01 Set the project up so tests can run
 
@@ -4616,3 +4617,31 @@ using, so a typed override is never mistaken for the carrier's figure.
 `needs: T-80` and delivers the marker for YAS only. On Orange every cap is still typed, so its
 marker reads `set by you` until T-80 lands. T-79 already marks a typed value as `"user"` in
 `setPlanLimit` / `setPlanDays`, so step 4 only needs checking.
+
+## T-82 Pressing Set always says it was saved
+
+T-82 · status: done · size: S · needs: — · files: src/main/main.ts, src/main/view-model.ts, src/renderer/popover.ts, src/renderer/popover.css, test/main/main.test.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts, docs/ARCHITECTURE.md
+
+Reported on 2026-09-23: in Settings, pressing Set on Plan (284 Go, `set by you`) seemed to do
+nothing. The press is wired and tested, but when the value is unchanged and the marker already
+reads `set by you`, nothing on screen moves. A button that gives no sign it did anything looks
+broken. A refusal already writes a line under its field. A success should write one too.
+
+### Acceptance
+
+- [x] after a successful Set, the model carries a confirmation for that field (e.g. `Saved — 284 Go`), worded in the main process like the refusals
+- [x] the confirmation appears even when the submitted value equals the stored one
+- [x] it shows on the field's own status line (`planLimitError` / `planDaysError` slot), styled as a success, not in the refusal colour
+- [x] a refused entry replaces the confirmation with the refusal, and a later success replaces the refusal
+- [x] the confirmation clears on its own after a few seconds, or when the user edits that field again
+- [x] pressing Set twice with the same value shows the confirmation again each time
+- [x] `npm test`, `npm run lint` and `npm run build` all exit 0
+
+### Tasks
+
+1. [x] Write the failing view-model, main and renderer tests for the criteria above
+2. [x] Carry a per-field `saved` state beside `planLimitProblem` / `planDaysProblem` in `main.ts`, set on success and cleared by a refusal
+3. [x] Word the line in `view-model.ts`, and add a success flag so the page can style it
+4. [x] Render it in the existing status line, with a success style and a re-trigger on repeat presses
+5. [x] Clear it after a timeout, or on input in that field
+6. [x] Run test, lint and build

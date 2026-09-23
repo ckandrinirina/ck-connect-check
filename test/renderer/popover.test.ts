@@ -2475,6 +2475,80 @@ describe("the typed settings — driven from inside the settings view", () => {
     expect(error?.classList.contains("refused")).toBe(true);
   });
 
+  /** A live model whose last Set, on both fields, was just saved. */
+  function modelSaved(): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: { ...configWithLimit(150 * GB), planDays: 30 },
+      planLimitSavedAt: NOW,
+      planDaysSavedAt: NOW,
+      clock,
+    });
+  }
+
+  it("says a Set was saved on the field's own line, not in the refusal colour", () => {
+    apply(modelSaved());
+
+    const size = document.querySelector('[data-field="planLimitError"]');
+    const length = document.querySelector('[data-field="planDaysError"]');
+
+    expect(size?.textContent).toBe("Saved — 150 Go");
+    expect(size?.classList.contains("saved")).toBe(true);
+    expect(size?.classList.contains("refused")).toBe(false);
+    expect(length?.textContent).toBe("Saved — 30 days");
+    expect(length?.classList.contains("saved")).toBe(true);
+  });
+
+  it("marks the confirmation afresh on every Set, even an identical one", () => {
+    const size = document.querySelector('[data-field="planLimitError"]');
+
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "150");
+    apply(modelSaved());
+    expect(size?.classList.contains("saved")).toBe(true);
+
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "150");
+    expect(size?.classList.contains("saved")).toBe(false);
+
+    apply(modelSaved());
+    expect(size?.classList.contains("saved")).toBe(true);
+  });
+
+  it("takes the confirmation away as soon as the field is edited again", () => {
+    apply(modelSaved());
+
+    const field = document.querySelector<HTMLInputElement>(
+      "[data-plan-limit-input]",
+    );
+    field?.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    const size = document.querySelector('[data-field="planLimitError"]');
+
+    expect(size?.textContent).toBe("");
+
+    // A poll landing while the user types must not put it back.
+    apply(modelSaved());
+    expect(size?.textContent).toBe("");
+
+    // The next press is a new answer, and it shows.
+    submit("form[data-plan-limit]", "[data-plan-limit-input]", "150");
+    apply(modelSaved());
+    expect(size?.textContent).toBe("Saved — 150 Go");
+  });
+
+  it("keeps a refusal on screen while the field is edited", () => {
+    apply(modelRefusing("not-a-number"));
+
+    document
+      .querySelector<HTMLInputElement>("[data-plan-limit-input]")
+      ?.dispatchEvent(new window.Event("input", { bubbles: true }));
+    apply(modelRefusing("not-a-number"));
+
+    expect(
+      document.querySelector('[data-field="planLimitError"]')?.textContent,
+    ).not.toBe("");
+  });
+
   it("still shows a refused plan length beside its own field", () => {
     apply(
       buildPopoverModel({

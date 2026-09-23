@@ -78,6 +78,7 @@ import {
 } from "./sync.js";
 import {
   buildPopoverModel,
+  SAVED_FOR_MS,
   type PortalFailure,
   type UsageReading,
 } from "./view-model.js";
@@ -292,6 +293,13 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   /** The same, for the plan length typed beside it. */
   let planDaysProblem: PlanDaysRefusal | undefined;
 
+  // When each field was last stored from a Set. Held here beside the refusals
+  // for the same reason: a poll landing inside the confirmation's few seconds
+  // must rebuild the model with it still showing.
+  let planLimitSavedAt: Date | undefined;
+  let planDaysSavedAt: Date | undefined;
+  let savedExpiry: ReturnType<typeof setTimeout> | undefined;
+
   /**
    * Why the last Confirm on the new-plan prompt was refused, if it was. Kept
    * apart from {@link planLimitProblem} because it is shown apart: on the
@@ -327,8 +335,20 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         planLimitProblem,
         planDaysProblem,
         planCapProblem,
+        planLimitSavedAt,
+        planDaysSavedAt,
       }),
     );
+  }
+
+  /**
+   * Redraws the panel once a Set's confirmation has had its time. The poll
+   * would take it away too, but not before its next tick, and a line that
+   * lingers for half a minute reads as a second, stale answer.
+   */
+  function expireSavedLater(): void {
+    clearTimeout(savedExpiry);
+    savedExpiry = setTimeout(refreshPopover, SAVED_FOR_MS);
   }
 
   /**
@@ -360,6 +380,8 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     }
 
     planLimitProblem = undefined;
+    planLimitSavedAt = systemClock.now();
+    expireSavedLater();
     config.planLimitBytes = entry.bytes;
     config.planLimitSource = "user";
     // Submitting the cap *is* confirming it, whether the figure changed or not.
@@ -423,6 +445,8 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     }
 
     planDaysProblem = undefined;
+    planDaysSavedAt = systemClock.now();
+    expireSavedLater();
     config.planDays = entry.days;
     config.planDaysSource = "user";
 
@@ -1003,6 +1027,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     setDeviceBlocked,
     stop() {
       clearInterval(staleCheck);
+      clearTimeout(savedExpiry);
       poller.stop();
       popover.destroy();
       tray.destroy();

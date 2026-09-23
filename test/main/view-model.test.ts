@@ -29,6 +29,7 @@ import type {
 } from "../../src/config/config.js";
 import {
   buildPopoverModel,
+  SAVED_FOR_MS,
   type PopoverModel,
   type PortalFailure,
   type PortalStanding,
@@ -2713,5 +2714,64 @@ describe("buildPopoverModel — no plan-limit prompt once the carrier gave a cap
     expect(model.progress.available).toBe(true);
     expect(model.planCapPrompt).toBeNull();
     expect(model.planLimit.needsValue).toBe(false);
+  });
+});
+
+describe("buildPopoverModel — saying a Set was saved", () => {
+  /** A live model for a stored 150 Go / 30-day plan, saved `ago` ms before now. */
+  function modelSaved(
+    ago: number,
+    extra: Partial<Parameters<typeof buildPopoverModel>[0]> = {},
+  ): PopoverModel {
+    const saved = new Date(NOW.getTime() - ago);
+
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: { ...configWith(150_000_000_000), planDays: 30 },
+      planLimitSavedAt: saved,
+      planDaysSavedAt: saved,
+      clock,
+      ...extra,
+    });
+  }
+
+  it("states that the plan size was saved, with the figure", () => {
+    expect(modelSaved(1_000).planLimit.saved).toBe("Saved — 150 Go");
+  });
+
+  it("states that the plan length was saved, with the figure", () => {
+    expect(modelSaved(1_000).planDays.saved).toBe("Saved — 30 days");
+  });
+
+  it("says nothing once the confirmation has had its time", () => {
+    const model = modelSaved(SAVED_FOR_MS);
+
+    expect(model.planLimit.saved).toBe("");
+    expect(model.planDays.saved).toBe("");
+  });
+
+  it("says nothing when no Set has been pressed", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWith(150_000_000_000),
+      clock,
+    });
+
+    expect(model.planLimit.saved).toBe("");
+    expect(model.planDays.saved).toBe("");
+  });
+
+  it("lets a refusal speak instead of a stale confirmation", () => {
+    const model = modelSaved(1_000, {
+      planLimitProblem: "not-a-number",
+      planDaysProblem: "not-whole",
+    });
+
+    expect(model.planLimit.error).not.toBe("");
+    expect(model.planLimit.saved).toBe("");
+    expect(model.planDays.error).not.toBe("");
+    expect(model.planDays.saved).toBe("");
   });
 });

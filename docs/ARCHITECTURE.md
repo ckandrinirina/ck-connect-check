@@ -537,6 +537,7 @@ Append-only. One line each, always with the reason.
 - The tray keeps its devices entry and it opens the panel on the Devices tab (T-76) — one right-click and one item is the fastest route to the list, and that is worth keeping even though the surface it lands on changed; it is never a toggle, because someone reaching for the list twice wants the list
 - The pane is pushed before the model on every open and on every load (T-76) — a tray entry that asked for Devices must not flash the figures on the way there
 - `src/domain/devices.ts` and `src/hilink/devices.ts` are untouched (T-76) — the domain that decides what a device _is_, and the boundary that parses one, were never the window
+- A successful Set states that it was saved on the field's own status line, even when the value did not change (T-82) — a press that moves nothing on screen reads as a dead button, and the refusal already has that line, so a success gets it too
 
 ## Conventions
 
