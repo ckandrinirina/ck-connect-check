@@ -81,8 +81,8 @@
 | T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
 | T-78 | A confirmed cap stays confirmed across the next sync                    | done   | S    | —                            |
 | T-79 | YAS works out the plan size and length from the sync itself             | done   | M    | T-78                         |
-| T-80 | Orange works out the plan size from the portal's own figures            | doing  | M    | T-78                         |
-| T-81 | Settings shows the carrier's figures and a typed value overrides them   | todo   | S    | T-79, T-80                   |
+| T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
+| T-81 | Settings shows the carrier's figures and a typed value overrides them   | doing  | S    | T-79                         |
 
 ## T-01 Set the project up so tests can run
 
@@ -4550,7 +4550,7 @@ Traffic in between makes the cap too small by that amount, which is why a typed 
 
 ## T-80 Orange works out the plan size from the portal's own figures
 
-T-80 · status: doing · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
+T-80 · status: todo · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
 
 On Orange the period is already the calendar month, so only the size is missing.
 `full.infoconso.js` draws a percentage ring (`data-bundle-pcvalue`) for capped bundles, and
@@ -4581,9 +4581,13 @@ outright.
 A percentage near 0 makes the division unstable: 0.5 Go consumed at 0 % gives no cap at all.
 Below 1 %, derive nothing and wait for a later poll. Never divide by zero or guess.
 
+**Blocked on 2026-09-23.** `123.orange.mg` timed out from this Mac (it resolves, but the
+router's SIM was on YAS at the time), so no capture was taken and nothing was built. Re-run
+from the Orange network.
+
 ## T-81 Settings shows the carrier's figures and a typed value overrides them
 
-T-81 · status: todo · size: S · needs: T-79, T-80 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/main/main.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
+T-81 · status: doing · size: S · needs: T-79 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, src/main/main.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts
 
 Once the size and the length are derived, the Plan and Lasts fields stay as an override
 (settled in the start clarify round, 2026-09-23). The panel shows which kind of value it is
@@ -4605,3 +4609,10 @@ using, so a typed override is never mistaken for the carrier's figure.
 4. [ ] Set the source to `"user"` in `setPlanLimit` / `setPlanDays`
 5. [ ] Check it against the live router: sync the new forfait and see the dial with nothing typed — **manual gate**
 6. [ ] Run test, lint and build
+
+### Notes
+
+**T-80 deferred (2026-09-23).** The Orange portal was unreachable, so this task drops its
+`needs: T-80` and delivers the marker for YAS only. On Orange every cap is still typed, so its
+marker reads `set by you` until T-80 lands. T-79 already marks a typed value as `"user"` in
+`setPlanLimit` / `setPlanDays`, so step 4 only needs checking.
