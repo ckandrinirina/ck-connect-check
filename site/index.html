@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ck-connect-check</title>
+    <meta
+      name="description"
+      content="A macOS menu bar app that shows how much of your mobile data plan is left, read from a Huawei HiLink router."
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="hero-text">
+          <h1>ck-connect-check</h1>
+          <p class="lede">
+            How much of your mobile data plan is left, always in the menu bar —
+            read straight from a Huawei HiLink router and from your carrier.
+          </p>
+
+          <div class="actions">
+            <a
+              class="button"
+              href="https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-mac.dmg"
+              >Download for Mac</a
+            >
+            <a
+              class="secondary"
+              href="https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-mac.zip"
+              >or get the .zip</a
+            >
+          </div>
+
+          <p class="requirement">
+            Requires macOS 11 Big Sur or later, on Apple silicon or Intel, and a
+            Huawei HiLink router at <code>192.168.8.1</code>.
+          </p>
+        </div>
+
+        <img
+          class="screenshot"
+          src="panel-orange.png"
+          width="314"
+          height="497"
+          alt="The ck-connect-check panel: a dial at 6% with 14.48 Go used this month, a daily pace meter, 235.52 Go left on the plan, and live download and upload sparklines"
+        />
+      </section>
+
+      <section class="open-anyway">
+        <h2>Opening it the first time</h2>
+        <p>
+          The app is unsigned — there is no Apple Developer account behind it —
+          so macOS refuses to open it on first launch and says it cannot check
+          it for malicious software. You only have to get past this once:
+        </p>
+        <ol>
+          <li>
+            Drag <strong>ck-connect-check</strong> from the disk image into
+            <strong>Applications</strong>.
+          </li>
+          <li>
+            In Applications, right-click (or Control-click) the app and choose
+            <strong>Open</strong>, then <strong>Open</strong> again in the
+            dialog.
+          </li>
+          <li>
+            If macOS still blocks it, open <strong>System Settings</strong> →
+            <strong>Privacy &amp; Security</strong>, scroll down to the message
+            about ck-connect-check, click <strong>Open Anyway</strong> and
+            confirm.
+          </li>
+        </ol>
+        <p>
+          After that it launches like any other app. It has no Dock icon and no
+          window — look for it in the menu bar.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Made by ANDRINIRINA Erick ·
+        <a href="https://github.com/ckandrinirina/ck-connect-check"
+          >Source on GitHub</a
+        >
+      </p>
+    </footer>
+  </body>
+</html>
