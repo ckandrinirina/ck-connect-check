@@ -64,7 +64,9 @@ describe("readAppInfo", () => {
   });
 
   it("refuses a manifest that leaves a field out rather than showing a blank", () => {
-    const { author: _author, ...withoutAuthor } = FIXTURE;
+    const withoutAuthor: Partial<typeof FIXTURE> = { ...FIXTURE };
+
+    delete withoutAuthor.author;
 
     expect(() => readAppInfo(fixtureManifest(withoutAuthor))).toThrow(/author/);
   });
