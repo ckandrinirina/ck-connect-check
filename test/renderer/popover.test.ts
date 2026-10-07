@@ -521,7 +521,7 @@ describe("the popover page", () => {
     // did not move, so neither does this figure; what changed is which state
     // it describes.
     //
-    // The three typed fields cost nothing here: they are in the settings view,
+    // The three typed fields cost nothing here: they are on the Settings pane,
     // which is `hidden` whenever this one is not.
     const CHROME_HEIGHT = 350;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
@@ -2212,36 +2212,18 @@ describe("the pace row", () => {
  * is carrying the `hidden` attribute.
  */
 
-function mainView(): HTMLElement {
-  const element = document.querySelector<HTMLElement>("[data-main-view]");
-
-  if (element === null) {
-    throw new Error("the panel has no main view");
-  }
-
-  return element;
+/** The pane the three typed values now live on, the third beside the two. */
+function settingsPane(): HTMLElement {
+  return pane("settings");
 }
 
-function settingsView(): HTMLElement {
-  const element = document.querySelector<HTMLElement>("[data-settings-view]");
-
-  if (element === null) {
-    throw new Error("the panel has no settings view");
-  }
-
-  return element;
+function settingsTab(): HTMLButtonElement {
+  return tabFor("settings");
 }
 
-function settingsToggle(): HTMLButtonElement {
-  const element = document.querySelector<HTMLButtonElement>(
-    "[data-settings-toggle]",
-  );
-
-  if (element === null) {
-    throw new Error("the panel has no settings toggle");
-  }
-
-  return element;
+/** What a press on the strip's third tab does — the only way in to the forms. */
+function openSettings(): void {
+  settingsTab().click();
 }
 
 /** The three things the panel asks the user to type, by their form element. */
@@ -2261,52 +2243,50 @@ function typedForms(): Record<string, HTMLElement> {
   return forms as Record<string, HTMLElement>;
 }
 
-describe("the panel's two views", () => {
+describe("the Settings tab", () => {
+  let bridge: FakeBridge;
+
   beforeEach(() => {
-    stubBridge();
+    bridge = stubBridge();
     apply(modelSyncing({ phase: "idle" }, ANCHOR));
   });
 
-  it("opens on the main view, with the settings put away", () => {
-    expect(mainView().hidden).toBe(false);
-    expect(settingsView().hidden).toBe(true);
-    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+  it("opens on Usage, with the settings pane put away", () => {
+    expect(selectedTab()).toBe("usage");
+    expect(pane("usage").hidden).toBe(false);
+    expect(settingsPane().hidden).toBe(true);
+    expect(settingsTab().getAttribute("aria-selected")).toBe("false");
   });
 
-  it("carries the toggle in the header, where the panel is read first", () => {
-    expect(settingsToggle().closest(".header")).not.toBeNull();
-    expect(settingsToggle().tagName).toBe("BUTTON");
-    expect(settingsToggle().getAttribute("type")).toBe("button");
+  it("has no ⚙ toggle left in the header, or anywhere else", () => {
+    expect(document.querySelector("[data-settings-toggle]")).toBeNull();
+    expect(document.querySelector(".settings-toggle")).toBeNull();
+    expect(document.querySelector("[data-settings-view]")).toBeNull();
+    expect(document.querySelector(".header")?.textContent).not.toContain("⚙");
   });
 
-  it("swaps which view is hidden when the toggle is pressed", () => {
-    settingsToggle().click();
-
-    expect(settingsToggle().getAttribute("aria-pressed")).toBe("true");
-    expect(mainView().hidden).toBe(true);
-    expect(settingsView().hidden).toBe(false);
+  it("drops the toggle's rules from the stylesheet with it", () => {
+    expect(POPOVER_CSS).not.toMatch(/\.settings-toggle/);
   });
 
-  it("comes back to the figures on a second press", () => {
-    settingsToggle().click();
-    settingsToggle().click();
+  it("shows the forms and hides Usage and Devices when selected", () => {
+    openSettings();
 
-    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
-    expect(mainView().hidden).toBe(false);
-    expect(settingsView().hidden).toBe(true);
+    expect(selectedTab()).toBe("settings");
+    expect(settingsTab().getAttribute("aria-selected")).toBe("true");
+    expect(settingsPane().hidden).toBe(false);
+    expect(pane("usage").hidden).toBe(true);
+    expect(pane("devices").hidden).toBe(true);
   });
 
-  it("holds all three typed values in the settings view", () => {
-    settingsToggle().click();
-
+  it("holds all three typed values on the Settings pane", () => {
     for (const form of Object.values(typedForms())) {
-      expect(form.closest("[data-settings-view]")).toBe(settingsView());
-      expect(form.closest("[data-main-view]")).toBeNull();
+      expect(form.closest("[data-pane]")).toBe(settingsPane());
     }
   });
 
-  it("keeps the cap and length fields readable once settings are open", () => {
-    settingsToggle().click();
+  it("keeps the cap and length fields readable once Settings is selected", () => {
+    openSettings();
 
     const { cap, length } = typedForms();
 
@@ -2314,15 +2294,7 @@ describe("the panel's two views", () => {
     expect(length.hidden).toBe(false);
   });
 
-  it("puts every typed form away again with the settings closed", () => {
-    expect(settingsView().hidden).toBe(true);
-
-    for (const form of Object.values(typedForms())) {
-      expect(form.closest("[data-settings-view]")).toBe(settingsView());
-    }
-  });
-
-  it("keeps the figures in the main view rather than behind the toggle", () => {
+  it("keeps the figures on the Usage pane rather than on Settings", () => {
     for (const selector of [
       "[data-dial]",
       "[data-pace]",
@@ -2337,87 +2309,87 @@ describe("the panel's two views", () => {
         throw new Error(`the panel has no ${selector}`);
       }
 
-      expect(section.closest("[data-main-view]")).toBe(mainView());
-      expect(section.closest("[data-settings-view]")).toBeNull();
+      expect(section.closest("[data-pane]")).toBe(pane("usage"));
     }
-
-    expect(mainView().hidden).toBe(false);
   });
 
-  it("costs no height at all for whichever view is put away", () => {
-    // Asserted against the stylesheet, since jsdom lays nothing out: both views
-    // are given a `display` of their own, so the UA rule for `hidden` alone
-    // would not take them off the panel.
-    expect(POPOVER_CSS).toMatch(/\.view\[hidden\]\s*\{[^}]*display:\s*none/);
+  it("keeps the strip on screen while Settings is showing", () => {
+    openSettings();
+
+    // A pane like the other two, so the strip that leads back is never hidden
+    // with it — the toggle it replaced took the whole strip away.
+    expect(tabList().closest("[hidden]")).toBeNull();
   });
 
-  it("does not reopen the settings when a poll lands", () => {
-    settingsToggle().click();
+  it("does not leave Settings when a poll lands", () => {
+    openSettings();
 
     apply(modelSyncing({ phase: "idle" }, ANCHOR));
 
-    expect(settingsView().hidden).toBe(false);
-    expect(mainView().hidden).toBe(true);
+    expect(selectedTab()).toBe("settings");
+    expect(settingsPane().hidden).toBe(false);
+    expect(pane("usage").hidden).toBe(true);
   });
 
-  it("marks the toggle while no router password is stored", () => {
+  it("tells the main process when Settings is selected", () => {
+    openSettings();
+
+    expect(bridge.setTab).toHaveBeenLastCalledWith("settings");
+  });
+
+  it("can be selected from the main process", () => {
+    window.showPopoverTab("settings");
+
+    expect(selectedTab()).toBe("settings");
+    expect(settingsPane().hidden).toBe(false);
+  });
+
+  it("marks the Settings tab while no router password is stored", () => {
     apply(modelSyncing({ phase: "needs-password" }));
 
-    expect(settingsToggle().dataset["attention"]).toBe("true");
-    // The form itself is still behind the toggle, so the marker is the only
-    // thing that makes a missing password discoverable.
-    expect(typedForms()["password"]?.closest("[data-settings-view]")).toBe(
-      settingsView(),
-    );
+    expect(typedForms()["password"]?.hidden).toBe(false);
+    expect(settingsTab().dataset["attention"]).toBe("true");
+    expect(tabFor("usage").dataset["attention"]).not.toBe("true");
+    expect(tabFor("devices").dataset["attention"]).not.toBe("true");
   });
 
-  it("drops the marker once a password is stored", () => {
+  it("drops the marker once the password form stops asking", () => {
     apply(modelSyncing({ phase: "needs-password" }));
     apply(modelSyncing({ phase: "idle" }, ANCHOR));
 
-    expect(settingsToggle().dataset["attention"]).toBe("false");
+    expect(typedForms()["password"]?.hidden).toBe(true);
+    expect(settingsTab().dataset["attention"]).toBe("false");
   });
 
   it("styles that marker at all, rather than leaving it invisible", () => {
     expect(POPOVER_CSS).toMatch(
-      /\.settings-toggle\[data-attention="true"\][^{]*\{[^}]*\}/,
+      /\.tab\[data-attention="true"\][^{]*\{[^}]*\}/,
     );
   });
 
-  it("is reachable without a mouse and says what it opens", () => {
-    expect(settingsToggle().tabIndex).toBeGreaterThanOrEqual(0);
+  it("returns to Usage when the panel is opened again", () => {
+    openSettings();
+    bridge.setTab.mockClear();
 
-    const name =
-      settingsToggle().getAttribute("aria-label") ??
-      settingsToggle().textContent ??
-      "";
-
-    expect(name.trim()).not.toBe("");
-    expect(name).toMatch(/setting/i);
-  });
-
-  it("returns to the main view when the panel is opened again", () => {
-    settingsToggle().click();
-    expect(settingsView().hidden).toBe(false);
-
-    // What `src/main/popover.ts` calls on every open. The window is hidden
-    // rather than destroyed between opens, so without this a panel left on
-    // the settings would still be on them the next time it is clicked.
+    // What `src/main/popover.ts` calls on every open. The settings are typed a
+    // few times a year and the figures are what the panel is opened for, so a
+    // panel left on them comes back on Usage — and says so.
     window.resetPopoverView();
 
-    expect(mainView().hidden).toBe(false);
-    expect(settingsView().hidden).toBe(true);
-    expect(settingsToggle().getAttribute("aria-pressed")).toBe("false");
+    expect(selectedTab()).toBe("usage");
+    expect(pane("usage").hidden).toBe(false);
+    expect(settingsPane().hidden).toBe(true);
+    expect(bridge.setTab).toHaveBeenLastCalledWith("usage");
   });
 });
 
-describe("the typed settings — driven from inside the settings view", () => {
+describe("the typed settings — driven from the Settings tab", () => {
   let bridge: FakeBridge;
 
   beforeEach(() => {
     bridge = stubBridge();
     apply(modelUsing(10 * GB));
-    settingsToggle().click();
+    openSettings();
   });
 
   function submit(form: string, input: string, typed: string): void {
@@ -2425,7 +2397,7 @@ describe("the typed settings — driven from inside the settings view", () => {
     const element = document.querySelector<HTMLFormElement>(form);
 
     if (field === null || element === null) {
-      throw new Error(`the settings view has no ${form}`);
+      throw new Error(`the Settings pane has no ${form}`);
     }
 
     field.value = typed;
@@ -2435,6 +2407,8 @@ describe("the typed settings — driven from inside the settings view", () => {
   }
 
   it("still sends the cap over the same channel it always did", () => {
+    expect(settingsPane().hidden).toBe(false);
+
     submit("form[data-plan-limit]", "[data-plan-limit-input]", "150");
 
     expect(bridge.setPlanLimit).toHaveBeenCalledWith("150");
@@ -2452,7 +2426,7 @@ describe("the typed settings — driven from inside the settings view", () => {
     const error = document.querySelector('[data-field="planLimitError"]');
 
     expect(error?.textContent).not.toBe("");
-    expect(error?.closest("[data-settings-view]")).toBe(settingsView());
+    expect(error?.closest("[data-pane]")).toBe(settingsPane());
   });
 
   it("marks the refusal afresh on every refused Set, even an identical one", () => {
@@ -2563,7 +2537,7 @@ describe("the typed settings — driven from inside the settings view", () => {
     const error = document.querySelector('[data-field="planDaysError"]');
 
     expect(error?.textContent).not.toBe("");
-    expect(error?.closest("[data-settings-view]")).toBe(settingsView());
+    expect(error?.closest("[data-pane]")).toBe(settingsPane());
   });
 });
 
@@ -2594,7 +2568,7 @@ describe("the new-plan confirmation — which view it belongs to", () => {
     stubBridge();
   });
 
-  it("stays in the main view, where the dial it replaces was", () => {
+  it("stays on the Usage pane, where the dial it replaces was", () => {
     // It is an alert about a figure the carrier contradicted, not a setting.
     // Behind the toggle, a user whose cap was contradicted would open the panel,
     // find no dial and no explanation, and no reason to look in the settings.
@@ -2606,9 +2580,9 @@ describe("the new-plan confirmation — which view it belongs to", () => {
       throw new Error("the panel has no plan-cap prompt");
     }
 
-    expect(prompt.closest("[data-main-view]")).toBe(mainView());
-    expect(prompt.closest("[data-settings-view]")).toBeNull();
-    expect(mainView().hidden).toBe(false);
+    expect(prompt.closest("[data-pane]")).toBe(pane("usage"));
+    expect(prompt.closest('[data-pane="settings"]')).toBeNull();
+    expect(pane("usage").hidden).toBe(false);
     expect((prompt as HTMLElement).hidden).toBe(false);
   });
 
@@ -2679,7 +2653,7 @@ describe("the new-plan confirmation — which view it belongs to", () => {
 
     expect(refusalLine().textContent).not.toBe("");
     expect(refusalLine().closest("[data-plan-cap-prompt]")).not.toBeNull();
-    expect(refusalLine().closest("[data-main-view]")).toBe(mainView());
+    expect(refusalLine().closest("[data-pane]")).toBe(pane("usage"));
   });
 
   it("marks the refusal afresh on every refused Confirm, even an identical one", () => {
@@ -2769,8 +2743,8 @@ describe("the Orange panel — the controls it does not offer", () => {
     expect(document.querySelector("[data-sync-row]")).toBeNull();
   });
 
-  it("has no plan-length field in the settings view", () => {
-    settingsToggle().click();
+  it("has no plan-length field on the Settings pane", () => {
+    openSettings();
 
     expect(document.querySelector("form[data-plan-days]")).toBeNull();
     expect(document.querySelector("[data-plan-days-input]")).toBeNull();
@@ -2778,7 +2752,7 @@ describe("the Orange panel — the controls it does not offer", () => {
   });
 
   it("keeps the plan cap, which the portal genuinely never states", () => {
-    settingsToggle().click();
+    openSettings();
 
     const cap = document.querySelector<HTMLInputElement>(
       "[data-plan-limit-input]",
@@ -2861,7 +2835,7 @@ describe("the Yas panel — every control it always had", () => {
   });
 
   it("still carries the plan-length field beside the cap", () => {
-    settingsToggle().click();
+    openSettings();
 
     const { cap, length } = typedForms();
 
@@ -2881,14 +2855,14 @@ describe("the Yas panel — every control it always had", () => {
   it("still sends the plan length when its form is submitted", () => {
     const bridge = stubBridge();
     apply(modelUsing(10 * GB));
-    settingsToggle().click();
+    openSettings();
 
     const field = document.querySelector<HTMLInputElement>(
       "[data-plan-days-input]",
     );
 
     if (field === null) {
-      throw new Error("the settings view has no plan-length field");
+      throw new Error("the Settings pane has no plan-length field");
     }
 
     field.value = "30";
@@ -2999,11 +2973,11 @@ describe("the Orange panel — the forfait it names", () => {
     );
   });
 
-  it("sits in the main view rather than behind the settings toggle", () => {
+  it("sits on the Usage pane rather than on Settings", () => {
     apply(orangeModel([WIFIBER, TOP_UP]));
 
-    expect(choiceBlock().closest("[data-main-view]")).toBe(mainView());
-    expect(choiceBlock().closest("[data-settings-view]")).toBeNull();
+    expect(choiceBlock().closest("[data-pane]")).toBe(pane("usage"));
+    expect(choiceBlock().closest('[data-pane="settings"]')).toBeNull();
   });
 });
 
@@ -3014,7 +2988,7 @@ describe("the Orange panel — the height it has to fit", () => {
     // the ~38px sync row at the foot of the main view, and spends up to 48px on
     // the forfait choice at its tallest — a 15px note, a 4px gap, a ~22px row
     // of buttons and the 6px above it. The plan-length field costs nothing
-    // either way: it is in the settings view, which is `hidden` whenever this
+    // either way: it is on the Settings pane, which is `hidden` whenever this
     // one is not.
     const ORANGE_CHROME_HEIGHT = 350 - 38 + 48;
     const dialSize = /--dial-size:\s*(\d+)px/.exec(POPOVER_CSS)?.[1];
@@ -3277,8 +3251,8 @@ describe("the panel's notice row", () => {
   it("stands where the sync status line stood, at the foot of the Usage pane", () => {
     apply(orangeFailingModel({ state: "unreachable", reason: "offline" }));
 
-    expect(noticeRow().closest("[data-main-view]")).toBe(mainView());
-    expect(noticeRow().closest("[data-settings-view]")).toBeNull();
+    expect(noticeRow().closest("[data-pane]")).toBe(pane("usage"));
+    expect(noticeRow().closest('[data-pane="settings"]')).toBeNull();
     // The foot it stands at is the pane's, not the view's: the Devices pane is
     // the view's last child now, and it is not on the panel at the same time.
     expect(pane("usage").lastElementChild).toBe(noticeRow());
@@ -3345,7 +3319,7 @@ describe("the panel's notice row", () => {
       expect(textOf("notice")).not.toBe("");
       expect(textOf("downloadRate")).not.toBe("");
       expect(textOf("connectedDevices")).toBe("3");
-      expect(mainView().hidden).toBe(false);
+      expect(pane("usage").hidden).toBe(false);
     }
   });
 
@@ -3402,7 +3376,7 @@ function tabs(): HTMLButtonElement[] {
   return [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
 }
 
-function tabFor(name: "usage" | "devices"): HTMLButtonElement {
+function tabFor(name: "usage" | "devices" | "settings"): HTMLButtonElement {
   const element = document.querySelector<HTMLButtonElement>(
     `[role="tab"][data-tab="${name}"]`,
   );
@@ -3414,7 +3388,7 @@ function tabFor(name: "usage" | "devices"): HTMLButtonElement {
   return element;
 }
 
-function pane(name: "usage" | "devices"): HTMLElement {
+function pane(name: "usage" | "devices" | "settings"): HTMLElement {
   const element = document.querySelector<HTMLElement>(`[data-pane="${name}"]`);
 
   if (element === null) {
@@ -3440,11 +3414,17 @@ describe("the panel's tabs — the strip itself", () => {
     apply(modelSyncing({ phase: "idle" }, ANCHOR));
   });
 
-  it("renders exactly two tab controls, Usage and Devices", () => {
-    expect(tabs()).toHaveLength(2);
+  it("renders three tab controls in order: Usage, Devices, Settings", () => {
+    expect(tabs()).toHaveLength(3);
     expect(tabs().map((tab) => tab.textContent?.trim())).toEqual([
       "Usage",
       "Devices",
+      "Settings",
+    ]);
+    expect(tabs().map((tab) => tab.dataset["tab"])).toEqual([
+      "usage",
+      "devices",
+      "settings",
     ]);
   });
 
@@ -3455,9 +3435,8 @@ describe("the panel's tabs — the strip itself", () => {
     }
   });
 
-  it("puts the strip inside the main view, behind the settings toggle", () => {
-    expect(tabList().closest("[data-main-view]")).toBe(mainView());
-    expect(tabList().closest("[data-settings-view]")).toBeNull();
+  it("puts the strip above the panes rather than inside any of them", () => {
+    expect(tabList().closest("[data-pane]")).toBeNull();
   });
 
   it("opens on Usage, the figure the tray title already states", () => {
@@ -3467,10 +3446,10 @@ describe("the panel's tabs — the strip itself", () => {
   });
 
   it("shows exactly one pane whichever tab is selected", () => {
-    for (const name of ["usage", "devices"] as const) {
+    for (const name of ["usage", "devices", "settings"] as const) {
       tabFor(name).click();
 
-      const shown = [pane("usage"), pane("devices")].filter(
+      const shown = [pane("usage"), pane("devices"), pane("settings")].filter(
         (element) => !element.hidden,
       );
 
@@ -3515,7 +3494,6 @@ describe("the panel's tabs — both panes exist from first paint", () => {
     // discard the row identity that keeps a device steady under a reader.
     expect(pane("devices").isConnected).toBe(true);
     expect(pane("devices").hidden).toBe(true);
-    expect(pane("devices").closest("[data-main-view]")).toBe(mainView());
   });
 
   it("ships both panes in the markup rather than building either", () => {
@@ -3562,8 +3540,8 @@ describe("the panel's tabs — selecting one creates nothing", () => {
       tabFor(press % 2 === 0 ? "devices" : "usage").click();
     }
 
-    expect(document.querySelectorAll("[data-pane]")).toHaveLength(2);
-    expect(tabs()).toHaveLength(2);
+    expect(document.querySelectorAll("[data-pane]")).toHaveLength(3);
+    expect(tabs()).toHaveLength(3);
   });
 
   it("leaves the tab alone when a poll lands", () => {
@@ -3593,7 +3571,7 @@ describe("the panel's tabs — reaching them without a mouse", () => {
   });
 
   it("names the pane each tab governs, and the pane names it back", () => {
-    for (const name of ["usage", "devices"] as const) {
+    for (const name of ["usage", "devices", "settings"] as const) {
       const controls = tabFor(name).getAttribute("aria-controls");
 
       expect(controls).toBe(pane(name).id);
@@ -3631,17 +3609,25 @@ describe("the panel's tabs — reaching them without a mouse", () => {
 
   it("wraps around the ends rather than stopping at them", () => {
     pressKey(tabFor("usage"), "ArrowLeft");
-    expect(selectedTab()).toBe("devices");
+    expect(selectedTab()).toBe("settings");
 
-    pressKey(tabFor("devices"), "ArrowRight");
+    pressKey(tabFor("settings"), "ArrowRight");
     expect(selectedTab()).toBe("usage");
+  });
+
+  it("reaches Settings from Devices on a right arrow", () => {
+    tabFor("devices").click();
+    pressKey(tabFor("devices"), "ArrowRight");
+
+    expect(selectedTab()).toBe("settings");
+    expect(document.activeElement).toBe(tabFor("settings"));
   });
 
   it("jumps to the first and last tab on Home and End", () => {
     pressKey(tabFor("usage"), "End");
-    expect(selectedTab()).toBe("devices");
+    expect(selectedTab()).toBe("settings");
 
-    pressKey(tabFor("devices"), "Home");
+    pressKey(tabFor("settings"), "Home");
     expect(selectedTab()).toBe("usage");
   });
 
@@ -3682,28 +3668,18 @@ describe("the panel's tabs — what a reopen remembers", () => {
     expect(tabFor("devices").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("still puts the settings away on that reopen", () => {
+  it("comes back on Usage rather than on Settings", () => {
     tabFor("devices").click();
-    settingsToggle().click();
-
-    expect(settingsView().hidden).toBe(false);
+    openSettings();
 
     window.resetPopoverView();
 
-    // The tab is memory; the settings view is not. It is entered a few times a
-    // year and the figures are what the panel is opened for.
-    expect(settingsView().hidden).toBe(true);
-    expect(mainView().hidden).toBe(false);
-    expect(selectedTab()).toBe("devices");
-  });
-
-  it("takes the whole strip away while the settings are showing", () => {
-    settingsToggle().click();
-
-    // The strip lives inside the main view, so the settings hide it with
-    // everything else — there is no third pane competing with the two tabs.
-    expect(mainView().hidden).toBe(true);
-    expect(tabList().closest("[data-main-view]")?.hidden).toBe(true);
+    // The tab is memory, except for Settings. It is entered a few times a year
+    // and the figures are what the panel is opened for, as they were when the
+    // settings were a view of their own behind the header's toggle.
+    expect(selectedTab()).toBe("usage");
+    expect(settingsPane().hidden).toBe(true);
+    expect(pane("usage").hidden).toBe(false);
   });
 
   it("survives a reopen that lands before any model has", () => {
@@ -4003,9 +3979,10 @@ describe("the Devices pane — why there is no list, or why a press changed noth
     applyDevices({ state: "no-password" });
 
     // The window's own wording sent the user to the menu bar panel. This *is*
-    // the panel, so the sentence names the toggle that opens the form instead —
+    // the panel, so the sentence names the tab that holds the form instead —
     // or it states a problem with no way out of it.
-    expect(shownDevicesNotice()).toMatch(/settings/i);
+    expect(shownDevicesNotice()).toMatch(/settings tab/i);
+    expect(shownDevicesNotice()).not.toContain("⚙");
   });
 
   it("states a refusal the router answered with a number, code and endpoint and all", () => {

@@ -11,6 +11,7 @@ import {
   POPOVER_SET_BLOCKED_CHANNEL,
   POPOVER_SET_TAB_CHANNEL,
   POPOVER_SYNC_CHANNEL,
+  POPOVER_TABS,
   POPOVER_WIDTH,
   bindTrayToPopover,
   createPopover,
@@ -906,7 +907,7 @@ describe("createPopover — which pane the page is showing", () => {
 
     send(POPOVER_SET_TAB_CHANNEL, sender, "devices");
 
-    for (const payload of [undefined, null, 42, "settings", { tab: "usage" }]) {
+    for (const payload of [undefined, null, 42, "figures", { tab: "usage" }]) {
       send(POPOVER_SET_TAB_CHANNEL, sender, payload);
     }
 
@@ -939,5 +940,94 @@ describe("createPopover — which pane the page is showing", () => {
     send(POPOVER_SET_TAB_CHANNEL, sender, "devices");
 
     expect(popover.visibleTab()).toBe("usage");
+  });
+});
+
+/**
+ * Settings, the strip's third tab. It replaced the header's ⚙ toggle, so it
+ * keeps the toggle's one reopen rule: the panel comes back on the figures,
+ * never on the forms typed a few times a year.
+ */
+describe("createPopover — the Settings tab", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  /** The tab names pushed to the page through `showPopoverTab`, in order. */
+  function pushedTabs(window: FakeWindow): string[] {
+    return (window.webContents.executeJavaScript.mock.calls as [string][])
+      .map(([source]) => /^window\.showPopoverTab\?\.\("(\w+)"\)$/.exec(source))
+      .flatMap((match) => (match?.[1] === undefined ? [] : [match[1]]));
+  }
+
+  it("offers three panes, in the order the strip draws them", () => {
+    expect(POPOVER_TABS).toEqual(["usage", "devices", "settings"]);
+  });
+
+  it("follows the page onto Settings", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_TAB_CHANNEL, lastWindow().webContents, "settings");
+
+    expect(popover.visibleTab()).toBe("settings");
+
+    popover.destroy();
+  });
+
+  it("selects Settings from the main process", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    window.webContents.executeJavaScript.mockClear();
+
+    popover.showTab("settings");
+
+    expect(popover.visibleTab()).toBe("settings");
+    expect(pushedTabs(window)).toEqual(["settings"]);
+
+    popover.destroy();
+  });
+
+  it("lands on Usage when reopened from the tray after Settings", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    const { tray, click } = fakeTray();
+    bindTrayToPopover(tray, popover);
+
+    click(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    send(POPOVER_SET_TAB_CHANNEL, window.webContents, "settings");
+    click(TRAY_BOUNDS);
+    window.webContents.executeJavaScript.mockClear();
+
+    click(TRAY_BOUNDS);
+
+    expect(popover.visibleTab()).toBe("usage");
+    expect(pushedTabs(window)).toEqual(["usage"]);
+
+    popover.destroy();
+  });
+
+  it("still reopens on Devices, which the reopen remembers", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    const { tray, click } = fakeTray();
+    bindTrayToPopover(tray, popover);
+
+    click(TRAY_BOUNDS);
+
+    const window = lastWindow();
+    send(POPOVER_SET_TAB_CHANNEL, window.webContents, "devices");
+    click(TRAY_BOUNDS);
+    window.webContents.executeJavaScript.mockClear();
+
+    click(TRAY_BOUNDS);
+
+    expect(popover.visibleTab()).toBe("devices");
+    expect(pushedTabs(window)).toEqual(["devices"]);
+
+    popover.destroy();
   });
 });

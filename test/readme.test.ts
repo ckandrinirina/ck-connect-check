@@ -453,8 +453,8 @@ describe("README.md", () => {
 describe("README.md on the plan length", () => {
   it("names the setting and says where it is typed", () => {
     expect(readme).toMatch(/plan length|how long (?:the|your) plan/i);
-    // It moved behind the header's toggle in T-45; a reader sent to look under
-    // the dial for it would not find it.
+    // It moved off the figures in T-45, onto the Settings tab in T-86; a
+    // reader sent to look under the dial for it would not find it.
     expect(readme).toMatch(/settings/i);
   });
 
@@ -467,9 +467,9 @@ describe("README.md on the plan length", () => {
     });
   });
 
-  it("points at a field the settings view actually carries", () => {
+  it("points at a field the Settings tab actually carries", () => {
     const page = readRepoFile("src/renderer/index.html");
-    expect(page).toContain("data-settings-view");
+    expect(page).toContain('data-pane="settings"');
     expect(page).toContain("data-plan-days-input");
   });
 
