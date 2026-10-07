@@ -10,6 +10,7 @@
  */
 
 import { confirmedPlanLimit } from "../config/config.js";
+import { decideAlerts, NOTHING_ANNOUNCED } from "../domain/alerts.js";
 import { readPlanUsage } from "../domain/allowance.js";
 import { formatBytes, formatPercent } from "../domain/format.js";
 import { readMonthlyPace } from "../domain/pace.js";
@@ -71,8 +72,8 @@ const BASE_BYTE_UNIT = "o";
  * decimal (1000³), never binary, in octets — and then trims the result to tray
  * width: one decimal below ten, none above, and whole octets are never
  * fractional. The unit itself is kept whole rather than abbreviated further:
- * `"999Go ⚠ 100%"` is the widest title this can produce, and that is exactly
- * {@link MAX_TRAY_TITLE_LENGTH} characters.
+ * `"999Go ⚠ 70%"` and `"⚠999Go 100%"` are the widest titles this can produce,
+ * both 11 characters, under {@link MAX_TRAY_TITLE_LENGTH}.
  */
 function compactBytes(bytes: number): string {
   const [amount, unit] = formatBytes(bytes).split(" ");
@@ -102,6 +103,24 @@ interface TrayReading {
   usedBytes: number;
   /** Share of the plan used, or null when no cap has been set. */
   percent: number | null;
+  /** Whether the domain holds the forfait low — the panel's banner state. */
+  low: boolean;
+}
+
+/** The domain's low rule, read for its banner alone. */
+function isLow(
+  remainingBytes: number | null,
+  planLimitBytes: number | null,
+  clock: Clock,
+): boolean {
+  return (
+    decideAlerts({
+      reading: { remainingBytes, planLimitBytes },
+      periodEnd: null,
+      announced: NOTHING_ANNOUNCED,
+      clock,
+    }).banner === "low"
+  );
 }
 
 /**
@@ -114,21 +133,21 @@ function anchoredReading(
   month: RouterSnapshot["month"],
   clock: Clock,
 ): TrayReading | null {
-  const reading = readPlanUsage(
-    config.allowanceAnchor,
-    month,
-    // The same rule the dial follows: a cap a sync has contradicted counts as
-    // no cap, so the menu bar never quotes a share the panel has withdrawn.
-    confirmedPlanLimit(config),
-    clock,
-  );
+  // The same rule the dial follows: a cap a sync has contradicted counts as
+  // no cap, so the menu bar never quotes a share the panel has withdrawn.
+  const cap = confirmedPlanLimit(config);
+  const reading = readPlanUsage(config.allowanceAnchor, month, cap, clock);
   const percent = reading?.percentUsed ?? null;
 
   if (percent === null || reading?.usedBytes == null) {
     return null;
   }
 
-  return { usedBytes: reading.usedBytes, percent };
+  return {
+    usedBytes: reading.usedBytes,
+    percent,
+    low: isLow(reading.remainingBytes, cap, clock),
+  };
 }
 
 /**
@@ -155,15 +174,17 @@ function portalReading(
   }
 
   // The same reading the panel's dial is drawn from, so the two cannot disagree.
+  const cap = confirmedPlanLimit(config);
   const reading = readMonthlyPace({
     consumedBytes,
-    planLimitBytes: confirmedPlanLimit(config),
+    planLimitBytes: cap,
     clock,
   });
 
   return {
     usedBytes: reading.usedBytes,
     percent: reading.usedShare === null ? null : reading.usedShare * 100,
+    low: isLow(reading.remainingBytes, cap, clock),
   };
 }
 
@@ -177,6 +198,11 @@ function render(reading: TrayReading, warnThresholdPercent: number): string {
 
   if (reading.percent === null) {
     return used;
+  }
+  // The mark moves to the front and takes the separator's place, so the
+  // title stays inside the cap: `⚠999Go 100%` is 11 characters.
+  if (reading.low) {
+    return `${TRAY_WARN_MARKER}${used} ${formatPercent(reading.percent)}`;
   }
 
   const separator =
@@ -201,8 +227,9 @@ function render(reading: TrayReading, warnThresholdPercent: number): string {
  * panel explains the gap when it is opened.
  *
  * At or above the configured warn threshold the separator becomes
- * {@link TRAY_WARN_MARKER} — `"18Go ⚠ 90%"` — so the menu bar says the plan is
- * running out without saying it any wider.
+ * {@link TRAY_WARN_MARKER} — `"12Go ⚠ 60%"` — so the menu bar says the plan is
+ * running out without saying it any wider. While the forfait is low (30% or
+ * less left) the mark leads instead — `"⚠18Go 90%"` — until a recharge.
  */
 export function buildTrayTitle(
   result: SnapshotResult,

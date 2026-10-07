@@ -4490,3 +4490,110 @@ describe("the plan fields — where each value came from", () => {
     expect(textOf("planLimitSource")).toBe("set by you");
   });
 });
+
+describe("the forfait alert banner", () => {
+  function banner(): HTMLElement {
+    const element = document.querySelector<HTMLElement>("[data-alert-row]");
+
+    if (element === null) {
+      throw new Error("the page has no alert banner");
+    }
+
+    return element;
+  }
+
+  function mark(): HTMLElement {
+    const element = banner().querySelector<HTMLElement>("[data-alert-mark]");
+
+    if (element === null) {
+      throw new Error("the alert banner has no mark");
+    }
+
+    return element;
+  }
+
+  /** 10 Go of a 20 Go plan used, with the forfait ending at `expiresAt`. */
+  function modelEnding(expiresAt: Date): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(10 * GB) },
+      lastReading: null,
+      config: {
+        ...configWithLimit(20 * GB),
+        allowanceAnchor: {
+          planLabel: "NET MONTH 200 000",
+          remainingBytes: 10 * GB,
+          expiresAt,
+          routerMonthBytes: 10 * GB,
+          routerClearTime: "2026-7-27",
+          syncedAt: NOW,
+        },
+      },
+      clock,
+    });
+  }
+
+  it("is not on the panel while there is no alert", () => {
+    apply(modelUsing(10 * GB));
+
+    expect(banner().hidden).toBe(true);
+    expect(textOf("alert")).toBe("");
+    expect(mark().textContent).toBe("");
+  });
+
+  it("states the remaining volume and share while the forfait is low", () => {
+    apply(modelUsing(16 * GB));
+
+    expect(banner().hidden).toBe(false);
+    expect(banner().dataset["alert"]).toBe("low");
+    expect(textOf("alert")).toContain("4.00 Go");
+    expect(textOf("alert")).toContain("20%");
+  });
+
+  it("stays on every model until the alert is gone", () => {
+    apply(modelUsing(16 * GB));
+    apply(modelUsing(17 * GB));
+
+    expect(banner().hidden).toBe(false);
+    expect(textOf("alert")).toContain("3.00 Go");
+
+    apply(modelUsing(10 * GB));
+
+    expect(banner().hidden).toBe(true);
+    expect(banner().dataset["alert"]).toBe("");
+  });
+
+  it("states the days left before the forfait ends", () => {
+    apply(modelEnding(new Date(2026, 6, 30)));
+
+    expect(banner().hidden).toBe(false);
+    expect(banner().dataset["alert"]).toBe("ending");
+    expect(textOf("alert")).toContain("3 days");
+  });
+
+  it("states the hours left on the last day", () => {
+    apply(modelEnding(new Date(2026, 6, 28)));
+
+    expect(textOf("alert")).toContain("7 hours");
+  });
+
+  it("carries a mark beside the text, never colour alone", () => {
+    apply(modelUsing(16 * GB));
+
+    expect(mark().textContent).not.toBe("");
+    expect(textOf("alert")).not.toBe("");
+    // The mark is decoration for a reader; the sentence already says it.
+    expect(mark().getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("sits in the Usage pane, above the dial", () => {
+    expect(banner().closest('[data-pane="usage"]')).not.toBeNull();
+    expect(
+      banner().compareDocumentPosition(dial()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+
+  it("costs no height while it is hidden", () => {
+    expect(cssBody(".alert-banner[hidden]")).toMatch(/display:\s*none/);
+  });
+});

@@ -133,6 +133,7 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     forfaitNote: model.forfait?.note ?? "",
     syncStatus: model.sync.status,
     notice: model.notice,
+    alert: model.alert?.text ?? "",
   };
 }
 
@@ -381,7 +382,10 @@ function withdrawRefusalMark(selector: (typeof REFUSAL_LINES)[number]): void {
  * pressed, whichever answer it is.
  */
 const SAVED_LINES = [
-  { line: '[data-field="planLimitError"]', of: (m: PopoverModel) => m.planLimit },
+  {
+    line: '[data-field="planLimitError"]',
+    of: (m: PopoverModel) => m.planLimit,
+  },
   { line: '[data-field="planDaysError"]', of: (m: PopoverModel) => m.planDays },
 ] as const;
 
@@ -1040,6 +1044,31 @@ function applyNotice(model: PopoverModel): void {
   }
 }
 
+/** The warning mark beside the banner's sentence — the tray's own mark. */
+const ALERT_MARK = "⚠";
+
+/**
+ * Shows the forfait banner on every model that carries an alert, and takes it
+ * away on the first that does not. The mark is cleared with it, so nothing of
+ * the banner is left on the page while there is no alert.
+ */
+function applyAlert(model: PopoverModel): void {
+  const row = document.querySelector<HTMLElement>("[data-alert-row]");
+
+  if (row === null) {
+    return;
+  }
+
+  row.hidden = model.alert === null;
+  row.dataset["alert"] = model.alert?.kind ?? "";
+
+  const mark = row.querySelector<HTMLElement>("[data-alert-mark]");
+
+  if (mark !== null) {
+    mark.textContent = model.alert === null ? "" : ALERT_MARK;
+  }
+}
+
 /** Puts the sync state on the button, the prompt and the root element. */
 function applySync(model: PopoverModel): void {
   const { sync, allowance } = model;
@@ -1553,6 +1582,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPace(model);
   applyForfait(model);
   applyNotice(model);
+  applyAlert(model);
   applySync(model);
 };
 
