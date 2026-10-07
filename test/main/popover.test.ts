@@ -1,5 +1,7 @@
 import type { Rectangle, Tray } from "electron";
 
+import { readFileSync } from "node:fs";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig } from "../../src/config/defaults.js";
@@ -25,6 +27,8 @@ import {
   type PopoverModel,
 } from "../../src/main/view-model.js";
 
+import { placePanel } from "../../src/main/panel-placement.js";
+
 import type { RouterSnapshot } from "../../src/hilink/types.js";
 import type { AppInfo } from "../../src/main/app-info.js";
 
@@ -41,6 +45,8 @@ const electron = vi.hoisted(() => ({
   invokers: new Map<string, (...args: unknown[]) => unknown>(),
   /** Every URL handed to `shell.openExternal`. */
   opened: [] as string[],
+  /** What `screen.getDisplayMatching` reports as the display's work area. */
+  workArea: { x: 0, y: 24, width: 1920, height: 1056 },
 }));
 
 interface FakeWindow {
@@ -149,7 +155,11 @@ vi.mock("electron", () => {
     },
   };
 
-  return { BrowserWindow, ipcMain, shell };
+  const screen = {
+    getDisplayMatching: vi.fn(() => ({ workArea: electron.workArea })),
+  };
+
+  return { BrowserWindow, ipcMain, screen, shell };
 });
 
 const TRAY_BOUNDS: Rectangle = { x: 900, y: 0, width: 40, height: 24 };
@@ -319,6 +329,18 @@ describe("createPopover", () => {
     expect(lastWindow().setPosition).toHaveBeenCalledWith(760, 24, false);
 
     popover.destroy();
+  });
+
+  it("stays inside the work area of the display the tray item is on", () => {
+    electron.workArea = { x: 0, y: 24, width: 1440, height: 876 };
+    const popover = createPopover({ htmlPath: "/tmp/index.html", width: 320 });
+    popover.show({ x: 1420, y: 0, width: 20, height: 24 });
+
+    // Centring would put the right edge at 1590, past the display's 1440.
+    expect(lastWindow().setPosition).toHaveBeenCalledWith(1120, 24, false);
+
+    popover.destroy();
+    electron.workArea = { x: 0, y: 24, width: 1920, height: 1056 };
   });
 
   it("hands the current model to the page rather than letting it compute anything", () => {
@@ -1343,5 +1365,101 @@ describe("createPopover — the About section's link", () => {
 
     expect(electron.opened).toEqual([]);
     expect(electron.invokers.has(POPOVER_APP_INFO_CHANNEL)).toBe(false);
+  });
+});
+
+describe("placePanel", () => {
+  const panelSize = { width: 320, height: 520 };
+
+  function insideWorkArea(
+    position: { x: number; y: number },
+    workArea: Rectangle,
+  ): boolean {
+    return (
+      position.x >= workArea.x &&
+      position.y >= workArea.y &&
+      position.x + panelSize.width <= workArea.x + workArea.width &&
+      position.y + panelSize.height <= workArea.y + workArea.height
+    );
+  }
+
+  it("on Windows, opens directly above a tray icon on a bottom taskbar", () => {
+    const workArea = { x: 0, y: 0, width: 1920, height: 1040 };
+    const trayBounds = { x: 1700, y: 1040, width: 40, height: 40 };
+
+    const position = placePanel({
+      platform: "win32",
+      trayBounds,
+      panelSize,
+      workArea,
+    });
+
+    // Centred on the icon, its bottom edge on the icon's top edge.
+    expect(position).toEqual({ x: 1560, y: 520 });
+    expect(position.y + panelSize.height).toBe(trayBounds.y);
+    expect(insideWorkArea(position, workArea)).toBe(true);
+  });
+
+  it("on Windows, keeps the panel on screen with the taskbar on the left", () => {
+    const workArea = { x: 48, y: 0, width: 1872, height: 1080 };
+
+    const position = placePanel({
+      platform: "win32",
+      trayBounds: { x: 4, y: 1000, width: 40, height: 40 },
+      panelSize,
+      workArea,
+    });
+
+    expect(position).toEqual({ x: 48, y: 480 });
+    expect(insideWorkArea(position, workArea)).toBe(true);
+  });
+
+  it("on Windows, keeps the panel on screen with the taskbar on the right", () => {
+    const workArea = { x: 0, y: 0, width: 1872, height: 1080 };
+
+    const position = placePanel({
+      platform: "win32",
+      trayBounds: { x: 1876, y: 1000, width: 40, height: 40 },
+      panelSize,
+      workArea,
+    });
+
+    expect(position).toEqual({ x: 1552, y: 480 });
+    expect(insideWorkArea(position, workArea)).toBe(true);
+  });
+
+  it("on Windows, keeps the panel on screen with the taskbar at the top", () => {
+    const workArea = { x: 0, y: 40, width: 1920, height: 1040 };
+
+    const position = placePanel({
+      platform: "win32",
+      trayBounds: { x: 1700, y: 0, width: 40, height: 40 },
+      panelSize,
+      workArea,
+    });
+
+    // Above the icon would be off the top; it drops just under the taskbar.
+    expect(position).toEqual({ x: 1560, y: 40 });
+    expect(insideWorkArea(position, workArea)).toBe(true);
+  });
+
+  it("on macOS, hangs centred just below the menu bar item, as before", () => {
+    const position = placePanel({
+      platform: "darwin",
+      trayBounds: TRAY_BOUNDS,
+      panelSize,
+      workArea: { x: 0, y: 24, width: 1920, height: 1056 },
+    });
+
+    expect(position).toEqual({ x: 760, y: 24 });
+  });
+
+  it("imports no Electron, so it runs without a screen", () => {
+    const source = readFileSync(
+      new URL("../../src/main/panel-placement.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(/from\s+["']electron["']/);
   });
 });
