@@ -2629,9 +2629,9 @@ describe("buildPopoverModel — where each plan field's value came from", () => 
   it("marks a length the carrier gave as the carrier's, and a typed one as the user's", () => {
     const base = { ...configWith(CAP, anchorOf(12_000_000_000)), planDays: 30 };
 
-    expect(modelFrom({ ...base, planDaysSource: "carrier" }).planDays.source).toBe(
-      "carrier",
-    );
+    expect(
+      modelFrom({ ...base, planDaysSource: "carrier" }).planDays.source,
+    ).toBe("carrier");
     expect(modelFrom({ ...base, planDaysSource: "user" }).planDays.source).toBe(
       "set by you",
     );
@@ -2773,5 +2773,172 @@ describe("buildPopoverModel — saying a Set was saved", () => {
     expect(model.planLimit.saved).toBe("");
     expect(model.planDays.error).not.toBe("");
     expect(model.planDays.saved).toBe("");
+  });
+});
+
+describe("buildPopoverModel — the forfait alert", () => {
+  const CAP = 20_000_000_000;
+
+  /** A live Yas panel whose carrier reports `remainingBytes` left. */
+  function yasAlertModel(
+    remainingBytes: number,
+    expiresAt: Date | null = new Date(2026, 7, 12),
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWith(CAP, anchorOf(remainingBytes, { expiresAt })),
+      clock,
+    });
+  }
+
+  it("is absent while the forfait has more than 30% left and its end is far", () => {
+    expect(yasAlertModel(12_000_000_000).alert).toBeNull();
+  });
+
+  it("is `low` with the remaining volume and share once 30% or less is left", () => {
+    const { alert } = yasAlertModel(5_000_000_000);
+
+    expect(alert?.kind).toBe("low");
+    expect(alert?.kind === "low" && alert.remaining).toBe("5.00 Go");
+    expect(alert?.kind === "low" && alert.share).toBe("25%");
+    expect(alert?.text).toContain("5.00 Go");
+    expect(alert?.text).toContain("25%");
+  });
+
+  it("is `low` exactly at the 30% boundary", () => {
+    expect(yasAlertModel(6_000_000_000).alert?.kind).toBe("low");
+  });
+
+  it("stays `low` while the router is unreachable and the last reading is shown", () => {
+    const model = buildPopoverModel({
+      result: OFFLINE,
+      lastReading: { snapshot: snapshot(), at: SEVEN_HOURS_AGO },
+      config: configWith(CAP, anchorOf(2_000_000_000)),
+      clock,
+    });
+
+    expect(model.alert?.kind).toBe("low");
+  });
+
+  it("is never `low` without a cap to measure the share against", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWith(null, anchorOf(1_000_000_000)),
+      clock,
+    });
+
+    expect(model.alert).toBeNull();
+  });
+
+  it("is `ending` with the days left within five days of the end", () => {
+    // 2 days 6h14m before the midnight closing 29 July: the 3-day reminder is
+    // the newest one due, so the panel says the same.
+    const { alert } = yasAlertModel(12_000_000_000, new Date(2026, 6, 30));
+
+    expect(alert?.kind).toBe("ending");
+    expect(alert?.kind === "ending" && alert.left).toBe("3 days");
+    expect(alert?.text).toContain("3 days");
+  });
+
+  it("counts in hours on the last day", () => {
+    // 6h14m before midnight.
+    const { alert } = yasAlertModel(12_000_000_000, new Date(2026, 6, 28));
+
+    expect(alert?.kind).toBe("ending");
+    expect(alert?.kind === "ending" && alert.left).toBe("7 hours");
+    expect(alert?.text).toContain("7 hours");
+  });
+
+  it("never says `1 hours`", () => {
+    const { alert } = yasAlertModel(
+      12_000_000_000,
+      new Date(2026, 6, 27, 18, 0, 0),
+    );
+
+    expect(alert?.kind === "ending" && alert.left).toBe("1 hour");
+  });
+
+  it("is absent more than five days out, and once the end has passed", () => {
+    expect(
+      yasAlertModel(12_000_000_000, new Date(2026, 7, 2)).alert,
+    ).toBeNull();
+    expect(
+      yasAlertModel(12_000_000_000, new Date(2026, 6, 27)).alert,
+    ).toBeNull();
+    expect(yasAlertModel(12_000_000_000, null).alert).toBeNull();
+  });
+
+  it("says `low` rather than `ending` when both hold", () => {
+    const { alert } = yasAlertModel(1_000_000_000, new Date(2026, 6, 30));
+
+    expect(alert?.kind).toBe("low");
+  });
+
+  it("counts down to the end of the calendar month on Orange", () => {
+    // 7.37 Go of 20 Go spent, 4 days 6h14m before 1 August.
+    const model = buildPopoverModel({
+      result: ORANGE_ONLINE,
+      lastReading: null,
+      config: configWith(CAP),
+      portal: portal(true),
+      clock,
+    });
+
+    expect(model.alert?.kind).toBe("ending");
+    expect(model.alert?.kind === "ending" && model.alert.left).toBe("5 days");
+  });
+
+  it("is `low` on Orange from the portal's figure against the cap", () => {
+    const model = buildPopoverModel({
+      result: ORANGE_ONLINE,
+      lastReading: null,
+      config: configWith(10_000_000_000),
+      portal: portal(true),
+      clock,
+    });
+
+    expect(model.alert?.kind).toBe("low");
+    expect(model.alert?.kind === "low" && model.alert.remaining).toBe(
+      "2.63 Go",
+    );
+    expect(model.alert?.kind === "low" && model.alert.share).toBe("26%");
+  });
+
+  it("is absent before anything has been read", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: configWith(CAP, anchorOf(1_000_000_000)),
+      clock,
+    });
+
+    expect(model.alert).toBeNull();
+  });
+
+  it("is absent on Orange while the portal has given no figure", () => {
+    const model = buildPopoverModel({
+      result: ORANGE_ONLINE,
+      lastReading: null,
+      config: configWith(CAP),
+      portal: { reading: null, live: false },
+      clock,
+    });
+
+    expect(model.alert).toBeNull();
+  });
+
+  it("hands the renderer only strings", () => {
+    for (const model of [
+      yasAlertModel(5_000_000_000),
+      yasAlertModel(12_000_000_000, new Date(2026, 6, 28)),
+    ]) {
+      expect(model.alert).not.toBeNull();
+
+      for (const leaf of leaves(model.alert)) {
+        expect(typeof leaf).toBe("string");
+      }
+    }
   });
 });

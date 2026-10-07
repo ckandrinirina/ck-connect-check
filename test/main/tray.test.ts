@@ -166,11 +166,17 @@ describe("buildTrayTitle", () => {
     expect(titleFor({ usedBytes: 52 * GB, cap: 100 * GB })).toBe("52Go · 52%");
   });
 
-  it("still fits 12 characters at its widest — 999Go ⚠ 100%", () => {
-    const widest = titleFor({ usedBytes: 999 * GB, cap: 999 * GB });
+  it("still fits 12 characters at its widest — 999Go ⚠ 99%", () => {
+    // Warned but not low: a threshold under 70% lets the separator mark a share
+    // whose remainder is still above the low line.
+    const widest = titleFor({
+      usedBytes: 690 * GB,
+      cap: 999 * GB,
+      warnThresholdPercent: 50,
+    });
 
-    expect(widest).toBe(`999Go ${TRAY_WARN_MARKER} 100%`);
-    expect(widest.length).toBe(MAX_TRAY_TITLE_LENGTH);
+    expect(widest).toBe(`690Go ${TRAY_WARN_MARKER} 69%`);
+    expect(widest.length).toBeLessThanOrEqual(MAX_TRAY_TITLE_LENGTH);
   });
 
   it("never exceeds 12 characters for any consumption up to 999 Go", () => {
@@ -278,17 +284,16 @@ describe("one definition of the share used", () => {
 
 describe("buildTrayTitle — the warning marker", () => {
   it("leaves a title below the warn threshold unmarked", () => {
-    const title = titleFor({ usedBytes: 17.9 * GB });
+    const title = titleFor({ usedBytes: 13.8 * GB });
 
-    expect(title).toBe("18Go · 90%");
+    expect(title).toBe("14Go · 69%");
     expect(title).not.toContain(TRAY_WARN_MARKER);
   });
 
   it("marks a title that has reached the warn threshold exactly", () => {
-    const title = titleFor({ usedBytes: 18 * GB });
+    const title = titleFor({ usedBytes: 10 * GB, warnThresholdPercent: 50 });
 
-    expect(title).toContain(TRAY_WARN_MARKER);
-    expect(title).toBe(`18Go ${TRAY_WARN_MARKER} 90%`);
+    expect(title).toBe(`10Go ${TRAY_WARN_MARKER} 50%`);
   });
 
   it("marks a title that has consumed the whole plan", () => {
@@ -296,11 +301,12 @@ describe("buildTrayTitle — the warning marker", () => {
   });
 
   it("takes the threshold from the config rather than always warning at 90", () => {
+    // Both shares leave more than 30% of the plan, so only the threshold speaks.
     expect(
-      titleFor({ usedBytes: 15 * GB, warnThresholdPercent: 75 }),
+      titleFor({ usedBytes: 11 * GB, warnThresholdPercent: 50 }),
     ).toContain(TRAY_WARN_MARKER);
     expect(
-      titleFor({ usedBytes: 14 * GB, warnThresholdPercent: 75 }),
+      titleFor({ usedBytes: 9 * GB, warnThresholdPercent: 50 }),
     ).not.toContain(TRAY_WARN_MARKER);
   });
 
@@ -309,6 +315,75 @@ describe("buildTrayTitle — the warning marker", () => {
       TRAY_WARN_MARKER,
     );
     expect(titleFor({ anchored: false })).not.toContain(TRAY_WARN_MARKER);
+  });
+});
+
+describe("buildTrayTitle — a low forfait", () => {
+  it("is prefixed with the warning mark once 30% or less of the plan is left", () => {
+    const title = titleFor({ usedBytes: 16 * GB });
+
+    expect(title.startsWith(TRAY_WARN_MARKER)).toBe(true);
+    expect(title).toBe(`${TRAY_WARN_MARKER}16Go 80%`);
+  });
+
+  it("is prefixed exactly at the 30% boundary", () => {
+    expect(titleFor({ usedBytes: 14 * GB })).toBe(
+      `${TRAY_WARN_MARKER}14Go 70%`,
+    );
+  });
+
+  it("carries a single mark even past the warn threshold", () => {
+    const title = titleFor({ usedBytes: 18 * GB });
+
+    expect(title).toBe(`${TRAY_WARN_MARKER}18Go 90%`);
+    expect(title.split(TRAY_WARN_MARKER)).toHaveLength(2);
+  });
+
+  it("stays under 12 characters at its widest", () => {
+    const widest = titleFor({ usedBytes: 999 * GB, cap: 999 * GB });
+
+    expect(widest).toBe(`${TRAY_WARN_MARKER}999Go 100%`);
+    expect(widest.length).toBeLessThan(MAX_TRAY_TITLE_LENGTH);
+  });
+
+  it("stays under 12 characters for every low share up to 999 Go", () => {
+    for (const cap of [1 * GB, 20 * GB, 100 * GB, 999 * GB]) {
+      for (let usedGb = 0; usedGb * GB <= cap; usedGb += 1) {
+        const title = titleFor({ usedBytes: usedGb * GB, cap });
+
+        if (title.startsWith(TRAY_WARN_MARKER)) {
+          expect(title.length, `"${title}"`).toBeLessThan(
+            MAX_TRAY_TITLE_LENGTH,
+          );
+        }
+      }
+    }
+  });
+
+  it("is not prefixed while more than 30% is left", () => {
+    expect(
+      titleFor({ usedBytes: 13.8 * GB }).startsWith(TRAY_WARN_MARKER),
+    ).toBe(false);
+  });
+
+  it("is never prefixed without a cap", () => {
+    expect(titleFor({ usedBytes: 19 * GB, cap: null })).not.toContain(
+      TRAY_WARN_MARKER,
+    );
+  });
+
+  it("agrees with the panel's alert", () => {
+    for (let usedGb = 0; usedGb <= 20; usedGb += 1) {
+      const config = configFor({ usedBytes: usedGb * GB });
+      const low =
+        buildPopoverModel({ result: ONLINE, lastReading: null, config, clock })
+          .alert?.kind === "low";
+
+      expect(
+        buildTrayTitle(ONLINE, config, clock).startsWith(TRAY_WARN_MARKER),
+        `at ${String(usedGb)} Go used`,
+      ).toBe(low);
+    }
   });
 });
 
@@ -401,6 +476,10 @@ describe("buildTrayTitle — Orange", () => {
   it("renders the portal's consumed volume and its share of the cap", () => {
     // The same two halves, in the same order, with the same separator as Yas.
     expect(orangeTitle({ cap: 20 * GB })).toBe("7.4Go · 37%");
+  });
+
+  it("prefixes the warning mark when the portal's figure leaves the forfait low", () => {
+    expect(orangeTitle({ cap: 10 * GB })).toBe(`${TRAY_WARN_MARKER}7.4Go 74%`);
   });
 
   it("shows the consumed volume alone when no cap has been set", () => {
