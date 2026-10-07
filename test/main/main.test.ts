@@ -15,6 +15,7 @@ import type {
   RouterSnapshot,
 } from "../../src/hilink/types.js";
 import { defaultConfig } from "../../src/config/defaults.js";
+import { readAppInfo } from "../../src/main/app-info.js";
 import { DEVICES_MENU_LABEL } from "../../src/main/tray.js";
 import type { DevicesModel } from "../../src/main/view-model.js";
 import type {
@@ -59,6 +60,8 @@ const electron = vi.hoisted(() => ({
   /** What macOS holds as the login item; only `setLoginItemSettings` moves it. */
   loginItem: { openAtLogin: false, refuses: false },
   setLoginItemSettings: vi.fn(),
+  setAboutPanelOptions: vi.fn(),
+  showAboutPanel: vi.fn(),
   /** `app.isPackaged` — false, as under `electron .`, unless a test says otherwise. */
   packaged: false,
 }));
@@ -96,6 +99,8 @@ vi.mock("electron", () => {
       on: electron.appOn,
       whenReady: vi.fn(() => Promise.resolve()),
       quit: electron.appQuit,
+      setAboutPanelOptions: electron.setAboutPanelOptions,
+      showAboutPanel: electron.showAboutPanel,
       get isPackaged(): boolean {
         return electron.packaged;
       },
@@ -3173,6 +3178,69 @@ describe("startMenuBarApp — the tray's devices entry", () => {
     });
 
     expect(menuTemplate().some((entry) => entry.label === "Quit")).toBe(true);
+
+    app.stop();
+  });
+});
+
+/**
+ * The native About panel. What it says is read from `package.json` through one
+ * module, so the panel and the manifest can never disagree.
+ */
+describe("startMenuBarApp — the About panel", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.buildFromTemplate.mockClear();
+    electron.setAboutPanelOptions.mockClear();
+    electron.showAboutPanel.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fills the panel with the manifest's name, version, author and repository", () => {
+    const info = readAppInfo();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+    });
+
+    expect(electron.setAboutPanelOptions).toHaveBeenCalledTimes(1);
+
+    const options = electron.setAboutPanelOptions.mock.calls[0]?.[0] as {
+      applicationName?: string;
+      applicationVersion?: string;
+      copyright?: string;
+      credits?: string;
+    };
+
+    expect(options.applicationName).toBe(info.name);
+    expect(options.applicationVersion).toBe(info.version);
+    expect(options.copyright).toContain(info.author);
+    expect(options.credits).toContain(info.repositoryUrl);
+
+    app.stop();
+  });
+
+  it("offers an About item in the tray menu that opens the panel", () => {
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover: recordingPopover(),
+    });
+
+    const item = menuTemplate().find(
+      (entry) => entry.label === "About ck-connect-check",
+    );
+
+    expect(item?.click).toBeTypeOf("function");
+    expect(electron.showAboutPanel).not.toHaveBeenCalled();
+
+    item?.click?.();
+
+    expect(electron.showAboutPanel).toHaveBeenCalledTimes(1);
 
     app.stop();
   });

@@ -13,6 +13,7 @@ import {
   MAX_TRAY_TITLE_LENGTH,
   NO_TRAY_VALUE,
   TRAY_WARN_MARKER,
+  aboutMenuLabel,
   buildTrayTitle,
 } from "../../src/main/tray.js";
 import { buildPopoverModel } from "../../src/main/view-model.js";
@@ -716,5 +717,15 @@ describe("buildTrayTitle — a carrier the app cannot place", () => {
     expect(buildTrayTitle(ONLINE, config, clock, portalWith(WIFIBER))).toBe(
       "5.8Go · 29%",
     );
+  });
+});
+
+describe("aboutMenuLabel", () => {
+  it("names the app the About panel describes", () => {
+    expect(aboutMenuLabel("ck-connect-check")).toBe("About ck-connect-check");
+  });
+
+  it("follows the name it is given rather than a typed one", () => {
+    expect(aboutMenuLabel("renamed")).toBe("About renamed");
   });
 });

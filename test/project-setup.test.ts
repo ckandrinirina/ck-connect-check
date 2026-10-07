@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { APP_VERSION } from "../src/app-info.js";
+import { readAppInfo } from "../src/main/app-info.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
@@ -18,12 +18,15 @@ function readRepoFile(relativePath: string): string {
 
 const packageJson = JSON.parse(readRepoFile("package.json")) as {
   version?: string;
+  author?: string;
+  repository?: { type?: string; url?: string };
+  homepage?: string;
   scripts?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
 
-/** The release this tree is: the pace meter and the automatic sync. */
-const RELEASED_VERSION = "0.2.0";
+/** The release this tree is: the first one with an About panel. */
+const RELEASED_VERSION = "1.0.0";
 
 describe("package.json", () => {
   it("declares test, build and lint scripts", () => {
@@ -40,23 +43,36 @@ describe("package.json", () => {
 
 /**
  * One version, stated in three places that cannot be allowed to drift: the
- * manifest npm reads, the lockfile it writes beside it, and the constant the app
- * itself carries. A bump that touches only one of them ships a build that
+ * manifest npm reads, the lockfile it writes beside it, and what the app reads
+ * back from the manifest. A bump that touches only one of them ships a build that
  * reports a version nobody released.
  */
+const REPOSITORY_URL = "https://github.com/ckandrinirina/ck-connect-check";
+
+describe("package.json identity", () => {
+  it("names the author", () => {
+    expect(packageJson.author).toBe("ANDRINIRINA Erick");
+  });
+
+  it("points repository and homepage at the GitHub project", () => {
+    expect(packageJson.repository?.url).toBe(REPOSITORY_URL);
+    expect(packageJson.homepage).toBe(REPOSITORY_URL);
+  });
+});
+
 describe("the released version", () => {
-  it("reads 0.2.0 in package.json", () => {
+  it("reads 1.0.0 in package.json", () => {
     expect(packageJson.version).toBe(RELEASED_VERSION);
   });
 
   it("is what the app itself reports", () => {
     // Asserted against the manifest rather than against the literal, so the
     // constant cannot be left behind by the next bump either.
-    expect(APP_VERSION).toBe(packageJson.version);
+    expect(readAppInfo().version).toBe(packageJson.version);
   });
 
   it("is a plain three-part semantic version", () => {
-    expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(readAppInfo().version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it.each(["the root entry", "the root package entry"])(
