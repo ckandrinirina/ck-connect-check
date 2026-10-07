@@ -20,7 +20,8 @@
     "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html src/renderer/popover.css dist/renderer/ && mkdir -p dist/assets/tray && cp assets/tray/*Template*.png dist/assets/tray/",
     "lint": "eslint .",
     "icon": "electron --force-device-scale-factor=1 scripts/make-icon.mjs && electron --force-device-scale-factor=1 scripts/make-tray-icons.mjs",
-    "package": "npm run build && electron-forge package"
+    "package": "npm run build && electron-forge package",
+    "make": "npm run build && electron-forge make --arch=universal"
   },
   "config": {
     "forge": {
@@ -34,6 +35,8 @@
         },
         "ignore": [
           "^/\\.claude$",
+          "^/\\.github$",
+          "^/site$",
           "^/assets$",
           "^/docs$",
           "^/scripts$",
@@ -46,11 +49,31 @@
           "^/tsconfig.*\\.json$",
           "^/vitest\\.config\\.ts$"
         ]
-      }
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-dmg",
+          "platforms": [
+            "darwin"
+          ],
+          "config": {
+            "name": "ck-connect-check",
+            "icon": "assets/icon.icns"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "darwin"
+          ]
+        }
+      ]
     }
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-dmg": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.10.2",
     "electron": "^33.2.1",
