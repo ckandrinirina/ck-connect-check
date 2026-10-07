@@ -371,7 +371,11 @@ describe("startMenuBarApp", () => {
     );
     // Never a signal glyph over the badge, and never a title.
     expect(electron.createFromBitmap).toHaveBeenCalled();
-    expect(electron.setImage.mock.calls.every(([image]) => "bitmap" in (image as object))).toBe(true);
+    expect(
+      electron.setImage.mock.calls.every(
+        ([image]) => "bitmap" in (image as object),
+      ),
+    ).toBe(true);
     expect(electron.setTitle).not.toHaveBeenCalled();
     app.stop();
   });
