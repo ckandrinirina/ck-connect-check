@@ -25,6 +25,7 @@ const REPO_URL = "https://github.com/ckandrinirina/ck-connect-check";
 const LATEST = `${REPO_URL}/releases/latest/download`;
 const DMG_URL = `${LATEST}/ck-connect-check-mac.dmg`;
 const ZIP_URL = `${LATEST}/ck-connect-check-mac.zip`;
+const EXE_URL = `${LATEST}/ck-connect-check-windows-setup.exe`;
 
 let page: Document;
 
@@ -56,12 +57,25 @@ describe("the download links", () => {
     expect(links.some((link) => /zip/i.test(text(link)))).toBe(true);
   });
 
+  it("has a Windows button pointing at the latest release's Setup.exe", () => {
+    const links = linksTo(EXE_URL);
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.some((link) => /windows/i.test(text(link)))).toBe(true);
+  });
+
+  it("puts the Windows button beside the Mac button", () => {
+    const mac = linksTo(DMG_URL).find((link) => /download/i.test(text(link)));
+    const windows = linksTo(EXE_URL).find((link) => /windows/i.test(text(link)));
+    expect(mac?.parentElement).toBeTruthy();
+    expect(windows?.parentElement).toBe(mac?.parentElement);
+  });
+
   it("uses the asset names the release workflow publishes", () => {
     const workflow = readFileSync(
       resolve(REPO_ROOT, ".github/workflows/release.yml"),
       "utf8",
     );
-    for (const url of [DMG_URL, ZIP_URL]) {
+    for (const url of [DMG_URL, ZIP_URL, EXE_URL]) {
       const asset = url.slice(url.lastIndexOf("/") + 1);
       expect(workflow).toContain(`release/${asset}`);
     }
@@ -108,6 +122,10 @@ describe("what the page says about the app", () => {
 
   it("states the macOS requirement", () => {
     expect(text(page.body)).toMatch(/requires macOS/i);
+  });
+
+  it("states the Windows requirement", () => {
+    expect(text(page.body)).toMatch(/Windows 10/);
   });
 
   it("loads its stylesheet from site/style.css", () => {
@@ -164,5 +182,25 @@ describe("the unsigned-app instructions", () => {
 
   it("says it is only needed once", () => {
     expect(text(page.body)).toMatch(/once|one-time|first launch/i);
+  });
+});
+
+describe("the SmartScreen instructions", () => {
+  function steps(): string {
+    const list = [...page.querySelectorAll("ol")].find((ol) =>
+      /Run anyway/.test(text(ol)),
+    );
+    expect(list, "no ordered list carries the Run anyway steps").toBeDefined();
+    return text(list);
+  }
+
+  it("explains SmartScreen warns because the installer is unsigned", () => {
+    expect(text(page.body)).toMatch(/SmartScreen/);
+  });
+
+  it("gives More info, then Run anyway", () => {
+    const list = steps();
+    expect(list).toContain("More info");
+    expect(list.indexOf("More info")).toBeLessThan(list.indexOf("Run anyway"));
   });
 });

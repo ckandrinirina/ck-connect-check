@@ -29,7 +29,7 @@ describe("readAppInfo", () => {
   it("reads the app's own package.json by default", () => {
     expect(readAppInfo()).toEqual({
       name: "ck-connect-check",
-      version: "1.0.0",
+      version: "1.1.0",
       author: "ANDRINIRINA Erick",
       repositoryUrl: "https://github.com/ckandrinirina/ck-connect-check",
     });

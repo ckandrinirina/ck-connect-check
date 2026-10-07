@@ -21,6 +21,7 @@ const LATEST =
   "https://github.com/ckandrinirina/ck-connect-check/releases/latest/download";
 const DMG_URL = `${LATEST}/ck-connect-check-mac.dmg`;
 const ZIP_URL = `${LATEST}/ck-connect-check-mac.zip`;
+const EXE_URL = `${LATEST}/ck-connect-check-windows-setup.exe`;
 
 /** A level-2 section's body, up to the next level-2 heading. */
 function section(heading: string): string {
@@ -46,6 +47,22 @@ describe("the README's Download section", () => {
     expect(readRepoFile("site/index.html")).toContain(`href="${DMG_URL}"`);
   });
 
+  it("links to the latest release's Windows Setup.exe", () => {
+    expect(section("## Download")).toContain(`(${EXE_URL})`);
+  });
+
+  it("uses the same Setup.exe link as the download page", () => {
+    expect(readRepoFile("site/index.html")).toContain(`href="${EXE_URL}"`);
+  });
+
+  it("gives the SmartScreen route: More info, then Run anyway", () => {
+    const body = section("## Download");
+    expect(body).toContain("SmartScreen");
+    expect(body).toMatch(/\*\*More info\*\*/);
+    expect(body).toMatch(/\*\*Run anyway\*\*/);
+    expect(body.indexOf("More info")).toBeLessThan(body.indexOf("Run anyway"));
+  });
+
   it("gives the right-click → Open route", () => {
     const body = section("## Download");
     expect(body).toMatch(/right-click/i);
@@ -69,6 +86,25 @@ describe("the README's Download section", () => {
     );
     expect(download).toBeGreaterThanOrEqual(0);
     expect(download).toBeLessThan(install);
+  });
+});
+
+describe("the README's intro", () => {
+  /** The paragraph under the title, before the first level-2 heading. */
+  function intro(): string {
+    const title = lines.findIndex((line) => line.trim() === "# ck-connect-check");
+    const rest = lines.slice(title + 1);
+    const end = rest.findIndex((line) => /^## /.test(line));
+    return rest.slice(0, end).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  it("names both platforms", () => {
+    expect(intro()).toMatch(/macOS/);
+    expect(intro()).toMatch(/Windows/);
+  });
+
+  it("no longer calls it a macOS app", () => {
+    expect(intro()).not.toMatch(/^An? macOS\b/);
   });
 });
 

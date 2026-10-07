@@ -25,8 +25,8 @@ const packageJson = JSON.parse(readRepoFile("package.json")) as {
   devDependencies?: Record<string, string>;
 };
 
-/** The release this tree is: the first one with an About panel. */
-const RELEASED_VERSION = "1.0.0";
+/** The release this tree is: the first one with a Windows build. */
+const RELEASED_VERSION = "1.1.0";
 
 describe("package.json", () => {
   it("declares test, build and lint scripts", () => {
@@ -61,7 +61,7 @@ describe("package.json identity", () => {
 });
 
 describe("the released version", () => {
-  it("reads 1.0.0 in package.json", () => {
+  it("reads 1.1.0 in package.json", () => {
     expect(packageJson.version).toBe(RELEASED_VERSION);
   });
 

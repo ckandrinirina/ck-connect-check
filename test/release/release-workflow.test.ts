@@ -6,19 +6,22 @@ import { parse } from "yaml";
 
 /**
  * The release workflow only runs on GitHub, on a pushed tag, so its shape is
- * asserted here: what triggers it, what it runs in which order, and the fixed
- * asset names the Pages site links to through `releases/latest/download/`.
+ * asserted here: what triggers it, what each job runs in which order, how the
+ * jobs share one Release, and the fixed asset names the Pages site links to
+ * through `releases/latest/download/`.
  */
 interface Step {
   name?: string;
   uses?: string;
   run?: string;
+  shell?: string;
   with?: Record<string, unknown>;
   env?: Record<string, unknown>;
 }
 
 interface Job {
   "runs-on"?: string;
+  needs?: string | string[];
   permissions?: Record<string, string>;
   steps?: Step[];
 }
@@ -37,11 +40,21 @@ function loadWorkflow(): Workflow {
   return parse(readFileSync(workflowPath, "utf8")) as Workflow;
 }
 
-function onlyJob(workflow: Workflow): Job {
-  const jobs = Object.values(workflow.jobs ?? {});
-  expect(jobs).toHaveLength(1);
-  return jobs[0] as Job;
+function jobsOf(workflow: Workflow): [string, Job][] {
+  return Object.entries(workflow.jobs ?? {});
 }
+
+/** The one job running on a runner whose label matches `runner`. */
+function jobOn(runner: RegExp): Job {
+  const matches = jobsOf(loadWorkflow()).filter(([, job]) =>
+    runner.test(job["runs-on"] ?? ""),
+  );
+  expect(matches, `jobs on ${String(runner)}`).toHaveLength(1);
+  return (matches[0] as [string, Job])[1];
+}
+
+const macJob = (): Job => jobOn(/^macos-/);
+const windowsJob = (): Job => jobOn(/^windows-latest$/);
 
 function runSteps(job: Job): string[] {
   return (job.steps ?? []).flatMap((step) =>
@@ -58,7 +71,14 @@ function indexOfRun(runs: string[], pattern: RegExp): number {
   return index;
 }
 
-const ASSETS = ["ck-connect-check-mac.dmg", "ck-connect-check-mac.zip"];
+function needsOf(job: Job): string[] {
+  if (job.needs === undefined) return [];
+  return Array.isArray(job.needs) ? job.needs : [job.needs];
+}
+
+const TAG = /"?\$(GITHUB_REF_NAME|\{\{ ?github\.ref_name ?\}\})"?/;
+const MAC_ASSETS = ["ck-connect-check-mac.dmg", "ck-connect-check-mac.zip"];
+const WINDOWS_ASSET = "ck-connect-check-windows-setup.exe";
 
 describe("the release workflow", () => {
   it("exists at .github/workflows/release.yml", () => {
@@ -72,34 +92,34 @@ describe("the release workflow", () => {
     expect(push).toEqual({ tags: ["v*"] });
   });
 
-  it("runs on a macOS runner with Node 22", () => {
-    const job = onlyJob(loadWorkflow());
-    expect(job["runs-on"]).toMatch(/^macos-/);
-    const setupNode = (job.steps ?? []).find((step) =>
+  it("has contents: write permission for every job", () => {
+    const workflow = loadWorkflow();
+    for (const [, job] of jobsOf(workflow)) {
+      const permissions = { ...workflow.permissions, ...job.permissions };
+      expect(permissions.contents).toBe("write");
+    }
+  });
+
+  it.each([
+    ["macOS", macJob],
+    ["Windows", windowsJob],
+  ])("runs the %s job with Node 22", (_platform, job) => {
+    const setupNode = (job().steps ?? []).find((step) =>
       step.uses?.startsWith("actions/setup-node@"),
     );
     expect(String(setupNode?.with?.["node-version"])).toBe("22");
   });
-
-  it("has contents: write permission", () => {
-    const workflow = loadWorkflow();
-    const permissions = {
-      ...workflow.permissions,
-      ...onlyJob(workflow).permissions,
-    };
-    expect(permissions.contents).toBe("write");
-  });
 });
 
-describe("the release job's steps", () => {
+describe("the macOS job's steps", () => {
   it("checks the tag against package.json before running anything else", () => {
-    const runs = runSteps(onlyJob(loadWorkflow()));
+    const runs = runSteps(macJob());
     expect(runs[0]).toMatch(/node scripts\/check-release-tag\.mjs/);
     expect(runs[0]).toMatch(/GITHUB_REF_NAME|github\.ref_name/);
   });
 
   it("then runs npm ci, npm test, npm run lint and npm run make, in that order", () => {
-    const runs = runSteps(onlyJob(loadWorkflow()));
+    const runs = runSteps(macJob());
     const order = [
       /check-release-tag\.mjs/,
       /^npm ci$/m,
@@ -110,43 +130,120 @@ describe("the release job's steps", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(new Set(order).size).toBe(order.length);
   });
-});
 
-describe("the published assets", () => {
-  it.each(ASSETS)("renames a built file to %s after npm run make", (asset) => {
-    const runs = runSteps(onlyJob(loadWorkflow()));
+  it.each(MAC_ASSETS)("renames a built file to %s after npm run make", (asset) => {
+    const runs = runSteps(macJob());
     const make = indexOfRun(runs, /^npm run make$/m);
     const rename = runs.findIndex(
       (run, index) =>
-        index > make && !/gh release create/.test(run) && run.includes(asset),
+        index > make && !/gh release/.test(run) && run.includes(`release/${asset}`),
     );
     expect(rename).toBeGreaterThan(make);
   });
+});
 
-  it("creates a Release named after the tag with generated notes and both assets", () => {
-    const job = onlyJob(loadWorkflow());
-    const runs = runSteps(job);
-    const release = runs.find((run) => /gh release create/.test(run));
-    expect(release).toBeDefined();
-    expect(release).toMatch(
-      /gh release create "?\$(GITHUB_REF_NAME|\{\{ ?github\.ref_name ?\}\})"?/,
-    );
-    expect(release).toMatch(
-      /--title "?\$(GITHUB_REF_NAME|\{\{ ?github\.ref_name ?\}\})"?/,
-    );
-    expect(release).toContain("--generate-notes");
-    for (const asset of ASSETS) {
-      expect(release).toContain(asset);
-    }
-    expect(runs.indexOf(release as string)).toBe(runs.length - 1);
+describe("the Windows job's steps", () => {
+  it("runs on windows-latest", () => {
+    expect(windowsJob()["runs-on"]).toBe("windows-latest");
   });
 
-  it("gives gh the workflow token", () => {
-    const step = (onlyJob(loadWorkflow()).steps ?? []).find((candidate) =>
-      candidate.run?.includes("gh release create"),
+  it("checks the tag, then runs npm ci, npm test, npm run lint and npm run make:win, in that order", () => {
+    const runs = runSteps(windowsJob());
+    const order = [
+      /check-release-tag\.mjs/,
+      /^npm ci$/m,
+      /^npm test$/m,
+      /^npm run lint$/m,
+      /^npm run make:win$/m,
+    ].map((pattern) => indexOfRun(runs, pattern));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(new Set(order).size).toBe(order.length);
+  });
+
+  it(`renames the Squirrel Setup.exe to ${WINDOWS_ASSET} after npm run make:win`, () => {
+    const runs = runSteps(windowsJob());
+    const make = indexOfRun(runs, /^npm run make:win$/m);
+    const rename = runs.findIndex(
+      (run, index) =>
+        index > make &&
+        !/gh release/.test(run) &&
+        /squirrel\.windows/.test(run) &&
+        run.includes(`release/${WINDOWS_ASSET}`),
     );
-    expect(String(step?.env?.["GH_TOKEN"])).toMatch(
-      /github\.token|secrets\.GITHUB_TOKEN/,
+    expect(rename).toBeGreaterThan(make);
+  });
+});
+
+/**
+ * One Release, created once by a job both build jobs wait on, so neither build
+ * races the other to create it; each build then uploads its own assets into it,
+ * whichever finishes first.
+ */
+describe("the shared Release", () => {
+  function creators(): [string, Job][] {
+    return jobsOf(loadWorkflow()).filter(([, job]) =>
+      runSteps(job).some((run) => /gh release create/.test(run)),
     );
+  }
+
+  it("is created by exactly one job, which builds nothing", () => {
+    const found = creators();
+    expect(found).toHaveLength(1);
+    const runs = runSteps((found[0] as [string, Job])[1]);
+    expect(runs.some((run) => /npm run make/.test(run))).toBe(false);
+  });
+
+  it("is named after the tag, with generated notes, and created without assets", () => {
+    const [, job] = creators()[0] as [string, Job];
+    const create = runSteps(job).find((run) => /gh release create/.test(run));
+    expect(create).toMatch(new RegExp(`gh release create ${TAG.source}`));
+    expect(create).toMatch(new RegExp(`--title ${TAG.source}`));
+    expect(create).toContain("--generate-notes");
+    expect(create).not.toMatch(/release\//);
+  });
+
+  it("is only created once the tag matches package.json", () => {
+    const [, job] = creators()[0] as [string, Job];
+    const runs = runSteps(job);
+    const check = indexOfRun(runs, /node scripts\/check-release-tag\.mjs/);
+    const create = indexOfRun(runs, /gh release create/);
+    expect(check).toBeLessThan(create);
+  });
+
+  it.each([
+    ["macOS", macJob],
+    ["Windows", windowsJob],
+  ])("is a job the %s job needs", (_platform, job) => {
+    const [name] = creators()[0] as [string, Job];
+    expect(needsOf(job())).toContain(name);
+  });
+
+  it.each([
+    ["macOS", macJob, MAC_ASSETS],
+    ["Windows", windowsJob, [WINDOWS_ASSET]],
+  ])(
+    "receives the %s assets as the job's last step, overwriting on a re-run",
+    (_platform, job, assets) => {
+      const runs = runSteps(job());
+      const upload = runs[runs.length - 1] ?? "";
+      expect(upload).toMatch(new RegExp(`gh release upload ${TAG.source}`));
+      expect(upload).toContain("--clobber");
+      for (const asset of assets) {
+        expect(upload).toContain(`release/${asset}`);
+      }
+      expect(runs.some((run) => /gh release create/.test(run))).toBe(false);
+    },
+  );
+
+  it("gives every gh step the workflow token", () => {
+    const ghSteps = jobsOf(loadWorkflow()).flatMap(([, job]) =>
+      (job.steps ?? []).filter((step) => /gh release/.test(step.run ?? "")),
+    );
+    expect(ghSteps.length).toBe(3);
+    for (const step of ghSteps) {
+      expect(String(step.env?.["GH_TOKEN"])).toMatch(
+        /github\.token|secrets\.GITHUB_TOKEN/,
+      );
+    }
   });
 });
