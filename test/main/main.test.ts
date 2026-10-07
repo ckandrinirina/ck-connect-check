@@ -59,6 +59,8 @@ const electron = vi.hoisted(() => ({
   /** What macOS holds as the login item; only `setLoginItemSettings` moves it. */
   loginItem: { openAtLogin: false, refuses: false },
   setLoginItemSettings: vi.fn(),
+  /** `app.isPackaged` — false, as under `electron .`, unless a test says otherwise. */
+  packaged: false,
 }));
 
 /**
@@ -94,6 +96,9 @@ vi.mock("electron", () => {
       on: electron.appOn,
       whenReady: vi.fn(() => Promise.resolve()),
       quit: electron.appQuit,
+      get isPackaged(): boolean {
+        return electron.packaged;
+      },
       getLoginItemSettings: () => ({
         openAtLogin: electron.loginItem.openAtLogin,
       }),
@@ -3331,6 +3336,91 @@ describe("startMenuBarApp — the Launch at login switch", () => {
 
     expect(popover.models.length).toBeGreaterThan(pushes);
     expect(latest(popover).launchAtLogin).toBe(false);
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — turning Launch at login on the first time", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.setLoginItemSettings.mockClear();
+    electron.loginItem.openAtLogin = false;
+    electron.loginItem.refuses = false;
+    electron.packaged = true;
+  });
+
+  afterEach(() => {
+    electron.packaged = false;
+    vi.useRealTimers();
+  });
+
+  function configHolding(stored: Record<string, unknown>): string {
+    const path = scratchConfig();
+
+    writeFileSync(path, JSON.stringify(stored));
+
+    return path;
+  }
+
+  function storedFlag(path: string): unknown {
+    return (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)
+      .launchAtLoginDefaulted;
+  }
+
+  it("registers the login item and records it on a packaged first launch", () => {
+    const path = configHolding({});
+
+    const app = startMenuBarApp({ configPath: path, client: countingClient() });
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: true,
+    });
+    expect(storedFlag(path)).toBe(true);
+    app.stop();
+  });
+
+  it("registers it when no config file exists yet", () => {
+    const path = scratchConfig();
+
+    const app = startMenuBarApp({ configPath: path, client: countingClient() });
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: true,
+    });
+    expect(storedFlag(path)).toBe(true);
+    app.stop();
+  });
+
+  it.each([
+    [true, false],
+    [true, true],
+    [false, false],
+    [false, true],
+  ])(
+    "leaves the login item alone once the flag is %s, registered: %s",
+    (flag, registered) => {
+      electron.loginItem.openAtLogin = registered;
+      const path = configHolding({ launchAtLoginDefaulted: flag });
+
+      const app = startMenuBarApp({
+        configPath: path,
+        client: countingClient(),
+      });
+
+      expect(electron.setLoginItemSettings).not.toHaveBeenCalled();
+      expect(electron.loginItem.openAtLogin).toBe(registered);
+      app.stop();
+    },
+  );
+
+  it("neither registers nor records anything on an unpackaged run", () => {
+    electron.packaged = false;
+    const path = configHolding({});
+
+    const app = startMenuBarApp({ configPath: path, client: countingClient() });
+
+    expect(electron.setLoginItemSettings).not.toHaveBeenCalled();
+    expect(storedFlag(path)).toBeUndefined();
     app.stop();
   });
 });

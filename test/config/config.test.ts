@@ -1103,6 +1103,45 @@ describe("the announced forfait alerts", () => {
   );
 });
 
+describe("launchAtLoginDefaulted — whether the first-run login item was applied", () => {
+  it("is absent from a fresh config, so the first packaged launch applies it", () => {
+    expect(defaultConfig().launchAtLoginDefaulted).toBeUndefined();
+    expect(parseConfig({}).launchAtLoginDefaulted).toBeUndefined();
+  });
+
+  it("round-trips a set flag through save and load", () => {
+    saveConfig(path(), { ...defaultConfig(), launchAtLoginDefaulted: true });
+
+    expect(loadConfig(path()).config.launchAtLoginDefaulted).toBe(true);
+  });
+
+  it("loads a config file without the flag and reports no problem", () => {
+    writeFileSync(path(), JSON.stringify({ host: "10.0.0.1" }));
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.problem).toBeUndefined();
+    expect(loaded.config.host).toBe("10.0.0.1");
+    expect(loaded.config.launchAtLoginDefaulted).toBeUndefined();
+  });
+
+  it.each([0, "true", null, {}])(
+    "reads %s as no flag, keeps the rest and reports no problem",
+    (value) => {
+      writeFileSync(
+        path(),
+        JSON.stringify({ host: "10.0.0.1", launchAtLoginDefaulted: value }),
+      );
+
+      const loaded = loadConfig(path());
+
+      expect(loaded.problem).toBeUndefined();
+      expect(loaded.config.host).toBe("10.0.0.1");
+      expect(loaded.config.launchAtLoginDefaulted).toBeUndefined();
+    },
+  );
+});
+
 describe("injected config path", () => {
   it("reads and writes only the path it is given", () => {
     const real = defaultConfigPath();
