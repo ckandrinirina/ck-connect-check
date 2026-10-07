@@ -37,7 +37,8 @@ import {
 import type { PortalSource } from "../../src/main/poller.js";
 import type { AllowanceSource, CredentialStore } from "../../src/main/sync.js";
 import { NO_TRAY_VALUE } from "../../src/main/tray.js";
-import { trayImageFor } from "../../src/main/tray-icon.js";
+import { trayFaceFor, trayImageFor } from "../../src/main/tray-icon.js";
+import { renderTrayBadge } from "../../src/main/tray-badge.js";
 import type { Popover, PopoverTab } from "../../src/main/popover.js";
 import { SAVED_FOR_MS, type PopoverModel } from "../../src/main/view-model.js";
 
@@ -47,6 +48,7 @@ const electron = vi.hoisted(() => ({
   setAppUserModelId: vi.fn(),
   setTitle: vi.fn(),
   setImage: vi.fn(),
+  setToolTip: vi.fn(),
   on: vi.fn(),
   /** `app.on`, kept apart from the tray's own subscriptions above. */
   appOn: vi.fn(),
@@ -57,6 +59,7 @@ const electron = vi.hoisted(() => ({
     path,
     setTemplateImage: vi.fn(),
   })),
+  createFromBitmap: vi.fn((bitmap: Buffer) => ({ bitmap })),
   /** The image each `new Tray(…)` was constructed with, in order. */
   trayImages: [] as unknown[],
   /** What macOS holds as the login item; only `setLoginItemSettings` moves it. */
@@ -85,7 +88,7 @@ vi.mock("electron", () => {
   class Tray {
     setTitle = electron.setTitle;
     setImage = electron.setImage;
-    setToolTip = vi.fn();
+    setToolTip = electron.setToolTip;
     setContextMenu = vi.fn();
     destroy = vi.fn();
     on = electron.on;
@@ -124,6 +127,7 @@ vi.mock("electron", () => {
     nativeImage: {
       createEmpty: electron.createEmpty,
       createFromPath: electron.createFromPath,
+      createFromBitmap: electron.createFromBitmap,
     },
     // The panel's own channels are exercised in `test/main/popover.test.ts`;
     // here they only have to exist, for the tests that let `main.ts` build a
@@ -343,6 +347,46 @@ describe("startMenuBarApp", () => {
     // A default config has neither a plan limit nor an anchor, so there is no
     // share to report — and the router's own counter is not a substitute for it.
     expect(electron.setTitle).toHaveBeenCalledWith(NO_TRAY_VALUE);
+    app.stop();
+  });
+
+  it("on Windows, draws the figure into the icon and the title into the tooltip", async () => {
+    electron.setImage.mockClear();
+    electron.setToolTip.mockClear();
+    const app = startMenuBarApp({
+      platform: "win32",
+      configPath: MISSING_CONFIG,
+      client: { snapshot: () => Promise.resolve(READING) },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    // No synced figure yet: the dash badge, and a tooltip saying why.
+    const images = electron.setImage.mock.calls.map(
+      ([image]) => new Uint8Array((image as { bitmap: Buffer }).bitmap),
+    );
+    expect(images[images.length - 1]).toEqual(renderTrayBadge(null).data);
+    expect(electron.setToolTip).toHaveBeenLastCalledWith(
+      trayFaceFor(NO_TRAY_VALUE).tooltip,
+    );
+    // Never a signal glyph over the badge, and never a title.
+    expect(electron.createFromBitmap).toHaveBeenCalled();
+    expect(electron.setImage.mock.calls.every(([image]) => "bitmap" in (image as object))).toBe(true);
+    expect(electron.setTitle).not.toHaveBeenCalled();
+    app.stop();
+  });
+
+  it("on Windows, builds the tray from the dash badge", () => {
+    electron.trayImages.length = 0;
+    const app = startMenuBarApp({
+      platform: "win32",
+      configPath: MISSING_CONFIG,
+      client: { snapshot: () => Promise.resolve(READING) },
+    });
+
+    const first = electron.trayImages[0] as { bitmap: Buffer };
+    expect(new Uint8Array(first.bitmap)).toEqual(renderTrayBadge(null).data);
+    expect(electron.setTitle).not.toHaveBeenCalled();
     app.stop();
   });
 });
