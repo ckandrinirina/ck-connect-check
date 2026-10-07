@@ -486,7 +486,8 @@
 
       <!--
         Shown only when nothing is stored: the password goes straight to the
-        Keychain through the main process, and is never written to the config.
+        platform's password store through the main process, and is never
+        written to the config. The helper text names that store, from the model.
         On a pane nobody has selected it would be undiscoverable on its own, so
         the Settings tab wears a marker for exactly as long as this form asks.
       -->
@@ -508,7 +509,13 @@
           data-password-password
           type="password"
           autocomplete="current-password"
+          aria-describedby="router-password-help"
         />
+        <p
+          id="router-password-help"
+          class="password-help"
+          data-field="passwordHelp"
+        ></p>
         <button class="password-submit" type="submit">Save and sync</button>
       </form>
 

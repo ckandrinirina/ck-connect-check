@@ -63,3 +63,13 @@ export function userDataPath(
 
   return posix.join(home, ".config", ...segments);
 }
+
+/**
+ * What the password store behind Electron's secret storage is called on
+ * `platform`, as a noun phrase that reads mid-sentence.
+ */
+export function secretStoreName(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32" ? "Windows secure storage" : "the Keychain";
+}
