@@ -49,6 +49,7 @@ import type {
   RouterSnapshot,
 } from "../hilink/types.js";
 import { readInfoConso } from "../orange/portal.js";
+import { readAppInfo } from "./app-info.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import { getLaunchAtLogin, setLaunchAtLogin } from "./login-item.js";
 import {
@@ -73,7 +74,7 @@ import {
   type DeviceRefusal,
   type DevicesModel,
 } from "./view-model.js";
-import { DEVICES_MENU_LABEL } from "./tray.js";
+import { aboutMenuLabel, DEVICES_MENU_LABEL } from "./tray.js";
 import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
 import {
   createAllowanceSync,
@@ -1073,9 +1074,22 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     // Deliberately nothing.
   });
 
+  const appInfo = readAppInfo();
+  app.setAboutPanelOptions({
+    applicationName: appInfo.name,
+    applicationVersion: appInfo.version,
+    copyright: `© ${appInfo.author}`,
+    credits: appInfo.repositoryUrl,
+  });
+
   // A context menu would swallow the left click on macOS, so Quit moves to the
   // right button and the left one belongs to the popover.
   const menu = Menu.buildFromTemplate([
+    {
+      label: aboutMenuLabel(appInfo.name),
+      click: () => app.showAboutPanel(),
+    },
+    { type: "separator" },
     {
       label: DEVICES_MENU_LABEL,
       click: () => {

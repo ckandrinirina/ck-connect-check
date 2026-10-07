@@ -50,6 +50,11 @@ export const NO_TRAY_VALUE = "—";
  */
 export const DEVICES_MENU_LABEL = "Connected devices…";
 
+/** The right-click entry that opens the native About panel. */
+export function aboutMenuLabel(appName: string): string {
+  return `About ${appName}`;
+}
+
 /** Separates the used total from the percentage: `5.8G · 29%`. */
 const SEPARATOR = " · ";
 
