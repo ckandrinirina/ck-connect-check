@@ -11,7 +11,7 @@
  * not cost a renderer process.
  */
 
-import { BrowserWindow, ipcMain, shell } from "electron";
+import { BrowserWindow, ipcMain, screen, shell } from "electron";
 import { fileURLToPath } from "node:url";
 
 import type {
@@ -23,6 +23,7 @@ import type {
 
 import type { RouterCredential } from "../hilink/types.js";
 import { readAppInfo, type AppInfo } from "./app-info.js";
+import { placePanel } from "./panel-placement.js";
 import type { DevicesModel, PopoverModel } from "./view-model.js";
 
 /** Wide enough for a rate and its unit on one line without wrapping. */
@@ -504,10 +505,12 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     return created;
   }
 
-  /** Centred on the tray item, hanging just below the menu bar. */
   function position(open: BrowserWindow, bounds: Rectangle): void {
-    const x = Math.round(bounds.x + bounds.width / 2 - width / 2);
-    const y = Math.round(bounds.y + bounds.height);
+    const { x, y } = placePanel({
+      trayBounds: bounds,
+      panelSize: { width, height },
+      workArea: screen.getDisplayMatching(bounds).workArea,
+    });
 
     open.setPosition(x, y, false);
   }
