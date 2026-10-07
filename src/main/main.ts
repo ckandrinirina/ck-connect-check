@@ -8,7 +8,7 @@
  * `poller.ts`. This file only connects them.
  */
 
-import { Menu, Tray, app } from "electron";
+import { Menu, Notification, Tray, app } from "electron";
 import { networkInterfaces } from "node:os";
 
 import {
@@ -50,6 +50,11 @@ import type {
 } from "../hilink/types.js";
 import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
+import {
+  alertSituation,
+  createNotifier,
+  type NotificationFactory,
+} from "./notifier.js";
 import {
   UsagePoller,
   type HostListSource,
@@ -173,6 +178,8 @@ export interface MenuBarOptions {
   credentials?: CredentialStore;
   /** The detail panel. Injected so tests can read the model without a window. */
   popover?: Popover;
+  /** Builds macOS notifications. Injected so no test ever shows one. */
+  notifications?: NotificationFactory;
 }
 
 export interface MenuBarApp {
@@ -600,6 +607,28 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     }
   }
 
+  const notifier = createNotifier({
+    config,
+    configPath,
+    createNotification:
+      options.notifications ?? ((content) => new Notification(content)),
+    panel: {
+      showTab: (tab) => panel.showTab(tab),
+      show: () => panel.show(),
+    },
+  });
+
+  /** Runs the forfait alerts on the figures the panel was just given. */
+  function checkAlerts(): void {
+    notifier.check(
+      alertSituation({
+        config,
+        snapshot: lastReading?.snapshot,
+        portal: poller.portal,
+      }),
+    );
+  }
+
   const client: SnapshotSource = {
     async snapshot(): Promise<SnapshotResult> {
       // The panel dismisses itself when the user clicks elsewhere, which the
@@ -633,6 +662,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       );
 
       refreshPopover();
+      checkAlerts();
 
       return result;
     },
@@ -945,6 +975,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     },
     onPortal: () => {
       refreshPopover();
+      checkAlerts();
     },
     onTitle: (title) => tray.setTitle(title),
   });

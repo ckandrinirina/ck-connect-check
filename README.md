@@ -451,6 +451,7 @@ read off the router on every poll.
 | `routerPasswordBlob`        | The password **as encrypted by the Keychain**, base64-encoded — see below                                                                                                              |
 | `orangeForfaitLabel`        | The Orange forfait you chose to measure, by name, when several data forfaits are live at once. Absent until you choose one                                                             |
 | `allowanceAnchor`           | The last carrier reading and the router counter it was pinned to. Written by the YAS sync; Orange keeps no anchor                                                                      |
+| `announcedAlerts`           | The forfait notifications already sent, against the period end they belong to, so a relaunch repeats none. Absent until the first one                                                  |
 
 **Your router password is never in `config.json`.** It is encrypted by the macOS
 Keychain through Electron's `safeStorage`, and only the ciphertext is stored in
