@@ -35,6 +35,7 @@ import {
   defaultConfigPath,
 } from "../../src/config/defaults.js";
 import type { AppConfig } from "../../src/config/defaults.js";
+import type { AnnouncedAlerts } from "../../src/domain/alerts.js";
 import type { AllowanceAnchor } from "../../src/domain/allowance.js";
 
 let dir: string;
@@ -1020,6 +1021,86 @@ describe("the remembered Orange forfait", () => {
     expect(result.config).toEqual(defaultConfig());
     expect(result.problem).toContain("orangeForfaitLabel");
   });
+});
+
+describe("the announced forfait alerts", () => {
+  const ANNOUNCED: AnnouncedAlerts = {
+    periodEnd: new Date(2026, 9, 20).toISOString(),
+    ids: ["low", "days-3"],
+  };
+
+  /** A file the app wrote before alerts existed, key by key. */
+  const BEFORE_ALERTS = {
+    host: "10.0.0.1",
+    pollIntervalSeconds: 60,
+    activePollIntervalSeconds: 3,
+    warnThresholdPercent: 75,
+    planLimitBytes: 20_000_000_000,
+    planDays: 30,
+    planCapConfirmed: true,
+    planLimitSource: "carrier",
+    planDaysSource: "user",
+    syncStaleAfterMinutes: 45,
+    orangeForfaitLabel: "Wifiber Go+ SSE",
+  };
+
+  it("loads a config file with no announced record unchanged", () => {
+    writeFileSync(path(), JSON.stringify(BEFORE_ALERTS));
+
+    const loaded = loadConfig(path());
+
+    expect(loaded.problem).toBeUndefined();
+    expect(loaded.config).toEqual(BEFORE_ALERTS);
+  });
+
+  it("writes no announced key when nothing has been announced", () => {
+    saveConfig(path(), defaultConfig());
+
+    expect(readFileSync(path(), "utf8")).not.toContain("announcedAlerts");
+  });
+
+  it("round-trips the announced record through save and load", () => {
+    const written: AppConfig = {
+      ...defaultConfig(),
+      announcedAlerts: ANNOUNCED,
+    };
+
+    saveConfig(path(), written);
+
+    expect(loadConfig(path()).config).toEqual(written);
+  });
+
+  it("round-trips a record that belongs to no known period end", () => {
+    const written: AppConfig = {
+      ...defaultConfig(),
+      announcedAlerts: { periodEnd: null, ids: ["low"] },
+    };
+
+    saveConfig(path(), written);
+
+    expect(loadConfig(path()).config).toEqual(written);
+  });
+
+  it.each([
+    ["not an object", "low"],
+    ["ids that are not a list", { periodEnd: null, ids: "low" }],
+    ["an id that is not a string", { periodEnd: null, ids: ["low", 3] }],
+    ["a period end that is not a string", { periodEnd: 5, ids: [] }],
+    ["an unparseable period end", { periodEnd: "soon", ids: [] }],
+  ])(
+    "drops a record with %s and keeps the rest of the config",
+    (_, announcedAlerts) => {
+      writeFileSync(
+        path(),
+        JSON.stringify({ ...BEFORE_ALERTS, announcedAlerts }),
+      );
+
+      const loaded = loadConfig(path());
+
+      expect(loaded.problem).toBeUndefined();
+      expect(loaded.config).toEqual(BEFORE_ALERTS);
+    },
+  );
 });
 
 describe("injected config path", () => {
