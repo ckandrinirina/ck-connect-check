@@ -478,6 +478,43 @@ body {
   padding: 16px 0 6px;
 }
 
+/* The forfait banner above the dial. One 16px line, and it takes most of that
+   back from the dial's top padding, so the Usage pane still fits without a
+   scrollbar. The mark and the sentence carry the alert; the colour only
+   repeats it. */
+.alert-banner {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 1px 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: var(--track);
+}
+
+.alert-banner[hidden] {
+  display: none;
+}
+
+.alert-banner[data-alert="low"] .alert-mark {
+  color: var(--warn);
+}
+
+.alert-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alert-banner:not([hidden]) + .usage {
+  padding-top: 4px;
+}
+
 .dial {
   position: relative;
   flex: none;

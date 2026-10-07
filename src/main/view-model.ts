@@ -11,6 +11,12 @@
  * to put these strings into the DOM.
  */
 
+import {
+  alertPeriodEnd,
+  decideAlerts,
+  NOTHING_ANNOUNCED,
+  type PeriodEndSource,
+} from "../domain/alerts.js";
 import { readPlanUsage, type AllowanceReading } from "../domain/allowance.js";
 import {
   formatBytes,
@@ -494,6 +500,28 @@ function buildForfait(
   };
 }
 
+/**
+ * The banner above the dial. `low` holds until a recharge lifts the share back
+ * above the line; `ending` covers the reminder window before the period end.
+ * Low wins when both hold — it is the state the user can act on.
+ */
+export type PopoverAlert =
+  | {
+      kind: "low";
+      /** The volume left, e.g. `"4.00 Go"`. */
+      remaining: string;
+      /** Its share of the plan, e.g. `"20%"`. */
+      share: string;
+      /** The banner's sentence. */
+      text: string;
+    }
+  | {
+      kind: "ending";
+      /** `"3 days"`, or `"7 hours"` on the last day. */
+      left: string;
+      text: string;
+    };
+
 /** Everything the popover displays, already spelled the way it appears on screen. */
 export interface PopoverModel {
   /**
@@ -559,6 +587,8 @@ export interface PopoverModel {
    * page — where the plan's name arrives with the allowance instead.
    */
   forfait: PopoverForfait | null;
+  /** The forfait banner, or null while there is nothing to warn about. */
+  alert: PopoverAlert | null;
   /**
    * Why there is no figure, in one sentence. Empty whenever there is one.
    *
@@ -1179,6 +1209,7 @@ function emptyModel(
     // No reading has named a carrier, so nothing has stood a control down.
     controls: ALL_CONTROLS,
     forfait: null,
+    alert: null,
     // Nothing has been read, so nothing has gone wrong: the dial's own prompt
     // already says the panel is waiting rather than failing.
     notice: "",
@@ -1239,6 +1270,71 @@ function buildDial(
  * fetch and derives the remainder. Naming the shape they share is what keeps
  * the branch to one line at the bottom of this file.
  */
+const MILLISECONDS_PER_HOUR = 3_600_000;
+const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
+
+/** The reminder schedule's first slot: `ending` shows from five days out. */
+const ENDING_WITHIN_DAYS = 5;
+
+/**
+ * `"3 days"` inside the reminder window, `"7 hours"` in its final 24 hours, or
+ * null outside it. Rounded up, so the figure matches the newest reminder due.
+ */
+function timeLeft(end: Date | null, now: Date): string | null {
+  if (end === null) return null;
+
+  const left = end.getTime() - now.getTime();
+
+  if (left <= 0 || left > ENDING_WITHIN_DAYS * MILLISECONDS_PER_DAY) {
+    return null;
+  }
+  if (left > MILLISECONDS_PER_DAY) {
+    return formatDays(Math.ceil(left / MILLISECONDS_PER_DAY));
+  }
+
+  const hours = Math.ceil(left / MILLISECONDS_PER_HOUR);
+
+  return `${String(hours)} hour${hours === 1 ? "" : "s"}`;
+}
+
+/**
+ * The banner for one reading. `low` is the domain's own banner state, so the
+ * panel, the tray and the notification can never disagree about the line.
+ */
+function buildAlert(
+  remainingBytes: number | null,
+  cap: number | null,
+  periodEnd: Date | null,
+  clock: Clock,
+  now: Date,
+): PopoverAlert | null {
+  const { banner } = decideAlerts({
+    reading: { remainingBytes, planLimitBytes: cap },
+    // Only the banner is read here; what to notify is the main process's.
+    periodEnd: null,
+    announced: NOTHING_ANNOUNCED,
+    clock,
+  });
+
+  if (banner === "low" && remainingBytes !== null && cap !== null) {
+    const remaining = formatBytes(remainingBytes);
+    const share = formatPercent((remainingBytes / cap) * 100);
+
+    return {
+      kind: "low",
+      remaining,
+      share,
+      text: `Forfait low: ${remaining} left, ${share} of the plan`,
+    };
+  }
+
+  const left = timeLeft(periodEnd, now);
+
+  return left === null
+    ? null
+    : { kind: "ending", left, text: `Forfait ends in ${left}` };
+}
+
 interface AllowanceHalf {
   monthTotal: string;
   progress: PopoverProgress;
@@ -1250,6 +1346,7 @@ interface AllowanceHalf {
   controls: PopoverControls;
   /** The plan the carrier's page named, or null where there is no such page. */
   forfait: PopoverForfait | null;
+  alert: PopoverAlert | null;
   /** Why this half has no figure, or empty while it has one. */
   notice: string;
 }
@@ -1274,6 +1371,10 @@ function anchoredHalf(
   // The same derivation the menu bar reads, so the two cannot disagree.
   const allowance = readPlanUsage(config.allowanceAnchor, month, cap, clock);
   const placed = carrier.id !== "unknown";
+  const endSource: PeriodEndSource =
+    carrier.id === "yas"
+      ? { carrier: "yas", expiresAt: allowance?.expiresAt ?? null }
+      : { carrier: carrier.id };
 
   return {
     // The plan figure, which is the only month the carrier stands behind. The
@@ -1308,6 +1409,14 @@ function anchoredHalf(
     // The plan's name arrives on the anchor here, and the allowance strip
     // already carries it — there is no second page to read one off.
     forfait: null,
+    // A stale anchor is the same figure the menu bar withdraws.
+    alert: buildAlert(
+      allowance?.trustworthy === true ? allowance.remainingBytes : null,
+      cap,
+      alertPeriodEnd(endSource, clock),
+      clock,
+      now,
+    ),
     notice: placed ? "" : unplacedCarrierNotice(carrier.carrier),
   };
 }
@@ -1664,6 +1773,8 @@ function portalHalf(
       syncAttention: false,
       controls: PORTAL_CONTROLS,
       forfait: chosen,
+      // No forfait measured, so none to say is low or ending.
+      alert: null,
       notice,
     };
   }
@@ -1688,6 +1799,13 @@ function portalHalf(
     syncAttention: false,
     controls: PORTAL_CONTROLS,
     forfait: chosen,
+    alert: buildAlert(
+      reading.remainingBytes,
+      cap,
+      alertPeriodEnd({ carrier: "orange" }, clock),
+      clock,
+      now,
+    ),
     notice,
   };
 }
@@ -1795,6 +1913,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     sync: buildSync(syncState, half.syncAttention),
     controls: half.controls,
     forfait: half.forfait,
+    alert: half.alert,
     notice: half.notice,
   };
 }

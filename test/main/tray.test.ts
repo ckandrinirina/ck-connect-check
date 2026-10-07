@@ -568,7 +568,7 @@ describe("buildTrayTitle — Orange", () => {
     // rounded into a figure that would read as plausible; the width budget is
     // the thing that gives, and this is the only case where it does.
     expect(orangeTitle({ cap: 1 * GB }, consuming(111 * GB))).toBe(
-      `111Go ${TRAY_WARN_MARKER} 11100%`,
+      `${TRAY_WARN_MARKER}111Go 11100%`,
     );
   });
 });
@@ -624,16 +624,19 @@ describe("buildTrayTitle — Orange, agreeing with the panel", () => {
 
 describe("buildTrayTitle — the warning marker on Orange", () => {
   it("leaves a title below the warn threshold unmarked", () => {
-    const title = orangeTitle({ cap: 20 * GB }, consuming(17.9 * GB));
+    const title = orangeTitle({ cap: 20 * GB }, consuming(13.8 * GB));
 
-    expect(title).toBe("18Go · 90%");
+    expect(title).toBe("14Go · 69%");
     expect(title).not.toContain(TRAY_WARN_MARKER);
   });
 
   it("marks a title that has reached the warn threshold exactly", () => {
-    expect(orangeTitle({ cap: 20 * GB }, consuming(18 * GB))).toBe(
-      `18Go ${TRAY_WARN_MARKER} 90%`,
-    );
+    expect(
+      orangeTitle(
+        { cap: 20 * GB, warnThresholdPercent: 50 },
+        consuming(10 * GB),
+      ),
+    ).toBe(`10Go ${TRAY_WARN_MARKER} 50%`);
   });
 
   it("marks a title that has consumed the whole plan", () => {
@@ -643,10 +646,11 @@ describe("buildTrayTitle — the warning marker on Orange", () => {
   });
 
   it("takes the threshold from the config rather than always warning at 90", () => {
-    const capped = { cap: 20 * GB, warnThresholdPercent: 75 };
+    // Both shares leave more than 30% of the plan, so only the threshold speaks.
+    const capped = { cap: 20 * GB, warnThresholdPercent: 50 };
 
-    expect(orangeTitle(capped, consuming(15 * GB))).toContain(TRAY_WARN_MARKER);
-    expect(orangeTitle(capped, consuming(14 * GB))).not.toContain(
+    expect(orangeTitle(capped, consuming(11 * GB))).toContain(TRAY_WARN_MARKER);
+    expect(orangeTitle(capped, consuming(9 * GB))).not.toContain(
       TRAY_WARN_MARKER,
     );
   });
@@ -660,17 +664,17 @@ describe("buildTrayTitle — the warning marker on Orange", () => {
     );
   });
 
-  it("bands the title exactly as the panel bands its dial", () => {
-    for (const usedGb of [0, 10, 17.9, 18, 20, 25]) {
+  it("bands the title exactly as the panel bands its dial and its banner", () => {
+    for (const usedGb of [0, 10, 13.8, 14, 17.9, 18, 20, 25]) {
       const config = configFor({ anchored: false, cap: 20 * GB });
       const portal = consuming(usedGb * GB);
-      const state = buildPopoverModel({
+      const model = buildPopoverModel({
         result: ORANGE_ONLINE,
         lastReading: null,
         config,
         portal,
         clock,
-      }).progress.state;
+      });
       const marked = buildTrayTitle(
         ORANGE_ONLINE,
         config,
@@ -678,7 +682,9 @@ describe("buildTrayTitle — the warning marker on Orange", () => {
         portal,
       ).includes(TRAY_WARN_MARKER);
 
-      expect(marked, `at ${String(usedGb)} Go consumed`).toBe(state !== "ok");
+      expect(marked, `at ${String(usedGb)} Go consumed`).toBe(
+        model.progress.state !== "ok" || model.alert?.kind === "low",
+      );
     }
   });
 });

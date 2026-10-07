@@ -137,6 +137,22 @@
         role="tabpanel"
         aria-labelledby="tab-usage"
       >
+        <!--
+          The forfait banner: low until a recharge, or the time left before the
+          end. A mark and a sentence, never a tint alone. Hidden through the
+          `hidden` attribute, so it costs no height while there is no alert.
+        -->
+        <p
+          class="alert-banner"
+          data-alert-row
+          data-alert=""
+          role="status"
+          hidden
+        >
+          <span class="alert-mark" data-alert-mark aria-hidden="true"></span>
+          <span class="alert-text" data-field="alert"></span>
+        </p>
+
         <section class="usage">
           <!--
           The ring itself is built by `popover.ts`: its geometry comes from the
