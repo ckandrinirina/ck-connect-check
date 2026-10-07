@@ -14,7 +14,6 @@ interface Step {
   name?: string;
   uses?: string;
   run?: string;
-  shell?: string;
   with?: Record<string, unknown>;
   env?: Record<string, unknown>;
 }
@@ -131,15 +130,20 @@ describe("the macOS job's steps", () => {
     expect(new Set(order).size).toBe(order.length);
   });
 
-  it.each(MAC_ASSETS)("renames a built file to %s after npm run make", (asset) => {
-    const runs = runSteps(macJob());
-    const make = indexOfRun(runs, /^npm run make$/m);
-    const rename = runs.findIndex(
-      (run, index) =>
-        index > make && !/gh release/.test(run) && run.includes(`release/${asset}`),
-    );
-    expect(rename).toBeGreaterThan(make);
-  });
+  it.each(MAC_ASSETS)(
+    "renames a built file to %s after npm run make",
+    (asset) => {
+      const runs = runSteps(macJob());
+      const make = indexOfRun(runs, /^npm run make$/m);
+      const rename = runs.findIndex(
+        (run, index) =>
+          index > make &&
+          !/gh release/.test(run) &&
+          run.includes(`release/${asset}`),
+      );
+      expect(rename).toBeGreaterThan(make);
+    },
+  );
 });
 
 describe("the Windows job's steps", () => {

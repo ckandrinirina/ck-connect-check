@@ -6,7 +6,7 @@
     <title>ck-connect-check</title>
     <meta
       name="description"
-      content="A macOS menu bar app that shows how much of your mobile data plan is left, read from a Huawei HiLink router."
+      content="A menu bar app for macOS, and a tray app for Windows, that shows how much of your mobile data plan is left, read from a Huawei HiLink router."
     />
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -27,15 +27,21 @@
               >Download for Mac</a
             >
             <a
+              class="button"
+              href="https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-windows-setup.exe"
+              >Download for Windows</a
+            >
+            <a
               class="secondary"
               href="https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-mac.zip"
-              >or get the .zip</a
+              >or get the Mac .zip</a
             >
           </div>
 
           <p class="requirement">
             Requires macOS 11 Big Sur or later, on Apple silicon or Intel, and a
-            Huawei HiLink router at <code>192.168.8.1</code>.
+            Huawei HiLink router at <code>192.168.8.1</code>. The Windows build
+            requires Windows 10 or later, 64-bit.
           </p>
         </div>
 
@@ -75,6 +81,26 @@
         <p>
           After that it launches like any other app. It has no Dock icon and no
           window — look for it in the menu bar.
+        </p>
+      </section>
+
+      <section class="open-anyway">
+        <h2>Installing it on Windows</h2>
+        <p>
+          The installer is unsigned too, so Microsoft Defender SmartScreen
+          stops it the first time with “Windows protected your PC”. You only
+          have to get past this once:
+        </p>
+        <ol>
+          <li>Run <strong>ck-connect-check-windows-setup.exe</strong>.</li>
+          <li>
+            When SmartScreen appears, click <strong>More info</strong>, then
+            <strong>Run anyway</strong>.
+          </li>
+        </ol>
+        <p>
+          It installs for your user only, with no admin rights, and starts
+          straight away — look for it in the notification area of the taskbar.
         </p>
       </section>
     </main>

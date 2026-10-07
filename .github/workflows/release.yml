@@ -1,6 +1,7 @@
-# Builds the universal macOS app on a pushed `v*` tag and publishes it as a
-# GitHub Release. The asset names are fixed so the Pages site can link to
-# `releases/latest/download/<name>` without changing per version.
+# Builds the universal macOS app and the Windows installer on a pushed `v*`
+# tag and publishes both in one GitHub Release. The asset names are fixed so the
+# Pages site can link to `releases/latest/download/<name>` without changing per
+# version.
 name: Release
 
 on:
@@ -12,7 +13,30 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # Creates the empty Release once, before either build starts, so the two
+  # build jobs never race to create it — each only uploads into it.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the tag matches package.json
+        run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes
+
+  mac:
+    needs: create-release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,12 +70,54 @@ jobs:
           mv "${dmg[0]}" release/ck-connect-check-mac.dmg
           mv "${zip[0]}" release/ck-connect-check-mac.zip
 
-      - name: Publish the Release
+      - name: Upload to the Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME"
           release/ck-connect-check-mac.dmg
           release/ck-connect-check-mac.zip
-          --title "$GITHUB_REF_NAME"
-          --generate-notes
+          --clobber
+
+  windows:
+    needs: create-release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check the tag matches package.json
+        run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run lint
+
+      - run: npm run make:win
+
+      - name: Rename the installer to its fixed name
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          exe=(out/make/squirrel.windows/x64/*.exe)
+          # Exactly one, or the upload would pick an arbitrary file.
+          test "${#exe[@]}" -eq 1
+          mkdir -p release
+          mv "${exe[0]}" release/ck-connect-check-windows-setup.exe
+
+      - name: Upload to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$GITHUB_REF_NAME"
+          release/ck-connect-check-windows-setup.exe
+          --clobber

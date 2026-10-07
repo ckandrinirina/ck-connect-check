@@ -92,7 +92,9 @@ describe("the README's Download section", () => {
 describe("the README's intro", () => {
   /** The paragraph under the title, before the first level-2 heading. */
   function intro(): string {
-    const title = lines.findIndex((line) => line.trim() === "# ck-connect-check");
+    const title = lines.findIndex(
+      (line) => line.trim() === "# ck-connect-check",
+    );
     const rest = lines.slice(title + 1);
     const end = rest.findIndex((line) => /^## /.test(line));
     return rest.slice(0, end).join(" ").replace(/\s+/g, " ").trim();

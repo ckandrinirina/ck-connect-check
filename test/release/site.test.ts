@@ -65,7 +65,9 @@ describe("the download links", () => {
 
   it("puts the Windows button beside the Mac button", () => {
     const mac = linksTo(DMG_URL).find((link) => /download/i.test(text(link)));
-    const windows = linksTo(EXE_URL).find((link) => /windows/i.test(text(link)));
+    const windows = linksTo(EXE_URL).find((link) =>
+      /windows/i.test(text(link)),
+    );
     expect(mac?.parentElement).toBeTruthy();
     expect(windows?.parentElement).toBe(mac?.parentElement);
   });

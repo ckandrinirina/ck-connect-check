@@ -2,9 +2,10 @@
 
 # ck-connect-check
 
-A macOS menu bar app that shows how much of your mobile data plan is left, read
-straight from a Huawei HiLink router and from whatever your carrier publishes —
-a USSD menu on one network, a self-care page on another.
+A menu bar app for macOS, and a tray app for Windows, that shows how much of
+your mobile data plan is left, read straight from a Huawei HiLink router and
+from whatever your carrier publishes — a USSD menu on one network, a self-care
+page on another.
 
 ## What it does
 
@@ -67,6 +68,15 @@ once, either way:
    click **Open Anyway** and confirm.
 
 From then on it launches like any other app.
+
+On Windows 10 or later (64-bit), grab the installer instead:
+
+- [ck-connect-check-windows-setup.exe](https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-windows-setup.exe)
+
+It installs for your user only, with no admin rights, and starts straight
+away in the notification area. It is unsigned too, so Microsoft Defender
+SmartScreen stops it the first time with "Windows protected your PC" — click
+**More info**, then **Run anyway**. That is only needed once.
 
 ## Install and build
 
@@ -554,10 +564,12 @@ portal page, the sync design, and every decision behind them with its reason.
 ## Releasing
 
 A release is a pushed tag. [`.github/workflows/release.yml`](.github/workflows/release.yml)
-does the rest on a macOS runner: it checks the tag against `package.json`, runs
-the tests and the linter, builds the universal `.dmg` and `.zip`, and publishes
-them as a GitHub Release under the fixed names the Download links above point
-at — so neither this page nor the download site needs editing per version.
+does the rest: it checks the tag against `package.json` and creates the GitHub
+Release once, then a macOS runner and a Windows runner each run the tests and
+the linter, build — the universal `.dmg` and `.zip` on one, the Squirrel
+`Setup.exe` on the other — and upload into that Release under the fixed names
+the Download links above point at, so neither this page nor the download site
+needs editing per version.
 
 1. Bump the version in `package.json` without letting npm tag it, and commit:
 
