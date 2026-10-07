@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultConfig } from "../../src/config/defaults.js";
 import {
+  POPOVER_APP_INFO_CHANNEL,
   POPOVER_CHOOSE_FORFAIT_CHANNEL,
   POPOVER_CONFIRM_PLAN_CAP_CHANNEL,
   POPOVER_HEIGHT,
+  POPOVER_OPEN_REPOSITORY_CHANNEL,
   POPOVER_SAVE_PASSWORD_CHANNEL,
   POPOVER_SET_BLOCKED_CHANNEL,
   POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL,
@@ -24,6 +26,7 @@ import {
 } from "../../src/main/view-model.js";
 
 import type { RouterSnapshot } from "../../src/hilink/types.js";
+import type { AppInfo } from "../../src/main/app-info.js";
 
 /**
  * Electron is never loaded for real. The fake window records the constructor
@@ -34,6 +37,10 @@ const electron = vi.hoisted(() => ({
   windows: [] as FakeWindow[],
   /** Every `ipcMain.on` subscription still registered, by channel. */
   channels: new Map<string, Set<(...args: unknown[]) => void>>(),
+  /** Every `ipcMain.handle` responder still registered, by channel. */
+  invokers: new Map<string, (...args: unknown[]) => unknown>(),
+  /** Every URL handed to `shell.openExternal`. */
+  opened: [] as string[],
 }));
 
 interface FakeWindow {
@@ -46,7 +53,8 @@ interface FakeWindow {
   webContents: {
     executeJavaScript: ReturnType<typeof vi.fn>;
     on: (event: string, handler: () => void) => void;
-    handlers: Map<string, () => void>;
+    handlers: Map<string, (...args: unknown[]) => void>;
+    setWindowOpenHandler: ReturnType<typeof vi.fn>;
   };
   on(event: string, handler: () => void): void;
   show(): void;
@@ -67,6 +75,7 @@ vi.mock("electron", () => {
     webContents = {
       handlers: new Map<string, () => void>(),
       executeJavaScript: vi.fn(() => Promise.resolve()),
+      setWindowOpenHandler: vi.fn(),
       on(event: string, handler: () => void) {
         this.handlers.set(event, handler);
       },
@@ -124,9 +133,23 @@ vi.mock("electron", () => {
 
       return ipcMain;
     },
+    handle(channel: string, responder: (...args: unknown[]) => unknown) {
+      electron.invokers.set(channel, responder);
+    },
+    removeHandler(channel: string) {
+      electron.invokers.delete(channel);
+    },
   };
 
-  return { BrowserWindow, ipcMain };
+  const shell = {
+    openExternal(url: string) {
+      electron.opened.push(url);
+
+      return Promise.resolve();
+    },
+  };
+
+  return { BrowserWindow, ipcMain, shell };
 });
 
 const TRAY_BOUNDS: Rectangle = { x: 900, y: 0, width: 40, height: 24 };
@@ -1131,5 +1154,192 @@ describe("createPopover — the Launch at login switch", () => {
     send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, sender, true);
 
     expect(onSetLaunchAtLogin).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createPopover — the About section's link", () => {
+  const APP_INFO: AppInfo = {
+    name: "ck-connect-check",
+    version: "1.0.0",
+    author: "ANDRINIRINA Erick",
+    repositoryUrl: "https://github.com/ckandrinirina/ck-connect-check",
+  };
+
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+    electron.invokers.clear();
+    electron.opened.length = 0;
+  });
+
+  function invoke(channel: string, sender: unknown): unknown {
+    const responder = electron.invokers.get(channel);
+
+    if (responder === undefined) {
+      throw new Error(`nothing answers ${channel}`);
+    }
+
+    return responder({ sender });
+  }
+
+  it("answers the page's request with the app's name, version, author and repository", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    expect(invoke(POPOVER_APP_INFO_CHANNEL, lastWindow().webContents)).toEqual(
+      APP_INFO,
+    );
+
+    popover.destroy();
+  });
+
+  it("reads them from package.json when nobody hands it any", () => {
+    const popover = createPopover({ htmlPath: "/tmp/index.html" });
+    popover.show(TRAY_BOUNDS);
+
+    expect(
+      invoke(POPOVER_APP_INFO_CHANNEL, lastWindow().webContents),
+    ).toMatchObject({
+      name: "ck-connect-check",
+      author: "ANDRINIRINA Erick",
+      repositoryUrl: "https://github.com/ckandrinirina/ck-connect-check",
+    });
+
+    popover.destroy();
+  });
+
+  it("opens the repository in the default browser", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(
+      POPOVER_OPEN_REPOSITORY_CHANNEL,
+      lastWindow().webContents,
+      APP_INFO.repositoryUrl,
+    );
+
+    expect(electron.opened).toEqual([APP_INFO.repositoryUrl]);
+
+    popover.destroy();
+  });
+
+  it("ignores any URL that is not the repository", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    for (const payload of [
+      "https://example.com",
+      "https://github.com/ckandrinirina/ck-connect-check/../evil",
+      `${APP_INFO.repositoryUrl}/`,
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "",
+      null,
+      undefined,
+      { url: APP_INFO.repositoryUrl },
+    ]) {
+      send(POPOVER_OPEN_REPOSITORY_CHANNEL, lastWindow().webContents, payload);
+    }
+
+    expect(electron.opened).toEqual([]);
+
+    send(
+      POPOVER_OPEN_REPOSITORY_CHANNEL,
+      lastWindow().webContents,
+      APP_INFO.repositoryUrl,
+    );
+
+    expect(electron.opened).toEqual([APP_INFO.repositoryUrl]);
+
+    popover.destroy();
+  });
+
+  it("ignores the request from any window but its own page", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(
+      POPOVER_OPEN_REPOSITORY_CHANNEL,
+      { someone: "else" },
+      APP_INFO.repositoryUrl,
+    );
+
+    expect(electron.opened).toEqual([]);
+
+    send(
+      POPOVER_OPEN_REPOSITORY_CHANNEL,
+      lastWindow().webContents,
+      APP_INFO.repositoryUrl,
+    );
+
+    expect(electron.opened).toHaveLength(1);
+
+    popover.destroy();
+  });
+
+  it("never lets the panel itself navigate away from its page", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const navigate = lastWindow().webContents.handlers.get("will-navigate");
+    const event = { preventDefault: vi.fn() };
+
+    expect(navigate).toBeDefined();
+    navigate?.(event, APP_INFO.repositoryUrl);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+
+    popover.destroy();
+  });
+
+  it("never opens a second window for a link", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const opener = lastWindow().webContents.setWindowOpenHandler.mock
+      .calls[0]?.[0] as ((details: { url: string }) => unknown) | undefined;
+
+    expect(opener).toBeDefined();
+    expect(opener?.({ url: APP_INFO.repositoryUrl })).toEqual({
+      action: "deny",
+    });
+
+    popover.destroy();
+  });
+
+  it("stops answering once the panel is destroyed", () => {
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      appInfo: APP_INFO,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+    expect(electron.invokers.has(POPOVER_APP_INFO_CHANNEL)).toBe(true);
+    expect(electron.channels.get(POPOVER_OPEN_REPOSITORY_CHANNEL)?.size).toBe(1);
+    popover.destroy();
+
+    send(POPOVER_OPEN_REPOSITORY_CHANNEL, sender, APP_INFO.repositoryUrl);
+
+    expect(electron.opened).toEqual([]);
+    expect(electron.invokers.has(POPOVER_APP_INFO_CHANNEL)).toBe(false);
   });
 });
