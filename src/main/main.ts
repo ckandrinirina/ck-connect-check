@@ -290,9 +290,12 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
   // answered yet, so claiming any bars would be inventing one.
   const glyph = createTrayGlyph();
   const tray = new Tray(glyph.imageFor(0));
+  // One read for the native About panel and the panel's About section alike.
+  const appInfo = readAppInfo();
   const popover =
     options.popover ??
     createPopover({
+      appInfo,
       onSync: () => void sync.start(),
       onSavePassword: (credential) => void sync.submitPassword(credential),
       onSetPlanLimit: (value) => {
@@ -1074,7 +1077,6 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     // Deliberately nothing.
   });
 
-  const appInfo = readAppInfo();
   app.setAboutPanelOptions({
     applicationName: appInfo.name,
     applicationVersion: appInfo.version,

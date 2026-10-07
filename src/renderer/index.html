@@ -511,6 +511,17 @@
         />
         <button class="password-submit" type="submit">Save and sync</button>
       </form>
+
+      <!--
+        Every word here comes from `package.json` over the bridge, so the
+        section stays hidden until it arrives. The link is opened by the main
+        process in the browser; this window never follows it.
+      -->
+      <footer class="about" data-about hidden>
+        <p data-about-name></p>
+        <p data-about-author></p>
+        <a href="#" data-about-repository>GitHub</a>
+      </footer>
     </div>
   </body>
 </html>

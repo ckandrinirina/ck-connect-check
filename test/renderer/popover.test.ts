@@ -1063,7 +1063,17 @@ interface FakeBridge {
   setBlocked: ReturnType<typeof vi.fn>;
   setTab: ReturnType<typeof vi.fn>;
   setLaunchAtLogin: ReturnType<typeof vi.fn>;
+  appInfo: ReturnType<typeof vi.fn>;
+  openRepository: ReturnType<typeof vi.fn>;
 }
+
+/** What the main process answers when the page asks who the app is. */
+const APP_INFO = {
+  name: "ck-connect-check",
+  version: "1.0.0",
+  author: "ANDRINIRINA Erick",
+  repositoryUrl: "https://github.com/ckandrinirina/ck-connect-check",
+};
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
 function stubBridge(): FakeBridge {
@@ -1077,6 +1087,8 @@ function stubBridge(): FakeBridge {
     setBlocked: vi.fn(),
     setTab: vi.fn(),
     setLaunchAtLogin: vi.fn(),
+    appInfo: vi.fn(() => Promise.resolve(APP_INFO)),
+    openRepository: vi.fn(),
   };
 
   window.popoverBridge = bridge;
@@ -4650,5 +4662,124 @@ describe("the Launch at login switch", () => {
     apply(modelLaunching(false));
 
     expect(launchSwitch().checked).toBe(false);
+  });
+});
+
+describe("the About section", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+  });
+
+  function about(): HTMLElement {
+    const section = document.querySelector<HTMLElement>("[data-about]");
+
+    if (section === null) {
+      throw new Error("the panel has no About section");
+    }
+
+    return section;
+  }
+
+  function repositoryLink(): HTMLAnchorElement {
+    const link = about().querySelector<HTMLAnchorElement>(
+      "a[data-about-repository]",
+    );
+
+    if (link === null) {
+      throw new Error("the About section has no GitHub link");
+    }
+
+    return link;
+  }
+
+  /** The bridge answers asynchronously, as `ipcRenderer.invoke` does. */
+  async function filled(): Promise<void> {
+    await vi.waitFor(() => {
+      expect(about().hidden).toBe(false);
+    });
+  }
+
+  it("is the last thing on the Settings pane", () => {
+    expect(settingsPane().lastElementChild).toBe(about());
+  });
+
+  it("is on neither the Usage nor the Devices pane", () => {
+    expect(pane("usage").querySelector("[data-about]")).toBeNull();
+    expect(pane("devices").querySelector("[data-about]")).toBeNull();
+    expect(document.querySelectorAll("[data-about]")).toHaveLength(1);
+  });
+
+  it("names the app with its version, its author and a GitHub link, from the bridge", async () => {
+    await filled();
+
+    expect(bridge.appInfo).toHaveBeenCalled();
+
+    const text = about().textContent?.replace(/\s+/g, " ") ?? "";
+
+    expect(text).toContain("ck-connect-check 1.0.0");
+    expect(text).toContain("Made by ANDRINIRINA Erick");
+    expect(repositoryLink().textContent?.trim()).toBe("GitHub");
+  });
+
+  it("states whatever the bridge says rather than anything typed into the page", async () => {
+    bridge.appInfo.mockImplementation(() =>
+      Promise.resolve({
+        ...APP_INFO,
+        version: "9.9.9",
+        author: "Someone Else",
+      }),
+    );
+    loadPage();
+    apply(modelUsing(10 * GB));
+    await filled();
+
+    const text = about().textContent?.replace(/\s+/g, " ") ?? "";
+
+    expect(text).toContain("ck-connect-check 9.9.9");
+    expect(text).toContain("Made by Someone Else");
+    expect(text).not.toContain("1.0.0");
+  });
+
+  it("asks the main process to open the repository, and the page does not navigate", async () => {
+    await filled();
+    openSettings();
+
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    repositoryLink().dispatchEvent(click);
+
+    expect(click.defaultPrevented).toBe(true);
+    expect(bridge.openRepository).toHaveBeenCalledTimes(1);
+    expect(bridge.openRepository).toHaveBeenCalledWith(APP_INFO.repositoryUrl);
+  });
+
+  it("sends one request per press however many models have arrived", async () => {
+    apply(modelUsing(10 * GB));
+    apply(modelUsing(10 * GB));
+    await filled();
+    openSettings();
+
+    repositoryLink().click();
+
+    expect(bridge.openRepository).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays hidden when the bridge has nothing to say", async () => {
+    bridge.appInfo.mockImplementation(() => Promise.resolve(null));
+    loadPage();
+    apply(modelUsing(10 * GB));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(about().hidden).toBe(true);
+  });
+
+  it("is styled as a settings row, in the muted settings type", () => {
+    expect(about().classList.contains("about")).toBe(true);
+    expect(cssBody(".about")).toMatch(/margin-top:\s*\d+px/);
+    expect(cssBody(".about")).toMatch(/color:\s*var\(--muted\)/);
+    expect(cssBody(".about")).toMatch(/font-size:\s*11px/);
   });
 });

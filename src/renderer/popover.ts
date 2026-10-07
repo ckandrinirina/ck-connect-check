@@ -17,6 +17,7 @@
  * machinery than that deserves.
  */
 
+import type { AppInfo } from "../main/app-info.js";
 import type {
   DeviceRefusal,
   DeviceRow,
@@ -70,6 +71,10 @@ export interface PopoverBridge {
   setTab(name: string): void;
   /** Ask the main process to turn the login item on or off. */
   setLaunchAtLogin(enabled: boolean): void;
+  /** Who the app is, as `package.json` states it; null if refused. */
+  appInfo(): Promise<AppInfo | null>;
+  /** Ask the main process to open the repository in the default browser. */
+  openRepository(url: string): void;
 }
 
 declare global {
@@ -630,6 +635,53 @@ function planCapConfirm(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>("[data-plan-cap-confirm]");
 }
 
+/** Fills the About section and reveals it; its link is bound here, once. */
+function fillAbout(section: HTMLElement, info: AppInfo): void {
+  const name = section.querySelector("[data-about-name]");
+  const author = section.querySelector("[data-about-author]");
+  const link = section.querySelector<HTMLAnchorElement>(
+    "[data-about-repository]",
+  );
+
+  if (name !== null) {
+    name.textContent = `${info.name} ${info.version}`;
+  }
+
+  if (author !== null) {
+    author.textContent = `Made by ${info.author}`;
+  }
+
+  if (link !== null) {
+    link.href = info.repositoryUrl;
+    link.addEventListener("click", (event) => {
+      // The panel must never navigate; the browser opens the link instead.
+      event.preventDefault();
+      window.popoverBridge?.openRepository(info.repositoryUrl);
+    });
+  }
+
+  section.hidden = false;
+}
+
+/** Asks the bridge who the app is, once per page. */
+function bindAbout(): void {
+  const section = document.querySelector<HTMLElement>("[data-about]");
+
+  if (section === null || section.dataset["bound"] === "true") {
+    return;
+  }
+
+  section.dataset["bound"] = "true";
+  void window.popoverBridge
+    ?.appInfo()
+    .then((info) => {
+      if (info !== null) {
+        fillAbout(section, info);
+      }
+    })
+    .catch(() => undefined);
+}
+
 /**
  * Hangs the two listeners off the page, once each.
  *
@@ -641,6 +693,7 @@ function planCapConfirm(): HTMLButtonElement | null {
  */
 function bindControls(): void {
   bindTabs();
+  bindAbout();
 
   const button = syncButton();
 

@@ -3,11 +3,11 @@
  *
  * The page runs under `default-src 'none'` with context isolation on, so it has
  * no `require`, no network and no Electron. This script runs beside it in the
- * isolated world and hands it exactly nine sends — start a sync, store a
+ * isolated world and hands it exactly ten sends — start a sync, store a
  * password, set the plan size, confirm the stored plan size, set the plan
  * length, name the forfait to measure, block or unblock a device, say which
- * pane is showing, and turn launch at login on or off — and
- * nothing else: no `ipcRenderer`, no channel names, no way to reach a channel
+ * pane is showing, turn launch at login on or off, and open the repository —
+ * plus one question, who the app is, and nothing else: no `ipcRenderer`, no channel names, no way to reach a channel
  * this file does not name.
  *
  * It is a `.cts` on purpose. The rest of the app is ESM, but a preload script is
@@ -30,6 +30,8 @@ const CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
 const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
 const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
 const SET_LAUNCH_AT_LOGIN_CHANNEL = "popover:set-launch-at-login";
+const APP_INFO_CHANNEL = "popover:app-info";
+const OPEN_REPOSITORY_CHANNEL = "popover:open-repository";
 
 contextBridge.exposeInMainWorld("popoverBridge", {
   sync(): void {
@@ -70,6 +72,14 @@ contextBridge.exposeInMainWorld("popoverBridge", {
   },
   setLaunchAtLogin(enabled: boolean): void {
     ipcRenderer.send(SET_LAUNCH_AT_LOGIN_CHANNEL, enabled === true);
+  },
+  appInfo(): Promise<unknown> {
+    return ipcRenderer.invoke(APP_INFO_CHANNEL);
+  },
+  openRepository(url: string): void {
+    // The main process opens only the repository it already knows, so a URL
+    // that is anything else goes no further than its comparison.
+    ipcRenderer.send(OPEN_REPOSITORY_CHANNEL, String(url));
   },
   setBlocked(request: { mac: string; blocked: boolean }): void {
     // Rebuilt rather than forwarded, so nothing the page hangs off the object
