@@ -81,9 +81,26 @@
 | T-77 | Put the devices tab in the README, with the capture                     | done   | S    | T-76                         |
 | T-78 | A confirmed cap stays confirmed across the next sync                    | done   | S    | —                            |
 | T-79 | YAS works out the plan size and length from the sync itself             | done   | M    | T-78                         |
-| T-80 | Orange works out the plan size from the portal's own figures            | todo   | M    | T-78                         |
+| T-80 | Orange works out the plan size from the portal's own figures            | blocked | M    | T-78                         |
 | T-81 | Settings shows the carrier's figures and a typed value overrides them   | done   | S    | T-79                         |
 | T-82 | Pressing Set always says it was saved                                   | done   | S    | —                            |
+| T-83 | The app knows when the forfait is running low or about to end | done | M | — |
+| T-84 | The panel and the menu bar keep showing a low forfait until it is recharged | done | M | T-83 |
+| T-85 | macOS notifies when the forfait runs low and as its end approaches | done | M | T-83 |
+| T-86 | Settings become a third tab beside Usage and Devices | done | M | — |
+| T-87 | A Launch at login switch in Settings turns the login item on and off | done | S | T-86 |
+| T-88 | The first launch turns Launch at login on, and never overrides the user afterwards | done | S | T-87 |
+| T-89 | The app knows its author, version 1.0.0 and repository, and shows them in the native About panel | done | S | — |
+| T-90 | An About section at the bottom of Settings shows the author, the version and a GitHub link | done | M | T-89 |
+| T-91 | `npm run make` produces a universal .dmg and .zip of the app | done | M | T-89 |
+| T-92 | Pushing a `v*` tag builds the app on GitHub and publishes a Release with the .dmg and .zip attached | done | M | T-91 |
+| T-93 | A GitHub Pages site and the README let anyone download the latest build and open it despite the unsigned warning | done | M | T-92 |
+| T-94 | The app starts on Windows, keeps its config under %APPDATA% and can send notifications | done | S | T-89 |
+| T-95 | On Windows the tray icon shows the usage percentage and the tooltip shows the full title | done | M | T-94 |
+| T-96 | On Windows the panel opens above the tray icon and stays on screen | done | S | T-94 |
+| T-97 | The interface names the password store correctly on each platform | done | S | T-94 |
+| T-98 | `npm run make:win` builds a Windows Setup.exe that installs and launches the app | done | M | T-91, T-94 |
+| T-99 | Version 1.1.0 releases a Windows Setup.exe beside the Mac build, and the download page offers both | done | M | T-93, T-95, T-96, T-97, T-98 |
 
 ## T-01 Set the project up so tests can run
 
@@ -4551,7 +4568,7 @@ Traffic in between makes the cap too small by that amount, which is why a typed 
 
 ## T-80 Orange works out the plan size from the portal's own figures
 
-T-80 · status: todo · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
+T-80 · status: blocked · size: M · needs: T-78 · files: src/orange/parse.ts, src/orange/types.ts, src/main/view-model.ts, src/main/main.ts, test/fixtures/orange/, test/orange/parse.test.ts, test/main/view-model.test.ts
 
 On Orange the period is already the calendar month, so only the size is missing.
 `full.infoconso.js` draws a percentage ring (`data-bundle-pcvalue`) for capped bundles, and
@@ -4585,6 +4602,8 @@ Below 1 %, derive nothing and wait for a later poll. Never divide by zero or gue
 **Blocked on 2026-09-23.** `123.orange.mg` timed out from this Mac (it resolves, but the
 router's SIM was on YAS at the time), so no capture was taken and nothing was built. Re-run
 from the Orange network.
+- 2026-10-07: Blocked again on 2026-10-07: 123.orange.mg timed out; router current-plmn reported Yas (64604). No capture, nothing built. Re-run with the router on the Orange SIM (64602).
+- 2026-10-07: 2026-10-07: parked as blocked — 123.orange.mg timed out a third time; unpark with ck-lite set todo T-80 once on the Orange SIM (64602)
 
 ## T-81 Settings shows the carrier's figures and a typed value overrides them
 
@@ -4645,3 +4664,296 @@ broken. A refusal already writes a line under its field. A success should write 
 4. [x] Render it in the existing status line, with a success style and a re-trigger on repeat presses
 5. [x] Clear it after a timeout, or on input in that field
 6. [x] Run test, lint and build
+
+## T-83 The app knows when the forfait is running low or about to end
+
+T-83 · status: done · size: M · needs: — · files: src/domain/alerts.ts, test/domain/alerts.test.ts
+
+### Acceptance
+- [x] With a cap known and 30 % or less of it remaining, the decision reports a `low` state; above 30 % it reports none
+- [x] With no cap known (Orange forfait with no stated total), no `low` state is ever reported
+- [x] The period end is the anchor's `expiresAt` on YAS and the last day of the calendar month on Orange
+- [x] An end reminder is due once each at 5, 4, 3 and 2 days before the period end, and once per hour during the final 24 hours
+- [x] No reminder is due between 22:00 and 07:00 local time
+- [x] When several reminders were missed (sleep, quiet hours), only the newest one is due — never a burst
+- [x] A reminder or low notice already recorded as announced for the same period end is not due again
+- [x] The low notice is due again after the remaining share has gone back above 30 % (a recharge) and dropped to 30 % again
+- [x] A new period end (recharge on YAS, new month on Orange) starts with nothing announced
+
+### Tasks
+- [x] Failing tests for every criterion, driven by a fixed `Clock`
+- [x] Define `AlertInput` (reading, period end, announced set) and `AlertDecision` (banner state, notifications to send, updated announced set)
+- [x] Implement the low-share rule and its re-arm on recovery
+- [x] Implement the end-of-period schedule, quiet hours and newest-only collapse
+- [x] Export the 30 % threshold and the 22:00–07:00 window as named constants
+
+## T-84 The panel and the menu bar keep showing a low forfait until it is recharged
+
+T-84 · status: done · size: M · needs: T-83 · files: src/main/view-model.ts, src/renderer/popover.ts, src/renderer/index.html, src/renderer/popover.css, src/main/tray.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts, test/main/tray.test.ts
+
+### Acceptance
+- [x] `buildPopoverModel` carries an `alert` field: `low` with the remaining share, `ending` with the days or hours left, or absent
+- [x] The Usage pane renders a banner for `low` stating the remaining volume and share, and it stays on every model until `alert` is absent
+- [x] The banner for `ending` states the time left before the forfait ends, in days, or in hours on the last day
+- [x] The tray title is prefixed with a warning mark while `low` holds and stays under 12 characters
+- [x] With no alert, neither the banner nor the tray mark is rendered
+- [x] The banner is text plus a mark, never colour alone
+
+### Tasks
+- [x] Failing tests for the model field, the banner and the tray title
+- [x] Map the `AlertDecision` banner state into `PopoverModel.alert`
+- [x] Render the banner in the Usage pane above the dial
+- [x] Prefix the tray title while `low` holds
+
+## T-85 macOS notifies when the forfait runs low and as its end approaches
+
+T-85 · status: done · size: M · needs: T-83 · files: src/main/notifier.ts, src/main/main.ts, src/config/defaults.ts, src/config/config.ts, test/main/notifier.test.ts, test/config/config.test.ts, README.md, test/readme.test.ts
+
+### Acceptance
+- [x] When the decision says a low notice is due, one macOS notification is shown stating the remaining volume and share
+- [x] When an end reminder is due, one macOS notification is shown stating the days left, or the hours left on the last day
+- [x] Every notification sent is recorded as announced in `config.json` against its period end, and an app restart does not re-send it
+- [x] An existing `config.json` with no announced record loads unchanged
+- [x] A notification failing to show is logged and never crashes the poll
+- [x] Clicking a notification opens the panel on the Usage tab
+
+### Tasks
+- [x] Failing tests for the notifier with a fake `Notification` factory and for the config round-trip
+- [x] Add the announced record to `AppConfig` with load/save validation
+- [x] Write `src/main/notifier.ts`: run the decision on each poll tick, show due notifications, persist the announced set
+- [x] Wire the notifier into the poll loop in `src/main/main.ts` and route a click to the Usage tab
+
+## T-86 Settings become a third tab beside Usage and Devices
+
+T-86 · status: done · size: M · needs: — · files: src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, src/main/popover.ts, src/main/main.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/readme.test.ts, README.md
+
+### Acceptance
+- [x] The panel's tablist holds three tabs in order: Usage, Devices, Settings
+- [x] Selecting Settings shows the plan, lasts and router-password forms and hides the Usage and Devices panes
+- [x] The header's ⚙ settings toggle is gone from the document
+- [x] The marker that asked for a missing router password now sits on the Settings tab, and only while the password form is asking
+- [x] `POPOVER_TABS` accepts `"settings"` and `showTab("settings")` selects it from the main process
+- [x] Reopening the panel from the tray lands on Usage, as the settings view did before
+- [x] Submitting the plan and lasts forms from the Settings tab sends the same messages as before
+
+### Tasks
+- [x] Failing tests for the three-tab strip, the moved forms, the marker and the reopen behaviour
+- [x] Move the settings-view markup into a `pane-settings` tab pane and drop the header toggle
+- [x] Extend `POPOVER_TABS` and the renderer's tab switching to the third tab
+- [x] Move the password marker from the toggle to the tab
+- [x] Repoint any `showSettings` callers (main.ts included) to `showTab("settings")`
+- [x] Update the HTML comments that describe the ⚙ toggle
+
+## T-87 A Launch at login switch in Settings turns the login item on and off
+
+T-87 · status: done · size: S · needs: T-86 · files: src/renderer/index.html, src/renderer/popover.ts, src/renderer/preload.cts, src/main/popover.ts, src/main/view-model.ts, src/main/main.ts, test/renderer/popover.test.ts, test/main/popover.test.ts, test/main/view-model.test.ts, test/main/main.test.ts
+
+### Acceptance
+- [x] The Settings tab shows a "Launch at login" checkbox
+- [x] The popover model carries `launchAtLogin`, read from `getLaunchAtLogin()`, and the checkbox is checked exactly when it is true
+- [x] Checking the box sends a message that makes the main process call `setLaunchAtLogin(true)`; unchecking calls `setLaunchAtLogin(false)`
+- [x] After a change the model is re-read from `getLaunchAtLogin()`, so a registration the system refused shows unchecked
+- [x] A message from a window other than the panel is ignored
+
+### Tasks
+- [x] Failing tests for the model field, the checkbox state and the IPC round trip
+- [x] `launchAtLogin` on the popover model
+- [x] Checkbox markup and binding in the Settings pane
+- [x] Preload bridge method and `ipcMain` handler calling the T-09 wrapper
+
+## T-88 The first launch turns Launch at login on, and never overrides the user afterwards
+
+T-88 · status: done · size: S · needs: T-87 · files: src/config/config.ts, src/config/defaults.ts, src/main/main.ts, test/config/config.test.ts, test/main/main.test.ts, README.md, test/readme.test.ts
+
+### Acceptance
+- [x] With no `launchAtLoginDefaulted` flag in the config, a packaged launch calls `setLaunchAtLogin(true)` and writes the flag as true
+- [x] With the flag present, startup never calls `setLaunchAtLogin`, whatever the current registration is
+- [x] An unpackaged run (`app.isPackaged === false`) neither registers a login item nor writes the flag
+- [x] A config file without the flag, or with a non-boolean value, loads without a config problem being reported
+
+### Tasks
+- [x] Failing tests for the three startup cases and the config field parsing
+- [x] `launchAtLoginDefaulted` read and written by `src/config/config.ts`
+- [x] First-run default applied once at startup in `main.ts`, guarded by `app.isPackaged`
+
+## T-89 The app knows its author, version 1.0.0 and repository, and shows them in the native About panel
+
+T-89 · status: done · size: S · needs: — · files: package.json, src/main/app-info.ts, src/main/main.ts, src/main/tray.ts, test/main/app-info.test.ts, test/main/tray.test.ts, package-lock.json, src/app-info.ts, test/main/main.test.ts, test/project-setup.test.ts
+
+### Acceptance
+- [x] `package.json` reads `version: 1.0.0`, `author: ANDRINIRINA Erick`, and `repository` / `homepage` pointing at `https://github.com/ckandrinirina/ck-connect-check`
+- [x] `src/main/app-info.ts` returns the product name, version, author name and GitHub URL from `package.json` — a test changing the fixture manifest changes every field it returns
+- [x] At startup the main process calls `app.setAboutPanelOptions` with that name, version, author credit and repository URL
+- [x] The tray's right-click menu has an "About ck-connect-check" item that calls `app.showAboutPanel`
+- [x] No author name, version or URL string literal appears anywhere under `src/` outside `app-info.ts` (a test greps for them)
+
+### Tasks
+- [x] Failing tests for app-info, the About panel options and the tray item
+- [x] Fill `author`, `repository`, `homepage` and bump `version` in `package.json`
+- [x] Write `src/main/app-info.ts` reading the manifest
+- [x] Call `app.setAboutPanelOptions` in `main.ts` and add the tray menu item
+
+## T-90 An About section at the bottom of Settings shows the author, the version and a GitHub link
+
+T-90 · status: done · size: M · needs: T-89 · files: src/main/popover.ts, src/main/main.ts, src/renderer/preload.cts, src/renderer/index.html, src/renderer/popover.ts, src/renderer/popover.css, test/main/popover.test.ts, test/renderer/popover.test.ts, test/main/main.test.ts
+
+### Acceptance
+- [x] The Settings tab ends with an About section reading "ck-connect-check 1.0.0", "Made by ANDRINIRINA Erick" and a "GitHub" link, all fed from `app-info.ts` over the preload bridge
+- [x] Clicking the GitHub link opens the repository in the default browser through `shell.openExternal`, and the popover window never navigates away
+- [x] The main process opens only the repository URL from `app-info.ts` — any other URL sent over the channel is ignored (tested)
+- [x] The section is absent from the Usage and Devices tabs
+
+### Tasks
+- [x] Failing tests for the section, the link handler and the URL allowlist
+- [x] Expose app info and an `openRepository` call on the preload bridge
+- [x] Handle the open request in the main process with the allowlist
+- [x] Render the About section in the Settings tab, styled like the existing settings rows
+
+## T-91 `npm run make` produces a universal .dmg and .zip of the app
+
+T-91 · status: done · size: M · needs: T-89 · files: package.json, package-lock.json, scripts/check-release-tag.mjs, test/release/forge-config.test.ts, test/release/check-release-tag.test.ts
+
+### Acceptance
+- [x] `@electron-forge/maker-dmg` and `@electron-forge/maker-zip` are dev dependencies and the forge config lists both makers for `darwin`
+- [x] `npm run make` runs `electron-forge make --arch=universal` after `npm run build`
+- [x] The dmg maker is configured with the app name and `assets/icon.icns`
+- [x] `scripts/check-release-tag.mjs <tag>` exits 0 when the tag is `v` + `package.json` version and exits non-zero with a message naming both values otherwise (tested for `v1.0.0`, `v1.0.1`, `1.0.0`)
+- [x] The packager `ignore` list still keeps `site/` and `.github/` out of the bundle
+
+### Tasks
+- [x] Failing tests for the forge config and the tag check
+- [x] Install the two makers and add them to the forge config
+- [x] Add the `make` script with `--arch=universal`
+- [x] Write `scripts/check-release-tag.mjs`
+- [x] Extend the packager ignore list
+
+## T-92 Pushing a `v*` tag builds the app on GitHub and publishes a Release with the .dmg and .zip attached
+
+T-92 · status: done · size: M · needs: T-91 · files: .github/workflows/release.yml, test/release/release-workflow.test.ts, package.json, package-lock.json
+
+### Acceptance
+- [x] `.github/workflows/release.yml` triggers only on pushed tags matching `v*`, runs on a macOS runner with Node 22, and has `contents: write` permission
+- [x] The job runs `scripts/check-release-tag.mjs` against the tag before anything else, then `npm ci`, `npm test`, `npm run lint`, `npm run make`, in that order
+- [x] The built files are renamed to the fixed names `ck-connect-check-mac.dmg` and `ck-connect-check-mac.zip` and uploaded to a GitHub Release named after the tag, with generated release notes
+- [x] A test parses the workflow file and asserts the trigger, the step order and the two fixed asset names
+
+### Tasks
+- [x] Failing tests asserting the workflow's trigger, steps and asset names
+- [x] Write the release workflow
+- [x] Rename the artifacts and create the Release with `gh release create`
+
+## T-93 A GitHub Pages site and the README let anyone download the latest build and open it despite the unsigned warning
+
+T-93 · status: done · size: M · needs: T-92 · files: site/index.html, site/style.css, .github/workflows/pages.yml, README.md, test/release/site.test.ts, test/release/readme.test.ts, site/panel-orange.png, test/release/pages-workflow.test.ts
+
+### Acceptance
+- [x] `site/index.html` has a Download button linking to `https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-mac.dmg` and a secondary `.zip` link of the same shape
+- [x] The page names the author, links to the repository, shows a panel screenshot from `docs/media/`, and states the macOS requirement
+- [x] The page lists the one-time steps to open an unsigned app (right-click → Open, or System Settings → Privacy & Security → Open Anyway)
+- [x] `.github/workflows/pages.yml` deploys `site/` to GitHub Pages on pushes to `main` that touch `site/`
+- [x] README gains a Download section with the same latest-release link and Open Anyway steps, and a Releasing section: bump the version, tag `vX.Y.Z`, push the tag
+- [x] Tests load the page in jsdom and read the README and assert the links and steps above
+
+### Tasks
+- [x] Failing tests for the page links, the Open Anyway steps and the README sections
+- [x] Write `site/index.html` and `site/style.css`, copying the screenshot into `site/`
+- [x] Write the Pages workflow
+- [x] Add the Download and Releasing sections to the README
+
+## T-94 The app starts on Windows, keeps its config under %APPDATA% and can send notifications
+
+T-94 · status: done · size: S · needs: T-89 · files: src/main/platform.ts, src/config/defaults.ts, src/main/main.ts, test/main/platform.test.ts, test/config/defaults.test.ts, test/main/main.test.ts
+
+### Acceptance
+- [x] `src/main/platform.ts` answers, for a given `process.platform`, whether the tray can show a title, where the panel anchors, and whether a Dock exists — tested for `darwin` and `win32`
+- [x] `defaultConfigPath()` returns `%APPDATA%\ck-connect-check\config.json` for `win32` and the unchanged path for `darwin` (tested with an injected platform and environment)
+- [x] On `win32` startup calls `app.setAppUserModelId` with the bundle ID, so notifications carry the app's name; on `darwin` it does not
+- [x] No module under `src/main/` other than `platform.ts` reads `process.platform` (a test greps for it)
+
+### Tasks
+- [x] Failing tests for the platform answers, the config path and the app user model ID
+- [x] Write `src/main/platform.ts`
+- [x] Route `defaultConfigPath()` and the Dock hiding through it
+- [x] Set the app user model ID on Windows at startup
+
+## T-95 On Windows the tray icon shows the usage percentage and the tooltip shows the full title
+
+T-95 · status: done · size: M · needs: T-94 · files: src/main/tray-badge.ts, src/main/tray-icon.ts, src/main/tray.ts, src/main/main.ts, test/main/tray-badge.test.ts, test/main/tray-icon.test.ts, test/main/tray.test.ts, test/main/main.test.ts
+
+### Acceptance
+- [x] `src/main/tray-badge.ts` turns a percentage (0–100) into a 32×32 RGBA bitmap of its digits, with no Electron import; a test asserts that `7`, `42` and `100` produce different, non-empty bitmaps and that `100` stays inside the frame
+- [x] The digits are drawn light on a dark rounded background, so the icon reads on both light and dark taskbars
+- [x] On `win32` each poll sets the tray image to the badge for the current percentage and sets the tooltip to the same text the macOS title shows; `setTitle` is never called
+- [x] With no figure yet (router missing, before the first sync) the Windows icon shows a neutral dash badge and the tooltip says why
+- [x] On `darwin` the tray behaves exactly as before (existing tray tests unchanged and passing)
+
+### Tasks
+- [x] Failing tests for the badge bitmap and the Windows tray updates
+- [x] Write the digit bitmap renderer in `tray-badge.ts`
+- [x] Choose badge or template icon in `tray-icon.ts` from `platform.ts`
+- [x] Set image and tooltip instead of title on Windows in `tray.ts` / `main.ts`
+
+## T-96 On Windows the panel opens above the tray icon and stays on screen
+
+T-96 · status: done · size: S · needs: T-94 · files: src/main/popover.ts, test/main/popover.test.ts, src/main/panel-placement.ts
+
+### Acceptance
+- [x] Given tray bounds at the bottom of the work area, the panel's computed position sits directly above the icon (tested with fixture bounds)
+- [x] Given a tray on the left, right or top edge, the panel is clamped fully inside the display's work area (tested)
+- [x] On `darwin` the computed position is unchanged for the existing fixtures
+- [x] The placement function takes the platform, tray bounds, panel size and work area as arguments and imports no Electron
+
+### Tasks
+- [x] Failing tests for bottom, side and top taskbar placements
+- [x] Extract the placement into a pure function
+- [x] Add the Windows above-the-icon rule and work-area clamping
+
+## T-97 The interface names the password store correctly on each platform
+
+T-97 · status: done · size: S · needs: T-94 · files: src/main/view-model.ts, src/renderer/index.html, src/renderer/popover.ts, test/main/view-model.test.ts, test/renderer/popover.test.ts, src/main/platform.ts, src/renderer/popover.css
+
+### Acceptance
+- [x] On `darwin` every user-facing message that names the store says "Keychain", unchanged
+- [x] On `win32` the same messages say "Windows secure storage" and never "Keychain" (a test renders each message for both platforms)
+- [x] The password field's helper text in Settings uses the platform's store name, fed from the main process
+
+### Tasks
+- [x] Failing tests rendering each store-naming message for both platforms
+- [x] Make the messages take the store name from `platform.ts`
+- [x] Feed the store name to the Settings helper text
+
+## T-98 `npm run make:win` builds a Windows Setup.exe that installs and launches the app
+
+T-98 · status: done · size: M · needs: T-91, T-94 · files: package.json, package-lock.json, assets/icon.ico, scripts/make-icon.mjs, src/main/main.ts, src/main/squirrel.ts, test/release/forge-config.test.ts, test/main/squirrel.test.ts, src/main/login-item.ts, src/main/platform.ts, test/main/login-item.test.ts, test/main/platform.test.ts, test/assets/icon.test.ts
+
+### Acceptance
+- [x] `@electron-forge/maker-squirrel` is a dev dependency and the forge config lists it for `win32` with the product name, `assets/icon.ico` as the setup and app icon, and no signing options
+- [x] `npm run make:win` runs `npm run build` then `electron-forge make --platform=win32 --arch=x64`
+- [x] `npm run icon` also produces `assets/icon.ico` from `assets/icon.svg`
+- [x] `src/main/squirrel.ts` recognises the Squirrel install, update, uninstall and obsolete arguments, creates or removes the shortcuts, and makes the app quit before it builds a tray (tested with each argument)
+- [x] Launch at login on Windows points at the installed app, not the Squirrel updater temp path (tested through `login-item.ts` with an injected path)
+
+### Tasks
+- [x] Failing tests for the forge config, the Squirrel argument handling and the login item path
+- [x] Install the Squirrel maker and add it to the forge config
+- [x] Add the `make:win` script
+- [x] Extend the icon script to emit `icon.ico`
+- [x] Handle Squirrel events first thing in `main.ts`
+
+## T-99 Version 1.1.0 releases a Windows Setup.exe beside the Mac build, and the download page offers both
+
+T-99 · status: done · size: M · needs: T-93, T-95, T-96, T-97, T-98 · files: package.json, .github/workflows/release.yml, site/index.html, README.md, test/release/release-workflow.test.ts, test/release/site.test.ts, test/release/readme.test.ts, package-lock.json, test/project-setup.test.ts, test/main/app-info.test.ts
+
+### Acceptance
+- [x] `package.json` reads `version: 1.1.0`
+- [x] The release workflow has a `windows-latest` job running `npm ci`, `npm test`, `npm run lint`, `npm run make:win`, and uploading the installer to the same Release under the fixed name `ck-connect-check-windows-setup.exe`
+- [x] The Release is created once and both jobs attach to it, whichever finishes first (a test asserts the job wiring)
+- [x] The download page shows a Windows button linking to `releases/latest/download/ck-connect-check-windows-setup.exe` beside the Mac button, and lists the SmartScreen steps (More info → Run anyway)
+- [x] README's Download section gains the Windows link and the SmartScreen steps, and the intro no longer says the app is macOS-only
+- [x] Tests assert the workflow job, the page links and the README text above
+
+### Tasks
+- [x] Failing tests for the Windows job, page button and README text
+- [x] Add the Windows job and shared Release step to the workflow
+- [x] Add the Windows download button and SmartScreen steps to the site
+- [x] Update README and bump the version to 1.1.0
