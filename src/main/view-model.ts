@@ -54,6 +54,7 @@ import {
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
+import { secretStoreName } from "./platform.js";
 import type { PortalReading, PortalStatus } from "./poller.js";
 import type { SyncFailure, SyncState, SyncStep } from "./sync.js";
 import type { AppConfig, PlanValueSource } from "../config/defaults.js";
@@ -213,6 +214,8 @@ export interface PopoverSync {
    * lights up unbidden should say that it did.
    */
   automatic: boolean;
+  /** The password field's helper text, naming this platform's store. */
+  passwordHelp: string;
 }
 
 /**
@@ -639,6 +642,8 @@ export interface PopoverInput {
   launchAtLogin?: boolean;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
+  /** Decides what the password store is called; the running one by default. */
+  platform?: NodeJS.Platform;
 }
 
 /** `"5 days"`, `"1 day"` — the countdown never reads `"1 days"`. */
@@ -891,15 +896,16 @@ function buildAllowance(
  * busy channel, a wrong password and a locked account each call for something
  * different.
  */
-const SYNC_FAILURE_TEXT: Record<Exclude<SyncFailure, RouterRefusal>, string> = {
+const SYNC_FAILURE_TEXT: Record<
+  Exclude<SyncFailure, RouterRefusal | "keychain-unavailable">,
+  string
+> = {
   busy: "The router is busy with another request — try again in a moment.",
   timeout: "The carrier did not answer in time — try again.",
   "wrong-credential": "The router refused that password.",
   "account-locked":
     "The router has locked the account after too many refused sign-ins.",
   "no-password": "No password saved for the router yet.",
-  "keychain-unavailable":
-    "The Keychain is unavailable, so nothing was stored — try again.",
   unreachable: "The router is not answering.",
   session: "The router dropped the session — try again.",
   error: "The router refused the request.",
@@ -919,10 +925,17 @@ function refusalText(refusal: RouterRefusal): string {
 }
 
 /** One failure, whether it arrived as a word or as a number. */
-function failureText(reason: SyncFailure): string {
-  return isRouterRefusal(reason)
-    ? refusalText(reason)
-    : SYNC_FAILURE_TEXT[reason];
+function failureText(reason: SyncFailure, store: string): string {
+  if (isRouterRefusal(reason)) return refusalText(reason);
+  if (reason === "keychain-unavailable") {
+    return `${capitalised(store)} is unavailable, so nothing was stored — try again.`;
+  }
+
+  return SYNC_FAILURE_TEXT[reason];
+}
+
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** What the panel says while a dialogue is on a given step. */
@@ -932,7 +945,11 @@ const SYNC_STEP_TEXT: Record<SyncStep, string> = {
 };
 
 /** The button and its status line, for one sync state. */
-function buildSync(state: SyncState, attention: boolean): PopoverSync {
+function buildSync(
+  state: SyncState,
+  attention: boolean,
+  store: string,
+): PopoverSync {
   const busy = state.phase === "running";
 
   return {
@@ -946,16 +963,17 @@ function buildSync(state: SyncState, attention: boolean): PopoverSync {
     buttonDescription: busy
       ? "Syncing the allowance with the carrier"
       : "Sync the allowance with the carrier",
-    status: syncStatus(state),
+    status: syncStatus(state, store),
+    passwordHelp: `Saved in ${store}, never in the config file.`,
   };
 }
 
-function syncStatus(state: SyncState): string {
+function syncStatus(state: SyncState, store: string): string {
   if (state.phase === "running") return SYNC_STEP_TEXT[state.step];
   if (state.phase === "needs-password") {
     return SYNC_FAILURE_TEXT["no-password"];
   }
-  if (state.phase === "failed") return failureText(state.reason);
+  if (state.phase === "failed") return failureText(state.reason, store);
 
   return "";
 }
@@ -1830,6 +1848,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   const clock = input.clock ?? systemClock;
   const now = clock.now();
   const syncState = input.sync ?? { phase: "idle" };
+  const store = secretStoreName(input.platform);
   const live = result !== null && result.online;
   const snapshot = live ? result.snapshot : lastReading?.snapshot;
   const freshness = buildFreshness(!live, lastReading, now);
@@ -1871,7 +1890,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       config.warnThresholdPercent,
       history,
       // Nothing has been read, so nothing can be stale: no attention to call.
-      buildSync(syncState, false),
+      buildSync(syncState, false, store),
       planLimit,
       planDays,
       // No snapshot means no router counter to carry the anchor forward with,
@@ -1918,7 +1937,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     planDays,
     planCapPrompt,
     pace: half.pace,
-    sync: buildSync(syncState, half.syncAttention),
+    sync: buildSync(syncState, half.syncAttention, store),
     controls: half.controls,
     forfait: half.forfait,
     alert: half.alert,

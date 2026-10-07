@@ -37,7 +37,7 @@ import type {
 export interface PopoverBridge {
   /** Ask the main process to run the carrier dialogue. */
   sync(): void;
-  /** Hand the entered credential to the Keychain, through the main process. */
+  /** Hand the entered credential to the password store, through the main process. */
   savePassword(credential: { username: string; password: string }): void;
   /**
    * Hand the plan size to the main process exactly as typed. The renderer does
@@ -139,6 +139,7 @@ function fieldsOf(model: PopoverModel): Record<string, string> {
     allowanceNote: model.allowance.note,
     forfaitNote: model.forfait?.note ?? "",
     syncStatus: model.sync.status,
+    passwordHelp: model.sync.passwordHelp,
     notice: model.notice,
     alert: model.alert?.text ?? "",
   };

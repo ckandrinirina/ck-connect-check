@@ -1081,6 +1081,81 @@ describe("buildPopoverModel — why a sync failed", () => {
   });
 });
 
+describe("buildPopoverModel — the password store, named for each platform", () => {
+  const SYNC_STATES: readonly SyncState[] = [
+    { phase: "idle" },
+    { phase: "needs-password" },
+    { phase: "running", step: "signing-in" },
+    { phase: "failed", reason: "keychain-unavailable" },
+    { phase: "failed", reason: "wrong-credential" },
+    { phase: "failed", reason: "no-password" },
+  ];
+
+  function modelOn(
+    platform: NodeJS.Platform,
+    sync: SyncState = { phase: "failed", reason: "keychain-unavailable" },
+  ): PopoverModel {
+    return buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      sync,
+      clock,
+      platform,
+    });
+  }
+
+  /** Every store-naming message on the panel, by what it is for. */
+  const STORE_MESSAGES: readonly [string, (model: PopoverModel) => string][] = [
+    ["the failure to store a password", (model) => model.sync.status],
+    ["the password field's helper text", (model) => model.sync.passwordHelp],
+  ];
+
+  it("on macOS, says the store was unavailable exactly as it always has", () => {
+    expect(modelOn("darwin").sync.status).toBe(
+      "The Keychain is unavailable, so nothing was stored — try again.",
+    );
+  });
+
+  for (const [message, of] of STORE_MESSAGES) {
+    it(`on macOS, names the Keychain in ${message}`, () => {
+      expect(of(modelOn("darwin"))).toMatch(/Keychain/);
+    });
+
+    it(`on Windows, names Windows secure storage in ${message}`, () => {
+      const text = of(modelOn("win32"));
+
+      expect(text).toMatch(/Windows secure storage/);
+      expect(text).not.toMatch(/keychain/i);
+    });
+  }
+
+  it("on Windows, starts the unavailable-store sentence with a capital", () => {
+    expect(modelOn("win32").sync.status).toMatch(/^Windows secure storage /);
+  });
+
+  it("on Windows, never says Keychain anywhere on the panel, whatever the sync state", () => {
+    for (const sync of SYNC_STATES) {
+      for (const leaf of leaves(modelOn("win32", sync))) {
+        if (typeof leaf === "string") expect(leaf).not.toMatch(/keychain/i);
+      }
+    }
+  });
+
+  it("names the running platform's store when none is given", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      clock,
+    });
+
+    expect(model.sync.passwordHelp).toBe(
+      modelOn(process.platform).sync.passwordHelp,
+    );
+  });
+});
+
 describe("buildPopoverModel — how long ago the sync happened", () => {
   const ANCHOR: AllowanceAnchor = {
     planLabel: "NET MONTH 200 000",

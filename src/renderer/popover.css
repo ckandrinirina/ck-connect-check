@@ -1066,6 +1066,13 @@ body {
   user-select: text;
 }
 
+.password-help {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .password-submit {
   grid-column: 1 / -1;
   padding: 4px 12px;

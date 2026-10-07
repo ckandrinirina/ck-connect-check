@@ -1303,6 +1303,60 @@ describe("the Sync button — a sync that failed", () => {
   });
 });
 
+describe("the password prompt — the store it names", () => {
+  function promptOn(platform: NodeJS.Platform): PopoverModel {
+    return buildPopoverModel({
+      result: { online: true, snapshot: snapshot(11 * GB) },
+      lastReading: null,
+      config: configWithLimit(20 * GB),
+      sync: { phase: "needs-password" },
+      clock,
+      platform,
+    });
+  }
+
+  beforeEach(() => {
+    stubBridge();
+  });
+
+  it("carries helper text under the password field, inside the prompt", () => {
+    apply(promptOn("darwin"));
+
+    expect(
+      passwordPrompt().querySelector('[data-field="passwordHelp"]'),
+    ).not.toBeNull();
+  });
+
+  it("on macOS, says the password goes to the Keychain", () => {
+    apply(promptOn("darwin"));
+
+    expect(textOf("passwordHelp")).toMatch(/Keychain/);
+  });
+
+  it("on Windows, says Windows secure storage and never Keychain", () => {
+    apply(promptOn("win32"));
+
+    expect(textOf("passwordHelp")).toMatch(/Windows secure storage/);
+    expect(passwordPrompt().textContent).not.toMatch(/keychain/i);
+  });
+
+  it("on Windows, renders the unavailable-store failure without Keychain", () => {
+    apply(
+      buildPopoverModel({
+        result: { online: true, snapshot: snapshot(11 * GB) },
+        lastReading: null,
+        config: configWithLimit(20 * GB),
+        sync: { phase: "failed", reason: "keychain-unavailable" },
+        clock,
+        platform: "win32",
+      }),
+    );
+
+    expect(textOf("syncStatus")).toMatch(/^Windows secure storage /);
+    expect(document.body.textContent).not.toMatch(/keychain/i);
+  });
+});
+
 describe("the password prompt", () => {
   let bridge: FakeBridge;
 
