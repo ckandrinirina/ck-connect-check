@@ -102,6 +102,7 @@
 | T-98 | `npm run make:win` builds a Windows Setup.exe that installs and launches the app | done | M | T-91, T-94 |
 | T-99 | Version 1.1.0 releases a Windows Setup.exe beside the Mac build, and the download page offers both | done | M | T-93, T-95, T-96, T-97, T-98 |
 | T-100 | The Launch at login switch stays on and the Mac starts the app at login | done | M | — |
+| T-101 | The icon test passes on the macOS release runner | done | S | — |
 
 ## T-01 Set the project up so tests can run
 
@@ -4982,3 +4983,27 @@ Cause: the shipped bundle has no code signature, and Electron 33 registers macOS
 - [x] Write, delete and read the plist in `setLaunchAtLogin` / `getLaunchAtLogin` behind that trait, creating `~/Library/LaunchAgents` if it is missing
 - [x] Catch and log write failures in `switchLaunchAtLogin` and `applyFirstRunLaunchAtLogin` so the panel is redrawn from a fresh read
 - [x] Manual check on the installed unsigned 1.1.x build: the switch stays on, the plist exists, and the app starts after logging out and back in
+
+## T-101 The icon test passes on the macOS release runner
+
+T-101 · status: done · size: S · needs: — · files: test/assets/icon.test.ts, test/assets/png-pixels.ts, test/assets/png-pixels.test.ts
+
+The 1.1.0 release's mac job failed on `npm run icon > regenerates every file byte-identically`: the
+test hashed the committed artwork before and after a fresh run, which also demands that Chromium on
+GitHub's macOS runner rasterises byte-for-byte like the author's Intel Mac. Split that one assertion
+into its two real jobs.
+
+### Acceptance
+- [x] Running the rasteriser twice in one test run yields identical hashes for every generated file (determinism, same machine)
+- [x] Every committed iconset and tray PNG matches the freshly generated one in width, height and decoded RGBA pixels within a per-channel tolerance of 2
+- [x] A PNG whose pixels differ by more than the tolerance in any channel fails the comparison (unit test of the pixel helper with two in-memory PNGs)
+- [x] The comparison reads PNGs with Node's built-in `zlib` only — no new dependency in package.json
+- [x] `npm test` and `npm run lint` pass locally
+
+### Tasks
+- [x] Failing tests: pixel-helper unit tests (equal, within tolerance, beyond tolerance, size mismatch)
+- [x] Write `test/assets/png-pixels.ts` — decode 8-bit RGBA/RGB non-interlaced PNG via `zlib.inflateSync` and filter reversal
+- [x] Copy the committed PNGs to a temp dir before the run, then compare them with the fresh output by pixels
+- [x] Run `npm run icon` a second time and assert the two runs' hashes are equal
+- [x] Restore the committed files after the test if the run changed them, so a test run leaves no diff
+- [x] Remove the byte-identical-to-committed assertion

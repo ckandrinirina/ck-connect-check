@@ -46,6 +46,7 @@ is deliberately invalid.
 | orange   | docs/areas/orange.md   | src/orange/, test/orange/, test/fixtures/orange/                                                 |
 | yas-sync | docs/areas/yas-sync.md | src/domain/allowance.ts, src/main/sync.ts, test/domain/allowance.test.ts, test/main/sync.test.ts |
 | devices  | docs/areas/devices.md  | src/domain/devices.ts, test/domain/devices.test.ts, the Devices pane in src/renderer/              |
+| release  | docs/areas/release.md  | assets/, scripts/, test/assets/, test/release/, site/, .github/workflows/                       |
 
 ## Folder structure
 
@@ -107,10 +108,6 @@ Append-only. One line each, always with the reason.
 - `CurrentNetworkTypeEx` is mapped to a label in `src/domain/`, not in `src/hilink/` — the code-to-name table is carrier-agnostic constants, and the router boundary's job ends at turning the string into a number
 - An unmapped network-type code is shown as the code itself rather than hidden or guessed — the same reason an unrecognised error code is carried to the surface with its number
 - The Sync button moves to the header but its status line stays at the foot of the panel — the steps of a dialogue that takes tens of seconds are several lines that arrive over time, and a header that grew and shrank mid-sync would push the dial down while it is being read
-- The icon is a hand-written SVG in `assets/`, rasterised by a script rather than committed as a binary from a design tool — the artwork is a ring and four bars, which is geometry a text file states exactly, and a reviewable diff beats an opaque PNG
-- Rasterisation runs through Electron's own offscreen `BrowserWindow`, not a new image dependency — Chromium is already in the tree and renders the SVG identically to the panel that inspired the mark, so the icon cannot drift from the UI it belongs to
-- The generated PNG and `.icns` artefacts are committed, not built on demand — `electron-forge` reads `packagerConfig.icon` from disk at package time, and a packaged build must never depend on a rasterisation step having been run first
-- `assets/` and `scripts/` are added to the forge ignore list — the icon reaches the bundle through `packagerConfig.icon`, so shipping its sources inside the asar would be dead weight
 - The menu bar glyph is the signal bars and changes with the level, while the `.icns` is the ring mark — a tray image that never changes is the decoration already rejected for the panel, whereas the bundle icon's job is identity, not measurement
 - The tray glyph is a template image, so macOS inverts it for dark and light menu bars and for the selected state — a coloured tray icon is the one thing that always looks wrong on one of the two appearances
 - **Widens the "USSD only on an explicit press" decision above:** a dialogue also runs when the stored anchor is older than `syncStaleAfterMinutes` — an anchor carried forward for hours by a counter delta drifts from the carrier's own figure, and the whole point of the feature is that the panel states a number the carrier agreed with
@@ -151,14 +148,9 @@ Append-only. One line each, always with the reason.
 - Settings are a third panel tab beside Usage and Devices, replacing the ⚙ header toggle — every setting has one discoverable home, and a tab costs the figures no height
 - Launch at login is turned on once, on the first packaged launch, and a `launchAtLoginDefaulted` flag in `config.json` stops it from ever being re-applied — after that only the user’s switch changes it, and an unpackaged dev run never registers the bare Electron binary as a login item; **corrected (T-100):** on macOS the registration is the app's own `~/Library/LaunchAgents` plist, not `app.setLoginItemSettings` — Electron goes through SMAppService, which silently refuses an unsigned bundle, and this app ships unsigned, so the switch read back off and flipped back; Windows keeps Electron's registry entry
 - The author, version and repository link shown in the app are read from `package.json` (`author`, `version`, `repository`) through one module, never typed into the UI — a release bumps one file, and the About section and the native About panel can never disagree
-- Releases are built by GitHub Actions on a pushed `v*` tag and attached to a GitHub Release, never uploaded by hand — the artifact anyone downloads is reproducible from the tag, and the tag must match `package.json`'s version or the job fails
-- The app ships unsigned and un-notarised — there is no Apple Developer account; the download page and README carry the one-time "Open Anyway" instructions instead, and nothing in the build depends on signing so adding it later is a CI-secrets change only
-- One universal (`arm64` + `x64`) build per release — the author's Mac is Intel and most current Macs are Apple silicon, and one file avoids asking a non-technical user which chip they have
-- The GitHub Pages site links to `releases/latest/download/<fixed asset name>`, never a versioned URL — the page never needs editing when a new version ships
 - Windows support is 1.1.0, after the macOS 1.0.0 release, and every platform difference is decided in one `src/main/platform.ts` taking `process.platform` as an argument — the rest of `src/main/` asks it a question rather than testing `darwin`, so both platforms are testable from the Mac
 - On Windows the usage percentage is drawn into the tray icon itself and the full title goes in the tooltip — the Windows notification area has no text beside an icon, and the figure must stay visible without a click; the drawn icon is pure image-building code with no Electron import, so it is tested without a display
 - On Windows the panel opens above the tray icon, clamped to the display's work area — the taskbar is usually at the bottom, and a panel placed as on macOS would open off-screen
-- The Windows build is a Squirrel `Setup.exe` built on a `windows-latest` runner, unsigned — a per-user install needs no admin rights, and SmartScreen's "More info → Run anyway" is documented exactly as Gatekeeper's Open Anyway is
 - The config file lives under `%APPDATA%\<app>` on Windows — `~/.config` is a Unix convention Windows users never look in
 
 ## Conventions

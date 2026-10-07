@@ -6,12 +6,15 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { pngsMatch } from "./png-pixels";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -168,18 +171,31 @@ describe("packaging wiring", () => {
   });
 });
 
+/** Per-channel slack between the committed PNGs and a fresh run. */
+const PIXEL_TOLERANCE = 2;
+
+const GENERATED_PNGS = GENERATED_FILES.filter((file) => file.endsWith(".png"));
+
 /**
  * Runs the real rasteriser. Everything below asserts against files this run
  * produced, so a stale `assets/` left behind by an earlier run cannot satisfy
  * any of it — the same reason `project-setup.test.ts` runs a real build.
  *
- * The hashes are taken *before* the run too, which makes one assertion do two
- * jobs: the output is deterministic, and the committed files already match it.
+ * It runs twice: the two runs must agree byte for byte, which is determinism
+ * on this machine. The committed files are held against the fresh output by
+ * pixels within a tolerance instead, because Chromium on another Mac — the
+ * release runner — antialiases a few edge pixels differently, and a hash
+ * comparison failed the release on artwork no one had changed.
  */
 describe("npm run icon", () => {
-  const hashesBefore: Record<string, string> = {};
-  const hashesAfter: Record<string, string> = {};
+  const committed = new Map<string, Buffer>();
+  const hashesFirstRun: Record<string, string> = {};
+  const hashesSecondRun: Record<string, string> = {};
   let extractedIconset = "";
+
+  function runIcon(): void {
+    execFileSync("npm", ["run", "icon"], { cwd: repoRoot, stdio: "pipe" });
+  }
 
   function snapshotInto(target: Record<string, string>): void {
     for (const file of GENERATED_FILES) {
@@ -191,9 +207,14 @@ describe("npm run icon", () => {
   }
 
   beforeAll(() => {
-    snapshotInto(hashesBefore);
-    execFileSync("npm", ["run", "icon"], { cwd: repoRoot, stdio: "pipe" });
-    snapshotInto(hashesAfter);
+    for (const file of GENERATED_FILES) {
+      const path = repoPath(file);
+      if (existsSync(path)) committed.set(file, readFileSync(path));
+    }
+    runIcon();
+    snapshotInto(hashesFirstRun);
+    runIcon();
+    snapshotInto(hashesSecondRun);
 
     // `iconutil` has no listing mode — converting back out is the documented
     // way to see what point sizes an `.icns` actually contains.
@@ -215,6 +236,11 @@ describe("npm run icon", () => {
   }, 600_000);
 
   afterAll(() => {
+    // A run on another machine may differ by a few pixels; put the committed
+    // artwork back so a test run never leaves a diff behind.
+    for (const [file, bytes] of committed) {
+      writeFileSync(repoPath(file), bytes);
+    }
     if (extractedIconset) {
       rmSync(join(extractedIconset, ".."), { recursive: true, force: true });
     }
@@ -289,9 +315,22 @@ describe("npm run icon", () => {
     expect(sizes.sort((a, b) => a - b)).toEqual(ICO_SIZES);
   });
 
-  it("regenerates every file byte-identically", () => {
-    // Rasterisation that drifts between runs would make the committed artwork
-    // and a fresh build disagree, and every packaging run a diff.
-    expect(hashesAfter).toEqual(hashesBefore);
+  it("regenerates every file byte-identically on the same machine", () => {
+    expect(hashesSecondRun).toEqual(hashesFirstRun);
   });
+
+  it.each(GENERATED_PNGS)(
+    "matches the committed %s pixel for pixel, within the tolerance",
+    (file) => {
+      const before = committed.get(file);
+      expect(before).toBeDefined();
+      expect(
+        pngsMatch(
+          before ?? Buffer.alloc(0),
+          readFileSync(repoPath(file)),
+          PIXEL_TOLERANCE,
+        ),
+      ).toBe(true);
+    },
+  );
 });
