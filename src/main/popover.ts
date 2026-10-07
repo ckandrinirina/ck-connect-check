@@ -68,7 +68,7 @@ export const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
 export const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
 
 /** The panes the strip offers, in the order it draws them. */
-export const POPOVER_TABS = ["usage", "devices"] as const;
+export const POPOVER_TABS = ["usage", "devices", "settings"] as const;
 
 export type PopoverTab = (typeof POPOVER_TABS)[number];
 
@@ -365,20 +365,20 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   }
 
   /**
-   * Puts the page back on its main view.
+   * Takes the page off the Settings tab.
    *
    * The window is hidden rather than destroyed between opens, so a panel left
    * on its settings would still be on them the next time the tray item is
    * clicked. The figures are what the panel is opened for; the settings are
    * typed once a month.
    *
-   * The Usage/Devices tab is deliberately *not* part of that reset — the page
-   * keeps whichever pane was last shown. Someone who went looking for a device
-   * usually looks again, and the tray title states the usage figure without the
-   * panel being opened at all.
+   * Usage and Devices are deliberately *not* part of that reset — the page
+   * keeps whichever of them was last shown. Someone who went looking for a
+   * device usually looks again, and the tray title states the usage figure
+   * without the panel being opened at all.
    *
    * Rejects while the page is still loading, which is exactly the case where
-   * there is nothing to reset — a freshly loaded page opens on the main view.
+   * there is nothing to reset — a freshly loaded page opens on Usage.
    */
   function resetView(): void {
     const open = alive();
@@ -467,6 +467,13 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   }
 
   function hide(): void {
+    // Here rather than in `show`, which pushes this tab after the page's own
+    // reset: a panel closed on Settings reopens on Usage, while a caller that
+    // asks for Settings and then shows the panel still lands on it.
+    if (tab === "settings") {
+      tab = "usage";
+    }
+
     alive()?.hide();
   }
 

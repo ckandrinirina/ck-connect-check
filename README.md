@@ -15,9 +15,8 @@ period is passing, the carrier's own figure, and live download and upload
 sparklines.
 
 The panel is one screenful and never scrolls, so the figures it has to be told
-live behind the ⚙ toggle in its header rather than taking a third of it. The
-toggle swaps between the figures and the settings; you see one or the other,
-never both.
+live on a Settings tab beside Usage and Devices rather than taking a third of
+it. You see one tab at a time, never two.
 
 The figure it shows is the real one. A router of this kind counts bytes
 faithfully but has no idea what your plan is — it reports its data limit as
@@ -134,10 +133,10 @@ plan on every poll instead of following whichever the page happens to list first
 Two things the portal never states, and how each is answered:
 
 - **The plan size.** Nothing on the page says how much you bought, so the cap is
-  typed in — the _Plan_ field in the settings view, behind the ⚙ toggle in the
-  header. Enter it in Go (`150` means 150 Go) and it is remembered. Until it is
-  set there is a consumed volume and nothing else: no dial, no meter and no share
-  in the menu bar, because all three need a total to measure against.
+  typed in — the _Plan_ field on the Settings tab. Enter it in Go (`150` means
+  150 Go) and it is remembered. Until it is set there is a consumed volume and
+  nothing else: no dial, no meter and no share in the menu bar, because all three
+  need a total to measure against.
 - **The period.** A Wifiber plan runs the **calendar month**, first day to last,
   so no plan length is typed on Orange and the field is not on the panel at all.
   The length comes from the calendar — 28, 29, 30 or 31 days — and the day being
@@ -177,7 +176,7 @@ interface, not your Wi-Fi password. It never reaches `config.json`; see
 Two figures are still typed in here, because the carrier states neither.
 
 **Your plan size** is the same _Plan_ field the Orange path uses, on the same
-terms: in Go, behind the ⚙ toggle, and until it is set there is a usage figure
+terms: in Go, on the Settings tab, and until it is set there is a usage figure
 but no percentage.
 
 **How long your plan runs** — its plan length — is typed in beside it, in whole
@@ -347,7 +346,7 @@ the others. A router that is not answering says it is waiting — never a dialog
 because the app runs unattended and there is nobody there to dismiss one. A list
 that is genuinely empty says so outright: no device is connected. And with no
 router password stored, the router has simply not been asked; the tab says so and
-points at the settings behind the ⚙ button, because that is where the answer is.
+points at the Settings tab, because that is where the answer is.
 
 A device that was blocked and has since disappeared **still appears**, marked
 `Blocked`, with `Not connected` where its duration would be. It has to: a blocked

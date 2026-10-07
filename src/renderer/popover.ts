@@ -75,8 +75,8 @@ declare global {
     /** Called by `src/main/popover.ts` after every poll, and once on load. */
     applyPopoverModel(model: PopoverModel): void;
     /**
-     * Called by `src/main/popover.ts` on every open, to put the page back on
-     * its main view. The window is hidden rather than destroyed between opens,
+     * Called by `src/main/popover.ts` on every open, to take the page off the
+     * Settings tab. The window is hidden rather than destroyed between opens,
      * so settings left showing would still be showing the next time the tray
      * item is clicked — and the figures are what the panel is opened for.
      */
@@ -471,54 +471,11 @@ function planCapPrompt(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-plan-cap-prompt]");
 }
 
-function mainView(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-main-view]");
-}
-
-function settingsView(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-settings-view]");
-}
-
-function settingsToggle(): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>("[data-settings-toggle]");
-}
-
 /**
- * Shows one of the panel's two views and hides the other.
- *
- * The pressed state is on the toggle rather than on a variable here: the button
- * has to say which view it is offering anyway, so keeping the answer anywhere
- * else would be a second copy of it that could disagree.
+ * The panel's panes, in the order the strip draws them. The order is the arrow
+ * keys' order, so it lives here rather than being read back off the DOM.
  */
-function showSettings(open: boolean): void {
-  const toggle = settingsToggle();
-
-  if (toggle !== null) {
-    toggle.setAttribute("aria-pressed", String(open));
-  }
-
-  const main = mainView();
-
-  if (main !== null) {
-    main.hidden = open;
-  }
-
-  const settings = settingsView();
-
-  if (settings !== null) {
-    settings.hidden = !open;
-  }
-}
-
-function settingsAreOpen(): boolean {
-  return settingsToggle()?.getAttribute("aria-pressed") === "true";
-}
-
-/**
- * The panel's two panes, in the order the strip draws them. The order is the
- * arrow keys' order, so it lives here rather than being read back off the DOM.
- */
-const TAB_NAMES = ["usage", "devices"] as const;
+const TAB_NAMES = ["usage", "devices", "settings"] as const;
 
 type TabName = (typeof TAB_NAMES)[number];
 
@@ -555,7 +512,7 @@ function tabPane(name: TabName): HTMLElement | null {
  *
  * Everything here is derived from the one root attribute — which pane is
  * hidden, which tab reads as selected, and which of them is in the tab order.
- * Nothing is created: both panes ship in the markup and a switch only writes
+ * Nothing is created: every pane ships in the markup and a switch only writes
  * attributes onto them, so a device row keeps its identity across a press.
  *
  * Called on every model and on every open, for the reason `bindControls` is: a
@@ -608,8 +565,8 @@ function showTab(name: TabName, focus = false): void {
 
 /**
  * Where an arrow, Home or End press lands, or null when the key is not the
- * strip's own. Wraps at both ends: two tabs and no wrap would make one arrow
- * key dead on each of them.
+ * strip's own. Wraps at both ends, so neither arrow key is ever dead on the
+ * first or last tab.
  */
 function tabAfterKey(key: string, from: TabName): TabName | null {
   const index = TAB_NAMES.indexOf(from);
@@ -750,15 +707,6 @@ function bindControls(): void {
     });
     planDays.addEventListener("input", () => {
       dismissSaved('[data-field="planDaysError"]');
-    });
-  }
-
-  const settings = settingsToggle();
-
-  if (settings !== null && settings.dataset["bound"] !== "true") {
-    settings.dataset["bound"] = "true";
-    settings.addEventListener("click", () => {
-      showSettings(!settingsAreOpen());
     });
   }
 
@@ -1088,10 +1036,10 @@ function applySync(model: PopoverModel): void {
     prompt.hidden = !sync.needsPassword;
   }
 
-  // The same flag, worn by the control that now stands between the user and
-  // that form: a password nobody is asked for is a panel that silently cannot
-  // sync. The marker goes as soon as the form has nothing left to ask.
-  const settings = settingsToggle();
+  // The same flag, worn by the tab that holds that form: a password nobody is
+  // asked for is a panel that silently cannot sync. The marker goes as soon as
+  // the form has nothing left to ask.
+  const settings = tabControl("settings");
 
   if (settings !== null) {
     settings.dataset["attention"] = String(sync.needsPassword);
@@ -1588,15 +1536,19 @@ window.applyPopoverModel = (model: PopoverModel): void => {
 
 window.resetPopoverView = (): void => {
   bindControls();
-  showSettings(false);
+
+  // Settings are put away on every open: they are typed a few times a year and
+  // the figures are what the panel is opened for.
+  if (currentTab() === "settings") {
+    document.documentElement.dataset["tab"] = "usage";
+  }
+
   // Said again on every open. The panel is hidden rather than destroyed
   // between opens, so the main process has to be told the tab it is coming
   // back on — a hidden panel stood the list down, and a reopen on Devices has
   // to stand it back up without waiting for a press on the strip.
   window.popoverBridge?.setTab(currentTab());
-  // Redrawn from the tab already selected, never reset to Usage. The settings
-  // are put away on every open because they are typed a few times a year and
-  // the figures are what the panel is opened for; a tab is the opposite —
+  // Otherwise redrawn from the tab already selected, never reset to Usage:
   // someone who went looking for a device usually looks again, and the tray
   // title states the usage figure without the panel being opened at all.
   applyTabs();

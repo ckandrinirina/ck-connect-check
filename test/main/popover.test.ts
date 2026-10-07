@@ -217,9 +217,7 @@ function modelUsing(usedBytes: number): PopoverModel {
  * stopped meaning "the last model" once there was more than one kind.
  */
 function lastPushed(window: FakeWindow): PopoverModel {
-  const script = (
-    window.webContents.executeJavaScript.mock.calls as [string][]
-  )
+  const script = (window.webContents.executeJavaScript.mock.calls as [string][])
     .map(([source]) => source)
     .filter((source) => source.startsWith("window.applyPopoverModel("))
     .at(-1);

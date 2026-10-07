@@ -67,136 +67,124 @@
       >
         Sync
       </button>
-
-      <!--
-        The other control: it swaps the whole panel for the three values that
-        have to be typed. They are entered once a month and read never, so they
-        cost a third of a 320×520 popover for nothing the rest of the time —
-        and a popover that closes on blur cannot usefully be scrolled.
-
-        Its marker is how a missing router password stays discoverable now that
-        the form asking for one is behind it.
-      -->
-      <button
-        class="settings-toggle"
-        type="button"
-        data-settings-toggle
-        data-attention="false"
-        aria-pressed="false"
-        aria-label="Settings"
-      >
-        <span aria-hidden="true">⚙</span>
-      </button>
     </header>
 
     <!--
-      The figures. One of the two views the panel shows, never both — the other
-      is the settings below, and the toggle in the header decides which.
+      Which of the three panes below is showing. A strip rather than a second
+      window: the panes never draw at once, so the devices list and the typed
+      settings cost the panel none of the 520 px the figures already spend.
+
+      Every tab is a real button and every pane is in the document from first
+      paint. Selecting one flips `data-tab` on the root element — the same
+      bargain every other panel state makes — and builds nothing, which is what
+      lets a device row keep its identity under a reader.
     -->
-    <div class="view" data-main-view>
-      <!--
-        Which of the two panes below is showing. A strip rather than a second
-        window: the panes never draw at once, so the devices list costs the
-        panel none of the 520 px the figures already spend.
-
-        Both tabs are real buttons and both panes are in the document from
-        first paint. Selecting one flips `data-tab` on the root element — the
-        same bargain every other panel state makes — and builds nothing, which
-        is what lets a device row keep its identity under a reader.
-      -->
-      <div class="tabs" role="tablist" aria-label="Panel sections">
-        <button
-          class="tab"
-          type="button"
-          role="tab"
-          id="tab-usage"
-          data-tab="usage"
-          aria-controls="pane-usage"
-          aria-selected="true"
-        >
-          Usage
-        </button>
-        <button
-          class="tab"
-          type="button"
-          role="tab"
-          id="tab-devices"
-          data-tab="devices"
-          aria-controls="pane-devices"
-          aria-selected="false"
-          tabindex="-1"
-        >
-          Devices
-        </button>
-      </div>
-
-      <div
-        class="pane"
-        id="pane-usage"
-        data-pane="usage"
-        role="tabpanel"
-        aria-labelledby="tab-usage"
+    <div class="tabs" role="tablist" aria-label="Panel sections">
+      <button
+        class="tab"
+        type="button"
+        role="tab"
+        id="tab-usage"
+        data-tab="usage"
+        aria-controls="pane-usage"
+        aria-selected="true"
       >
-        <!--
-          The forfait banner: low until a recharge, or the time left before the
-          end. A mark and a sentence, never a tint alone. Hidden through the
-          `hidden` attribute, so it costs no height while there is no alert.
-        -->
-        <p
-          class="alert-banner"
-          data-alert-row
-          data-alert=""
-          role="status"
-          hidden
-        >
-          <span class="alert-mark" data-alert-mark aria-hidden="true"></span>
-          <span class="alert-text" data-field="alert"></span>
-        </p>
+        Usage
+      </button>
+      <button
+        class="tab"
+        type="button"
+        role="tab"
+        id="tab-devices"
+        data-tab="devices"
+        aria-controls="pane-devices"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        Devices
+      </button>
+      <!--
+        The three values the app cannot read anywhere and has to be told.
+        They are typed once a month, so they get a tab rather than a third of
+        the figures' height. Its marker is how a missing router password stays
+        discoverable while the form asking for one is on another pane.
+      -->
+      <button
+        class="tab"
+        type="button"
+        role="tab"
+        id="tab-settings"
+        data-tab="settings"
+        data-attention="false"
+        aria-controls="pane-settings"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        Settings
+      </button>
+    </div>
 
-        <section class="usage">
-          <!--
+    <div
+      class="pane"
+      id="pane-usage"
+      data-pane="usage"
+      role="tabpanel"
+      aria-labelledby="tab-usage"
+    >
+      <!--
+        The forfait banner: low until a recharge, or the time left before the
+        end. A mark and a sentence, never a tint alone. Hidden through the
+        `hidden` attribute, so it costs no height while there is no alert.
+      -->
+      <p class="alert-banner" data-alert-row data-alert="" role="status" hidden>
+        <span class="alert-mark" data-alert-mark aria-hidden="true"></span>
+        <span class="alert-text" data-field="alert"></span>
+      </p>
+
+      <section class="usage">
+        <!--
           The ring itself is built by `popover.ts`: its geometry comes from the
           model, and an SVG whose only job is to be redrawn belongs where the
           redrawing happens. The percentage stays here as ordinary text so the
           page reads the same as every other field.
         -->
-          <div class="dial" data-dial role="img" aria-label="No usage read yet">
-            <span class="dial-value" data-field="percent">—</span>
-          </div>
+        <div class="dial" data-dial role="img" aria-label="No usage read yet">
+          <span class="dial-value" data-field="percent">—</span>
+        </div>
 
-          <div class="usage-figures">
-            <span class="total" data-field="monthTotal">—</span>
-            <span class="caption">used this month</span>
-            <p class="prompt" data-field="prompt"></p>
+        <div class="usage-figures">
+          <span class="total" data-field="monthTotal">—</span>
+          <span class="caption">used this month</span>
+          <p class="prompt" data-field="prompt"></p>
 
-            <!--
+          <!--
             Shown only when a sync brought back a plan the stored cap cannot
             describe. Confirm vouches for the stored cap, so an unchanged plan
             size costs one press rather than a retype; a refused Confirm says
             why on the line below, here, where the press was made.
           -->
-            <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
-              <p class="plan-cap-message" data-field="planCapMessage"></p>
-              <p
-                class="plan-cap-refusal"
-                data-field="planCapRefusal"
-                role="status"
-              ></p>
-              <button
-                class="plan-cap-confirm"
-                type="button"
-                data-plan-cap-confirm
-              >
-                Confirm
-              </button>
-            </div>
+          <div class="plan-cap-prompt" data-plan-cap-prompt hidden>
+            <p class="plan-cap-message" data-field="planCapMessage"></p>
+            <p
+              class="plan-cap-refusal"
+              data-field="planCapRefusal"
+              role="status"
+            ></p>
+            <button
+              class="plan-cap-confirm"
+              type="button"
+              data-plan-cap-confirm
+            >
+              Confirm
+            </button>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!--
+      <!--
         Whether that share is being spent faster than the month is passing. It
         shows one reading, never two: the meter once the two figures are typed
-        into the settings view, and the recovery line — what is left to spend a
+        on the Settings tab, and the recovery line — what is left to spend a
         day — wherever there is no meter to draw. The model decides which by
         emptying whichever field the other has replaced, so this page holds no
         rule about it. Hidden outright when there is nothing honest to say — a
@@ -210,20 +198,14 @@
         widths come from the model; the stylesheet holds every colour and this
         page holds neither.
       -->
-        <section class="pace" data-pace hidden>
-          <p class="pace-sustainable" data-field="paceSustainable"></p>
-          <div
-            class="pace-meter"
-            data-pace-meter
-            role="img"
-            aria-label=""
-            hidden
-          >
-            <span class="pace-track">
-              <span class="pace-fill" data-pace-fill></span>
-              <span class="pace-tick" data-pace-tick></span>
-            </span>
-            <!--
+      <section class="pace" data-pace hidden>
+        <p class="pace-sustainable" data-field="paceSustainable"></p>
+        <div class="pace-meter" data-pace-meter role="img" aria-label="" hidden>
+          <span class="pace-track">
+            <span class="pace-fill" data-pace-fill></span>
+            <span class="pace-tick" data-pace-tick></span>
+          </span>
+          <!--
             The two numerals say which is which themselves. There is no legend
             anywhere else on the panel, so an unlabelled `6.15 Go / 5.00 Go`
             leaves the reader to guess which half is the spending and which the
@@ -231,19 +213,19 @@
             the page; only the figures come from the model. `a day` still
             trails the pair and governs both, as it always did.
           -->
-            <span class="pace-figures">
-              <span class="pace-average" data-field="paceAverage"></span>
-              <span class="pace-figures-label">spent</span>
-              <span class="pace-figures-rule">/</span>
-              <span data-field="paceAfforded"></span>
-              <span class="pace-figures-label">budget</span>
-              <span class="pace-figures-unit">a day</span>
-            </span>
-          </div>
-          <p class="pace-hint" data-field="paceHint"></p>
-        </section>
+          <span class="pace-figures">
+            <span class="pace-average" data-field="paceAverage"></span>
+            <span class="pace-figures-label">spent</span>
+            <span class="pace-figures-rule">/</span>
+            <span data-field="paceAfforded"></span>
+            <span class="pace-figures-label">budget</span>
+            <span class="pace-figures-unit">a day</span>
+          </span>
+        </div>
+        <p class="pace-hint" data-field="paceHint"></p>
+      </section>
 
-        <!--
+      <!--
         The volume left, and where the figure came from. It is a different
         question from the dial above it — that is a share of the plan, this is
         the volume itself — so it gets its own strip rather than another number
@@ -254,18 +236,18 @@
         what was used, and a caption fixed in the markup would credit the
         second with a sentence it never said.
       -->
-        <section class="allowance">
-          <div class="allowance-figure">
-            <span class="allowance-remaining" data-field="allowanceRemaining"
-              >—</span
-            >
-            <span class="caption" data-field="allowanceCaption"></span>
-          </div>
-          <div class="allowance-meta">
-            <span class="allowance-plan" data-field="allowancePlan">—</span>
-            <span class="allowance-synced" data-field="allowanceSynced">—</span>
-          </div>
-          <!--
+      <section class="allowance">
+        <div class="allowance-figure">
+          <span class="allowance-remaining" data-field="allowanceRemaining"
+            >—</span
+          >
+          <span class="caption" data-field="allowanceCaption"></span>
+        </div>
+        <div class="allowance-meta">
+          <span class="allowance-plan" data-field="allowancePlan">—</span>
+          <span class="allowance-synced" data-field="allowanceSynced">—</span>
+        </div>
+        <!--
           When the volume above runs out, on one line with it. They were two
           tiles of the grid below until the panel outgrew its window; they are
           the same carrier's answer about the same allowance, so they read
@@ -275,20 +257,20 @@
           expiry leaves this able to read only "— · —", and a dashed row is
           still read out in full to a screen reader.
         -->
-          <div class="allowance-validity" data-validity-row>
-            <span class="caption">Expires</span>
-            <span data-field="allowanceExpires">—</span>
-            <span class="allowance-days-left" data-field="allowanceDaysLeft"
-              >—</span
-            >
-          </div>
-          <!--
+        <div class="allowance-validity" data-validity-row>
+          <span class="caption">Expires</span>
+          <span data-field="allowanceExpires">—</span>
+          <span class="allowance-days-left" data-field="allowanceDaysLeft"
+            >—</span
+          >
+        </div>
+        <!--
           The re-sync marker. It is text, never a colour on its own: a figure
           that can no longer be trusted has to say so out loud.
         -->
-          <p class="allowance-note" data-field="allowanceNote"></p>
+        <p class="allowance-note" data-field="allowanceNote"></p>
 
-          <!--
+        <!--
           Which plan the figure above is about, when the app picked it from
           several rather than the user. It sits here because it qualifies that
           figure — the name itself is already on the line above, in the slot a
@@ -299,55 +281,55 @@
           buttons are built by `popover.ts` — there are as many as the carrier
           listed, which is not a number this page can know.
         -->
-          <div class="forfait-choice" data-forfait-choice hidden>
-            <p class="forfait-note" data-field="forfaitNote"></p>
-            <div class="forfait-alternatives" data-forfait-alternatives></div>
-          </div>
-        </section>
+        <div class="forfait-choice" data-forfait-choice hidden>
+          <p class="forfait-note" data-field="forfaitNote"></p>
+          <div class="forfait-alternatives" data-forfait-alternatives></div>
+        </div>
+      </section>
 
-        <!--
+      <!--
         Live throughput, as a shape rather than a figure. Each row is a label,
         the sparkline the last few minutes drew, and the current rate as text.
         The two SVGs are built by `popover.ts` for the same reason the dial's
         is: they exist to be redrawn, so they belong where the redrawing happens.
       -->
-        <section class="rates">
-          <div class="rate">
-            <span class="rate-label">Down</span>
-            <span class="spark" data-spark="download" data-empty="true"></span>
-            <span class="rate-value" data-field="downloadRate">—</span>
-          </div>
-          <div class="rate">
-            <span class="rate-label">Up</span>
-            <span class="spark" data-spark="upload" data-empty="true"></span>
-            <span class="rate-value" data-field="uploadRate">—</span>
-          </div>
-        </section>
+      <section class="rates">
+        <div class="rate">
+          <span class="rate-label">Down</span>
+          <span class="spark" data-spark="download" data-empty="true"></span>
+          <span class="rate-value" data-field="downloadRate">—</span>
+        </div>
+        <div class="rate">
+          <span class="rate-label">Up</span>
+          <span class="spark" data-spark="upload" data-empty="true"></span>
+          <span class="rate-value" data-field="uploadRate">—</span>
+        </div>
+      </section>
 
-        <!--
+      <!--
         What is left once every figure stated somewhere else has gone. The
         month's download and upload totals went because the plan is billed on
         their sum, and both the dial and the allowance already state that sum;
         the expiry and the days left went up to the strip they qualify.
       -->
-        <dl class="stats">
-          <div class="stat">
-            <dt>Devices</dt>
-            <dd data-field="connectedDevices">—</dd>
-          </div>
-        </dl>
+      <dl class="stats">
+        <div class="stat">
+          <dt>Devices</dt>
+          <dd data-field="connectedDevices">—</dd>
+        </div>
+      </dl>
 
-        <!--
+      <!--
         What the dialogue is doing, reported where there is room for it to run
         to several lines. A live region: the step names arriving in it are the
         proof the panel has not frozen. The button that starts it is in the
         header.
       -->
-        <footer class="sync" data-sync-row>
-          <p class="sync-status" data-field="syncStatus" role="status"></p>
-        </footer>
+      <footer class="sync" data-sync-row>
+        <p class="sync-status" data-field="syncStatus" role="status"></p>
+      </footer>
 
-        <!--
+      <!--
         Why there is no figure, when there is none. It stands in the row the
         sync status line holds, and takes that row's place on the carriers
         where the line is not on the panel at all — which is every carrier
@@ -361,96 +343,90 @@
         Hidden through the `hidden` attribute, so it costs no height at all
         while every figure is present.
       -->
-        <footer class="notice" data-notice-row hidden>
-          <p class="notice-message" data-field="notice" role="status"></p>
-        </footer>
-      </div>
-
-      <!--
-        The other pane. It is in the document from the start — a pane built on
-        first press would throw away the row identity that keeps a device
-        steady while it is being read.
-      -->
-      <div
-        class="pane"
-        id="pane-devices"
-        data-pane="devices"
-        role="tabpanel"
-        aria-labelledby="tab-devices"
-        data-devices-state="offline"
-        hidden
-      >
-        <!--
-          The shell of the list. The rows are written by `popover.ts` and
-          arrive from the router, so there is nothing to declare here but the
-          container they land in — no column headers, because at 320 px the row
-          is stacked text rather than a table.
-
-          A list rather than a table for that same reason: the name and the
-          address sit one above the other and the access word beside them, and
-          a table of one column and a half is a table in name only.
-        -->
-        <ul class="devices" data-devices hidden></ul>
-
-        <!--
-          The three ways of having no rows, which are not the same answer. The
-          router saying nothing is connected is a fact about the household; the
-          router not answering is a fact about the router; and no password
-          stored is a fact about this app, which the user settles two presses
-          away. The app runs unattended, so each is a state on the pane rather
-          than a dialog.
-        -->
-        <p class="devices-notice" data-devices-notice data-devices-empty hidden>
-          No device is connected to the router.
-        </p>
-        <p
-          class="devices-notice"
-          data-devices-notice
-          data-devices-offline
-          hidden
-        >
-          Waiting for the router
-        </p>
-        <!--
-          Not a failure, and worded so it cannot read as one. The router is fine
-          and has not been asked anything: reading or changing the blocked list
-          needs the router's own password. The devices window had to send the
-          user somewhere else for it; this pane is in the panel that takes it,
-          so the sentence names the control that opens the form.
-        -->
-        <p
-          class="devices-notice"
-          data-devices-notice
-          data-devices-no-password
-          hidden
-        >
-          No router password is stored, so the router has not been asked which
-          devices it is blocking. Save it in the settings, behind the ⚙ button
-          above.
-        </p>
-        <!--
-          Why the last press changed nothing. It sits beside the list rather
-          than in place of it: a write that failed says nothing about which
-          devices are connected, so the rows stay exactly where they were. Its
-          words are written by `popover.ts`, because a router code and the
-          filter's cap are numbers only the model knows.
-        -->
-        <p
-          class="devices-notice"
-          data-devices-notice
-          data-devices-refusal
-          hidden
-        ></p>
-      </div>
+      <footer class="notice" data-notice-row hidden>
+        <p class="notice-message" data-field="notice" role="status"></p>
+      </footer>
     </div>
 
     <!--
-      The three values the app cannot read anywhere and has to be told. They are
-      typed once a month, so they live behind the header's toggle rather than
-      taking a third of the panel from the figures that are read every time it
-      is opened. The panel shows this view or the one above it, never both.
+      The other pane. It is in the document from the start — a pane built on
+      first press would throw away the row identity that keeps a device
+      steady while it is being read.
     -->
-    <div class="view settings-view" data-settings-view hidden>
+    <div
+      class="pane"
+      id="pane-devices"
+      data-pane="devices"
+      role="tabpanel"
+      aria-labelledby="tab-devices"
+      data-devices-state="offline"
+      hidden
+    >
+      <!--
+        The shell of the list. The rows are written by `popover.ts` and
+        arrive from the router, so there is nothing to declare here but the
+        container they land in — no column headers, because at 320 px the row
+        is stacked text rather than a table.
+
+        A list rather than a table for that same reason: the name and the
+        address sit one above the other and the access word beside them, and
+        a table of one column and a half is a table in name only.
+      -->
+      <ul class="devices" data-devices hidden></ul>
+
+      <!--
+        The three ways of having no rows, which are not the same answer. The
+        router saying nothing is connected is a fact about the household; the
+        router not answering is a fact about the router; and no password
+        stored is a fact about this app, which the user settles two presses
+        away. The app runs unattended, so each is a state on the pane rather
+        than a dialog.
+      -->
+      <p class="devices-notice" data-devices-notice data-devices-empty hidden>
+        No device is connected to the router.
+      </p>
+      <p class="devices-notice" data-devices-notice data-devices-offline hidden>
+        Waiting for the router
+      </p>
+      <!--
+        Not a failure, and worded so it cannot read as one. The router is fine
+        and has not been asked anything: reading or changing the blocked list
+        needs the router's own password. The devices window had to send the
+        user somewhere else for it; this pane is in the panel that takes it,
+        so the sentence names the tab that holds the form.
+      -->
+      <p
+        class="devices-notice"
+        data-devices-notice
+        data-devices-no-password
+        hidden
+      >
+        No router password is stored, so the router has not been asked which
+        devices it is blocking. Save it on the Settings tab above.
+      </p>
+      <!--
+        Why the last press changed nothing. It sits beside the list rather
+        than in place of it: a write that failed says nothing about which
+        devices are connected, so the rows stay exactly where they were. Its
+        words are written by `popover.ts`, because a router code and the
+        filter's cap are numbers only the model knows.
+      -->
+      <p
+        class="devices-notice"
+        data-devices-notice
+        data-devices-refusal
+        hidden
+      ></p>
+    </div>
+
+    <div
+      class="pane"
+      id="pane-settings"
+      data-pane="settings"
+      role="tabpanel"
+      aria-labelledby="tab-settings"
+      hidden
+    >
       <!--
         The one figure the carrier never states, so it has to be typed. It is
         always here rather than appearing only when unset: a plan that changes
@@ -502,8 +478,8 @@
       <!--
         Shown only when nothing is stored: the password goes straight to the
         Keychain through the main process, and is never written to the config.
-        Behind the toggle it would be undiscoverable on its own, so the toggle
-        wears a marker for exactly as long as this form is asking for one.
+        On a pane nobody has selected it would be undiscoverable on its own, so
+        the Settings tab wears a marker for exactly as long as this form asks.
       -->
       <form class="password-prompt" data-password-prompt hidden>
         <label class="password-label" for="router-username">Router user</label>

@@ -2362,9 +2362,7 @@ describe("the Settings tab", () => {
   });
 
   it("styles that marker at all, rather than leaving it invisible", () => {
-    expect(POPOVER_CSS).toMatch(
-      /\.tab\[data-attention="true"\][^{]*\{[^}]*\}/,
-    );
+    expect(POPOVER_CSS).toMatch(/\.tab\[data-attention="true"\][^{]*\{[^}]*\}/);
   });
 
   it("returns to Usage when the panel is opened again", () => {
