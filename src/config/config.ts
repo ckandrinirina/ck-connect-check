@@ -22,6 +22,7 @@ import {
   defaultConfig,
 } from "./defaults.js";
 import type { AppConfig, PlanValueSource } from "./defaults.js";
+import type { AnnouncedAlerts } from "../domain/alerts.js";
 import type { AllowanceAnchor } from "../domain/allowance.js";
 
 /** A config value the app refuses to run on. `field` names the culprit. */
@@ -497,6 +498,38 @@ function readAllowanceAnchor(
 }
 
 /**
+ * Reads the record of notifications already sent.
+ *
+ * A malformed one is dropped rather than rejected, for the reason
+ * {@link readSyncStaleAfter} gives: losing it costs at most one repeated
+ * notification, while rejecting it would discard the allowance anchor too.
+ */
+function readAnnouncedAlerts(
+  raw: Record<string, unknown>,
+): AnnouncedAlerts | undefined {
+  const value = raw.announcedAlerts;
+
+  if (typeof value !== "object" || value === null) return undefined;
+
+  const { periodEnd, ids } = value as Record<string, unknown>;
+
+  if (
+    !Array.isArray(ids) ||
+    !ids.every((id): id is string => typeof id === "string")
+  ) {
+    return undefined;
+  }
+
+  if (periodEnd === null) return { periodEnd, ids };
+
+  if (typeof periodEnd !== "string" || Number.isNaN(Date.parse(periodEnd))) {
+    return undefined;
+  }
+
+  return { periodEnd, ids };
+}
+
+/**
  * Validates arbitrary parsed JSON into an {@link AppConfig}, filling absent
  * fields from the defaults. Throws {@link ConfigValidationError} on a value
  * that is present but wrong.
@@ -518,6 +551,7 @@ export function parseConfig(raw: unknown): AppConfig {
   // the dial no longer measures against. Files the app wrote still carry it, so
   // it is dropped on the way through rather than rejected.
   const allowanceAnchor = readAllowanceAnchor(record);
+  const announcedAlerts = readAnnouncedAlerts(record);
 
   return {
     host: readHost(record),
@@ -537,6 +571,7 @@ export function parseConfig(raw: unknown): AppConfig {
     ...(routerPasswordBlob === undefined ? {} : { routerPasswordBlob }),
     ...(orangeForfaitLabel === undefined ? {} : { orangeForfaitLabel }),
     ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),
+    ...(announcedAlerts === undefined ? {} : { announcedAlerts }),
   };
 }
 

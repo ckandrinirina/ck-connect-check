@@ -9,6 +9,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { AnnouncedAlerts } from "../domain/alerts.js";
 import type { AllowanceAnchor } from "../domain/allowance.js";
 
 /**
@@ -90,6 +91,11 @@ export interface AppConfig {
    * Its dates are written to disk as ISO strings and read back as `Date`s.
    */
   allowanceAnchor?: AllowanceAnchor;
+  /**
+   * The forfait notifications already sent for the current period end. Absent
+   * until the first one — and the reason a relaunch at login repeats none.
+   */
+  announcedAlerts?: AnnouncedAlerts;
 }
 
 /** The stock HiLink address; the router answers here out of the box. */

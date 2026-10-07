@@ -196,6 +196,10 @@ function parsedConfigKeys(): string[] {
         routerClearTime: "2026-8-1",
         syncedAt: "2026-08-11T12:00:00.000Z",
       },
+      announcedAlerts: {
+        periodEnd: "2026-08-31T21:00:00.000Z",
+        ids: ["low"],
+      },
     }),
   );
 }
