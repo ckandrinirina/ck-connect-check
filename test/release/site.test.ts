@@ -53,7 +53,7 @@ describe("the download links", () => {
   it("has a secondary link to the latest release's .zip", () => {
     const links = linksTo(ZIP_URL);
     expect(links.length).toBeGreaterThan(0);
-    expect(links.some((link) => /\.zip|zip/i.test(text(link)))).toBe(true);
+    expect(links.some((link) => /zip/i.test(text(link)))).toBe(true);
   });
 
   it("uses the asset names the release workflow publishes", () => {

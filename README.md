@@ -48,6 +48,26 @@ usage, signal and throughput. The carrier's own figure is the part most likely
 to need changing for you — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 for the captured dialogue and the captured page the two paths are built on.
 
+## Download
+
+Grab the latest build — a universal app for Apple silicon and Intel Macs:
+
+- [ck-connect-check-mac.dmg](https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-mac.dmg)
+- [ck-connect-check-mac.zip](https://github.com/ckandrinirina/ck-connect-check/releases/latest/download/ck-connect-check-mac.zip),
+  if you would rather not mount a disk image
+
+Drag the app into Applications. It is unsigned — there is no Apple Developer
+account behind it — so macOS refuses to open it the first time. Get past that
+once, either way:
+
+1. In Applications, right-click (or Control-click) the app, choose **Open**,
+   then **Open** again in the dialog.
+2. Or, after a blocked launch, open **System Settings** →
+   **Privacy & Security**, scroll to the message about ck-connect-check,
+   click **Open Anyway** and confirm.
+
+From then on it launches like any other app.
+
 ## Install and build
 
 Node 22 or newer, on macOS.
@@ -530,3 +550,34 @@ network — which is why almost all of it is testable without a router present, 
 why adding a second carrier changed one branch rather than the whole app.
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) documents the endpoints, the
 portal page, the sync design, and every decision behind them with its reason.
+
+## Releasing
+
+A release is a pushed tag. [`.github/workflows/release.yml`](.github/workflows/release.yml)
+does the rest on a macOS runner: it checks the tag against `package.json`, runs
+the tests and the linter, builds the universal `.dmg` and `.zip`, and publishes
+them as a GitHub Release under the fixed names the Download links above point
+at — so neither this page nor the download site needs editing per version.
+
+1. Bump the version in `package.json` without letting npm tag it, and commit:
+
+   ```sh
+   npm version X.Y.Z --no-git-tag-version
+   git commit -am "chore: release vX.Y.Z"
+   git push origin main
+   ```
+
+2. Tag that commit `vX.Y.Z` — the same version, with a `v` in front:
+
+   ```sh
+   git tag vX.Y.Z
+   ```
+
+3. Push the tag:
+
+   ```sh
+   git push origin vX.Y.Z
+   ```
+
+A tag that does not match `package.json` fails the workflow before anything is
+built.
