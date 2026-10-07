@@ -15,6 +15,7 @@ describe("platformTraits", () => {
       panelAnchor: "below-tray",
       hasDock: true,
       needsAppUserModelId: false,
+      installedBySquirrel: false,
     });
   });
 
@@ -26,6 +27,7 @@ describe("platformTraits", () => {
       panelAnchor: "above-tray",
       hasDock: false,
       needsAppUserModelId: true,
+      installedBySquirrel: true,
     });
   });
 

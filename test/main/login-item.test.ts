@@ -72,3 +72,74 @@ describe('getLaunchAtLogin', () => {
     expect(getLaunchAtLogin()).toBe(false);
   });
 });
+
+describe("launch at login on Windows", () => {
+  const ROOT = "C:\\Users\\ada\\AppData\\Local\\ck-connect-check";
+  const INSTALLED = `${ROOT}\\app-1.1.0\\ck-connect-check.exe`;
+  const STUB = `${ROOT}\\ck-connect-check.exe`;
+
+  beforeEach(() => {
+    electron.setLoginItemSettings.mockClear();
+    electron.getLoginItemSettings.mockClear();
+    electron.getLoginItemSettings.mockReturnValue({ openAtLogin: false });
+  });
+
+  it("registers the installed app's launcher, which outlives the versioned folder an update removes", () => {
+    setLaunchAtLogin(true, { platform: "win32", execPath: INSTALLED });
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: true,
+      path: STUB,
+    });
+  });
+
+  it("never registers Squirrel's Update.exe or a versioned app folder", () => {
+    setLaunchAtLogin(true, { platform: "win32", execPath: INSTALLED });
+
+    const [settings] = electron.setLoginItemSettings.mock.calls[0] as [
+      { path?: string },
+    ];
+    expect(settings.path).not.toMatch(/Update\.exe$/i);
+    expect(settings.path).not.toMatch(/\\app-[\d.]+\\/);
+  });
+
+  it("clears the same registration it made", () => {
+    setLaunchAtLogin(false, { platform: "win32", execPath: INSTALLED });
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: false,
+      path: STUB,
+    });
+  });
+
+  it("reads back the registration for that same launcher", () => {
+    electron.getLoginItemSettings.mockReturnValue({ openAtLogin: true });
+
+    expect(getLaunchAtLogin({ platform: "win32", execPath: INSTALLED })).toBe(
+      true,
+    );
+    expect(electron.getLoginItemSettings).toHaveBeenCalledWith({ path: STUB });
+  });
+
+  it("registers the executable itself when it was not installed by Squirrel", () => {
+    const portable = "D:\\Tools\\ck-connect-check\\ck-connect-check.exe";
+
+    setLaunchAtLogin(true, { platform: "win32", execPath: portable });
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: true,
+      path: portable,
+    });
+  });
+
+  it("leaves macOS on the bare registration it has always used", () => {
+    setLaunchAtLogin(true, {
+      platform: "darwin",
+      execPath: "/Applications/ck-connect-check.app/Contents/MacOS/ck-connect-check",
+    });
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: true,
+    });
+  });
+});

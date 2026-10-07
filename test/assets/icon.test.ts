@@ -44,6 +44,9 @@ const ICONSET_ENTRIES = [
 /** The point sizes the built `.icns` has to carry. */
 const ICNS_POINT_SIZES = [16, 32, 128, 256, 512];
 
+/** The sizes Windows picks from for the taskbar, Explorer and Setup.exe. */
+const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
+
 /** One artwork per filled bar count, from none to four. */
 const TRAY_LEVELS = [0, 1, 2, 3, 4];
 
@@ -61,6 +64,7 @@ const TRAY_ENTRIES = TRAY_LEVELS.flatMap((bars) => [
 const GENERATED_FILES = [
   ...ICONSET_ENTRIES.map((entry) => `assets/icon.iconset/${entry.file}`),
   "assets/icon.icns",
+  "assets/icon.ico",
   ...TRAY_ENTRIES.map((entry) => `assets/tray/${entry.file}`),
 ];
 
@@ -143,12 +147,18 @@ describe("packaging wiring", () => {
     expect(packageJson.scripts?.icon).toBeTruthy();
   });
 
-  it("points packagerConfig.icon at a file that is on disk", () => {
-    // Forge fails soft on a missing icon: it packages the default and says
-    // nothing, so the only way to catch a wrong path is to resolve it here.
-    expect(packagerConfig?.icon).toBeTruthy();
-    expect(existsSync(resolve(repoRoot, packagerConfig!.icon!))).toBe(true);
-  });
+  it.each([".icns", ".ico"])(
+    "points packagerConfig.icon at a %s file that is on disk",
+    (extension) => {
+      // Forge fails soft on a missing icon: it packages the default and says
+      // nothing, so the only way to catch a wrong path is to resolve it here.
+      // The path has no extension: the packager adds the platform's own.
+      expect(packagerConfig?.icon).toBeTruthy();
+      expect(
+        existsSync(resolve(repoRoot, `${packagerConfig!.icon!}${extension}`)),
+      ).toBe(true);
+    },
+  );
 
   it("keeps the artwork and its build scripts out of the asar", () => {
     // The `.icns` is read by the packager from the source tree; neither it nor
@@ -251,6 +261,32 @@ describe("npm run icon", () => {
     for (const size of ICNS_POINT_SIZES) {
       expect(points).toContain(size);
     }
+  });
+
+  it("produces an .ico carrying every size Windows asks for, each a PNG of that size", () => {
+    const ico = readFileSync(repoPath("assets/icon.ico"));
+    // ICONDIR: reserved 0, type 1 (icon), then the entry count.
+    expect(ico.readUInt16LE(0)).toBe(0);
+    expect(ico.readUInt16LE(2)).toBe(1);
+    const count = ico.readUInt16LE(4);
+
+    const sizes = Array.from({ length: count }, (_, index) => {
+      const entry = 6 + index * 16;
+      // A width or height byte of 0 means 256.
+      const width = ico.readUInt8(entry) || 256;
+      const height = ico.readUInt8(entry + 1) || 256;
+      const length = ico.readUInt32LE(entry + 8);
+      const offset = ico.readUInt32LE(entry + 12);
+      const image = ico.subarray(offset, offset + length);
+
+      expect(image.subarray(1, 4).toString("latin1")).toBe("PNG");
+      expect(image.readUInt32BE(16)).toBe(width);
+      expect(image.readUInt32BE(20)).toBe(height);
+      expect(width).toBe(height);
+      return width;
+    });
+
+    expect(sizes.sort((a, b) => a - b)).toEqual(ICO_SIZES);
   });
 
   it("regenerates every file byte-identically", () => {
