@@ -11,12 +11,18 @@
  * not cost a renderer process.
  */
 
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, ipcMain, shell } from "electron";
 import { fileURLToPath } from "node:url";
 
-import type { IpcMainEvent, Rectangle, Tray } from "electron";
+import type {
+  IpcMainEvent,
+  IpcMainInvokeEvent,
+  Rectangle,
+  Tray,
+} from "electron";
 
 import type { RouterCredential } from "../hilink/types.js";
+import { readAppInfo, type AppInfo } from "./app-info.js";
 import type { DevicesModel, PopoverModel } from "./view-model.js";
 
 /** Wide enough for a rate and its unit on one line without wrapping. */
@@ -74,6 +80,19 @@ export const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
  */
 export const POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL =
   "popover:set-launch-at-login";
+
+/**
+ * The About section asking who the app is. Answered with {@link AppInfo}, so
+ * the page never types a version or an author of its own.
+ */
+export const POPOVER_APP_INFO_CHANNEL = "popover:app-info";
+
+/**
+ * The About section's GitHub link pressed, carrying the URL it points at. Only
+ * the repository from `app-info.ts` is ever opened: `shell.openExternal` hands
+ * a URL to the OS, so the page does not get to choose one.
+ */
+export const POPOVER_OPEN_REPOSITORY_CHANNEL = "popover:open-repository";
 
 /** The panes the strip offers, in the order it draws them. */
 export const POPOVER_TABS = ["usage", "devices", "settings"] as const;
@@ -143,6 +162,8 @@ export interface PopoverOptions {
   onSetBlocked?: (request: DeviceBlockRequest) => void;
   /** The user checked (`true`) or unchecked (`false`) Launch at login. */
   onSetLaunchAtLogin?: (enabled: boolean) => void;
+  /** What the About section states. Read from `package.json` when omitted. */
+  appInfo?: AppInfo;
 }
 
 /**
@@ -232,6 +253,7 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   const height = options.height ?? POPOVER_HEIGHT;
   const htmlPath = options.htmlPath ?? defaultHtmlPath();
   const preloadPath = options.preloadPath ?? defaultPreloadPath();
+  const appInfo = options.appInfo ?? readAppInfo();
 
   let window: BrowserWindow | null = null;
   let model: PopoverModel | null = null;
@@ -246,7 +268,7 @@ export function createPopover(options: PopoverOptions = {}): Popover {
    * `ipcMain` is process-wide, so every message is checked against this
    * panel's own page before it is acted on.
    */
-  function fromThisPanel(event: IpcMainEvent): boolean {
+  function fromThisPanel(event: Pick<IpcMainEvent, "sender">): boolean {
     const open = alive();
 
     return open !== null && event.sender === open.webContents;
@@ -315,6 +337,19 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onAppInfoRequest(event: IpcMainInvokeEvent): AppInfo | null {
+    return fromThisPanel(event) ? appInfo : null;
+  }
+
+  function onOpenRepositoryMessage(
+    event: IpcMainEvent,
+    payload: unknown,
+  ): void {
+    if (fromThisPanel(event) && payload === appInfo.repositoryUrl) {
+      void shell.openExternal(appInfo.repositoryUrl).catch(() => undefined);
+    }
+  }
+
   function onSetBlockedMessage(event: IpcMainEvent, payload: unknown): void {
     if (!fromThisPanel(event)) {
       return;
@@ -336,6 +371,8 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   ipcMain.on(POPOVER_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
   ipcMain.on(POPOVER_SET_TAB_CHANNEL, onSetTabMessage);
   ipcMain.on(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, onSetLaunchAtLoginMessage);
+  ipcMain.on(POPOVER_OPEN_REPOSITORY_CHANNEL, onOpenRepositoryMessage);
+  ipcMain.handle(POPOVER_APP_INFO_CHANNEL, onAppInfoRequest);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -446,6 +483,12 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     created.on("blur", () => {
       hide();
     });
+    // The page is the app, not a document: a link pressed in it goes to the
+    // browser through the open-repository channel, never into this window.
+    created.webContents.on("will-navigate", (event) => {
+      event.preventDefault();
+    });
+    created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("did-finish-load", () => {
       // The pane first, for the reason `show` puts it first: a freshly loaded
       // page opens on Usage, and a tray entry that asked for Devices must not
@@ -558,6 +601,11 @@ export function createPopover(options: PopoverOptions = {}): Popover {
         POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL,
         onSetLaunchAtLoginMessage,
       );
+      ipcMain.removeListener(
+        POPOVER_OPEN_REPOSITORY_CHANNEL,
+        onOpenRepositoryMessage,
+      );
+      ipcMain.removeHandler(POPOVER_APP_INFO_CHANNEL);
       alive()?.destroy();
       window = null;
     },

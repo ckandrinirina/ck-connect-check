@@ -589,6 +589,26 @@ body {
   display: none;
 }
 
+/* Closes the Settings pane in the settings rows' own muted type, ruled off
+   from them because it states something rather than asking for anything. */
+.about {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.about p {
+  margin: 0 0 2px;
+}
+
+.about a {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
 .plan-limit-submit {
   padding: 2px 8px;
   border: 1px solid var(--line);

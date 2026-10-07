@@ -1334,7 +1334,9 @@ describe("createPopover — the About section's link", () => {
 
     const sender = lastWindow().webContents;
     expect(electron.invokers.has(POPOVER_APP_INFO_CHANNEL)).toBe(true);
-    expect(electron.channels.get(POPOVER_OPEN_REPOSITORY_CHANNEL)?.size).toBe(1);
+    expect(electron.channels.get(POPOVER_OPEN_REPOSITORY_CHANNEL)?.size).toBe(
+      1,
+    );
     popover.destroy();
 
     send(POPOVER_OPEN_REPOSITORY_CHANNEL, sender, APP_INFO.repositoryUrl);
