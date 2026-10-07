@@ -200,6 +200,7 @@ function parsedConfigKeys(): string[] {
         periodEnd: "2026-08-31T21:00:00.000Z",
         ids: ["low"],
       },
+      launchAtLoginDefaulted: true,
     }),
   );
 }

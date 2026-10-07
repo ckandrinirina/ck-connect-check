@@ -96,6 +96,12 @@ export interface AppConfig {
    * until the first one — and the reason a relaunch at login repeats none.
    */
   announcedAlerts?: AnnouncedAlerts;
+  /**
+   * Set once the first packaged launch has turned Launch at login on. Absent
+   * until then — and the reason that default is applied once and never again
+   * over the user's own choice.
+   */
+  launchAtLoginDefaulted?: boolean;
 }
 
 /** The stock HiLink address; the router answers here out of the box. */

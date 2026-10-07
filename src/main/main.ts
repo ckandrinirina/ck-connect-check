@@ -21,7 +21,7 @@ import {
   type PlanDaysRefusal,
   type PlanLimitRefusal,
 } from "../config/config.js";
-import { defaultConfigPath } from "../config/defaults.js";
+import { defaultConfigPath, type AppConfig } from "../config/defaults.js";
 import { isAnchorStale, needsAutomaticSync } from "../domain/allowance.js";
 import type { Carrier } from "../domain/carrier.js";
 import {
@@ -228,6 +228,31 @@ export interface MenuBarApp {
 }
 
 /**
+ * Turns Launch at login on the first time a packaged build starts, and records
+ * that it did so the user's later choice is never overridden. An unpackaged run
+ * is skipped: its login item would point at the bare Electron binary.
+ */
+function applyFirstRunLaunchAtLogin(
+  configPath: string,
+  config: AppConfig,
+): void {
+  if (!app.isPackaged || config.launchAtLoginDefaulted !== undefined) {
+    return;
+  }
+
+  setLaunchAtLogin(true);
+  config.launchAtLoginDefaulted = true;
+
+  try {
+    saveConfig(configPath, config);
+  } catch (error) {
+    // The item is registered either way; failing to record it only means the
+    // default is applied once more next launch.
+    console.warn(`could not record the login item default: ${String(error)}`);
+  }
+}
+
+/**
  * Wires the tray to the poller and starts polling.
  *
  * A tray created from an empty image shows its title and nothing else, which is
@@ -244,6 +269,8 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     // A bad config file is never fatal — the app runs on the defaults and says why.
     console.warn(problem);
   }
+
+  applyFirstRunLaunchAtLogin(configPath, config);
 
   // One client serves both the poll loop and the sync: they share a session
   // store, so a login taken out for a dialogue is the same one the poll uses.

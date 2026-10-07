@@ -530,6 +530,19 @@ function readAnnouncedAlerts(
 }
 
 /**
+ * Reads the first-run login item flag. Anything but a boolean is dropped rather
+ * than rejected: the worst it costs is the default being applied once more,
+ * while rejecting it would discard the allowance anchor too.
+ */
+function readLaunchAtLoginDefaulted(
+  raw: Record<string, unknown>,
+): boolean | undefined {
+  const value = raw.launchAtLoginDefaulted;
+
+  return typeof value === "boolean" ? value : undefined;
+}
+
+/**
  * Validates arbitrary parsed JSON into an {@link AppConfig}, filling absent
  * fields from the defaults. Throws {@link ConfigValidationError} on a value
  * that is present but wrong.
@@ -552,6 +565,7 @@ export function parseConfig(raw: unknown): AppConfig {
   // it is dropped on the way through rather than rejected.
   const allowanceAnchor = readAllowanceAnchor(record);
   const announcedAlerts = readAnnouncedAlerts(record);
+  const launchAtLoginDefaulted = readLaunchAtLoginDefaulted(record);
 
   return {
     host: readHost(record),
@@ -572,6 +586,7 @@ export function parseConfig(raw: unknown): AppConfig {
     ...(orangeForfaitLabel === undefined ? {} : { orangeForfaitLabel }),
     ...(allowanceAnchor === undefined ? {} : { allowanceAnchor }),
     ...(announcedAlerts === undefined ? {} : { announcedAlerts }),
+    ...(launchAtLoginDefaulted === undefined ? {} : { launchAtLoginDefaulted }),
   };
 }
 
