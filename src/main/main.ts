@@ -49,6 +49,7 @@ import type {
   RouterSnapshot,
 } from "../hilink/types.js";
 import { readInfoConso } from "../orange/portal.js";
+import { APP_ID } from "../app-info.js";
 import { readAppInfo } from "./app-info.js";
 import { loadCredential, saveCredential } from "./credentials.js";
 import { getLaunchAtLogin, setLaunchAtLogin } from "./login-item.js";
@@ -57,6 +58,7 @@ import {
   createNotifier,
   type NotificationFactory,
 } from "./notifier.js";
+import { platformTraits } from "./platform.js";
 import {
   UsagePoller,
   type HostListSource,
@@ -182,6 +184,8 @@ export interface MenuBarOptions {
   popover?: Popover;
   /** Builds macOS notifications. Injected so no test ever shows one. */
   notifications?: NotificationFactory;
+  /** The OS to behave as. Injected so both platforms are testable from the Mac. */
+  platform?: NodeJS.Platform;
 }
 
 export interface MenuBarApp {
@@ -260,10 +264,19 @@ function applyFirstRunLaunchAtLogin(
  * exactly the intent: the usage figure is the icon.
  */
 export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
-  // Before anything is drawn: no Dock icon, no app switcher entry, menu bar only.
-  app.dock?.hide();
+  const traits = platformTraits(options.platform);
 
-  const configPath = options.configPath ?? defaultConfigPath();
+  // Without it, Windows notifications are attributed to the Electron binary.
+  if (traits.needsAppUserModelId) {
+    app.setAppUserModelId(APP_ID);
+  }
+
+  // Before anything is drawn: no Dock icon, no app switcher entry, menu bar only.
+  if (traits.hasDock) {
+    app.dock?.hide();
+  }
+
+  const configPath = options.configPath ?? defaultConfigPath(options.platform);
   const { config, problem } = loadConfig(configPath);
 
   if (problem !== undefined) {
