@@ -9,13 +9,14 @@ import { platformTraits } from "../../src/main/platform.js";
 const mainRoot = fileURLToPath(new URL("../../src/main/", import.meta.url));
 
 describe("platformTraits", () => {
-  it("on macOS: a titled tray, a panel below it, a Dock to hide", () => {
+  it("on macOS: a titled tray, a panel below it, a Dock to hide, its own LaunchAgent", () => {
     expect(platformTraits("darwin")).toEqual({
       trayShowsTitle: true,
       panelAnchor: "below-tray",
       hasDock: true,
       needsAppUserModelId: false,
       installedBySquirrel: false,
+      loginItemByLaunchAgent: true,
     });
   });
 
@@ -28,6 +29,7 @@ describe("platformTraits", () => {
       hasDock: false,
       needsAppUserModelId: true,
       installedBySquirrel: true,
+      loginItemByLaunchAgent: false,
     });
   });
 

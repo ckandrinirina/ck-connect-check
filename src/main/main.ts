@@ -53,7 +53,11 @@ import { readInfoConso } from "../orange/portal.js";
 import { APP_ID } from "../app-info.js";
 import { readAppInfo } from "./app-info.js";
 import { loadCredential, saveCredential } from "./credentials.js";
-import { getLaunchAtLogin, setLaunchAtLogin } from "./login-item.js";
+import {
+  getLaunchAtLogin,
+  setLaunchAtLogin,
+  type LoginItemTarget,
+} from "./login-item.js";
 import {
   alertSituation,
   createNotifier,
@@ -188,6 +192,8 @@ export interface MenuBarOptions {
   notifications?: NotificationFactory;
   /** The OS to behave as. Injected so both platforms are testable from the Mac. */
   platform?: NodeJS.Platform;
+  /** Where `~` is. Injected so tests never touch the real LaunchAgents folder. */
+  homeDir?: string;
 }
 
 export interface MenuBarApp {
@@ -235,6 +241,19 @@ export interface MenuBarApp {
 }
 
 /**
+ * Changes the login item, logging rather than throwing when the system will not
+ * take it — the panel is redrawn from a fresh read either way, so a failure
+ * shows as the switch staying off.
+ */
+function changeLaunchAtLogin(enabled: boolean, target: LoginItemTarget): void {
+  try {
+    setLaunchAtLogin(enabled, target);
+  } catch (error) {
+    console.warn(`could not change launch at login: ${String(error)}`);
+  }
+}
+
+/**
  * Turns Launch at login on the first time a packaged build starts, and records
  * that it did so the user's later choice is never overridden. An unpackaged run
  * is skipped: its login item would point at the bare Electron binary.
@@ -242,13 +261,13 @@ export interface MenuBarApp {
 function applyFirstRunLaunchAtLogin(
   configPath: string,
   config: AppConfig,
-  platform: NodeJS.Platform | undefined,
+  target: LoginItemTarget,
 ): void {
   if (!app.isPackaged || config.launchAtLoginDefaulted !== undefined) {
     return;
   }
 
-  setLaunchAtLogin(true, { platform });
+  changeLaunchAtLogin(true, target);
   config.launchAtLoginDefaulted = true;
 
   try {
@@ -287,7 +306,12 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     console.warn(problem);
   }
 
-  applyFirstRunLaunchAtLogin(configPath, config, options.platform);
+  const loginItem: LoginItemTarget = {
+    platform: options.platform,
+    homeDir: options.homeDir,
+  };
+
+  applyFirstRunLaunchAtLogin(configPath, config, loginItem);
 
   // One client serves both the poll loop and the sync: they share a session
   // store, so a login taken out for a dialogue is the same one the poll uses.
@@ -403,7 +427,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         planDaysSavedAt,
         // Read from the system on every build: the user can remove the item
         // while the app runs, and there is no local copy.
-        launchAtLogin: getLaunchAtLogin({ platform: options.platform }),
+        launchAtLogin: getLaunchAtLogin(loginItem),
       }),
     );
   }
@@ -531,7 +555,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
    * a fresh read, so a registration macOS refused shows unchecked.
    */
   function switchLaunchAtLogin(enabled: boolean): void {
-    setLaunchAtLogin(enabled, { platform: options.platform });
+    changeLaunchAtLogin(enabled, loginItem);
     refreshPopover();
   }
 

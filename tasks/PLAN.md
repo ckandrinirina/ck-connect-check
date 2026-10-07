@@ -101,6 +101,7 @@
 | T-97 | The interface names the password store correctly on each platform | done | S | T-94 |
 | T-98 | `npm run make:win` builds a Windows Setup.exe that installs and launches the app | done | M | T-91, T-94 |
 | T-99 | Version 1.1.0 releases a Windows Setup.exe beside the Mac build, and the download page offers both | done | M | T-93, T-95, T-96, T-97, T-98 |
+| T-100 | The Launch at login switch stays on and the Mac starts the app at login | done | M | — |
 
 ## T-01 Set the project up so tests can run
 
@@ -4957,3 +4958,27 @@ T-99 · status: done · size: M · needs: T-93, T-95, T-96, T-97, T-98 · files:
 - [x] Add the Windows job and shared Release step to the workflow
 - [x] Add the Windows download button and SmartScreen steps to the site
 - [x] Update README and bump the version to 1.1.0
+
+## T-100 The Launch at login switch stays on and the Mac starts the app at login
+
+T-100 · status: done · size: M · needs: — · files: src/main/login-item.ts, src/main/platform.ts, src/main/main.ts, test/main/login-item.test.ts, test/main/main.test.ts, test/main/platform.test.ts
+
+Cause: the shipped bundle has no code signature, and Electron 33 registers macOS login items through SMAppService, which refuses an unsigned app without an error. `getLoginItemSettings()` then reads `openAtLogin: false`, the panel is redrawn from that read, and the switch flips back unchecked, so pressing it seems to do nothing. The first-run default in `applyFirstRunLaunchAtLogin` failed the same way.
+
+### Acceptance
+- [x] On macOS, turning the switch on writes `~/Library/LaunchAgents/com.ckandrinirina.connect-check.plist` with `Label` set to the bundle id, `RunAtLoad` true, and `ProgramArguments` of `/usr/bin/open`, `-a` and the `.app` bundle path taken from `process.execPath`
+- [x] On macOS, turning the switch off deletes that plist, and turning it off when no plist exists does not throw
+- [x] On macOS, `getLaunchAtLogin` returns true only when that plist exists and names the running bundle, and returns false when the plist is missing or names another path
+- [x] On macOS, neither `app.setLoginItemSettings` nor `app.getLoginItemSettings` is called
+- [x] On Windows, the existing Squirrel registration through `app.setLoginItemSettings` with the stub path is unchanged, and the existing Windows tests still pass
+- [x] After `switchLaunchAtLogin(true)` on macOS, the model pushed to the panel has `launchAtLogin: true`
+- [x] A write that fails (for example an unwritable LaunchAgents folder) is logged, does not crash the main process, and the next model reads `launchAtLogin: false`
+- [x] The home directory and file system are injected, so the tests never touch the real `~/Library/LaunchAgents`
+
+### Tasks
+- [x] Failing tests in test/main/login-item.test.ts for the macOS plist write, delete and read, and for Windows being unchanged
+- [x] Add a `loginItemByLaunchAgent` trait to `platformTraits` (true on darwin)
+- [x] Build the plist XML in a pure function from the bundle id and bundle path, escaping XML characters in the path
+- [x] Write, delete and read the plist in `setLaunchAtLogin` / `getLaunchAtLogin` behind that trait, creating `~/Library/LaunchAgents` if it is missing
+- [x] Catch and log write failures in `switchLaunchAtLogin` and `applyFirstRunLaunchAtLogin` so the panel is redrawn from a fresh read
+- [x] Manual check on the installed unsigned 1.1.x build: the switch stays on, the plist exists, and the app starts after logging out and back in

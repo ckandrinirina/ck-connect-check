@@ -1,4 +1,9 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -3413,13 +3418,19 @@ describe("startMenuBarApp — saying a Set was saved", () => {
   });
 });
 
+/** The LaunchAgent macOS reads at login, under a scratch home. */
+function launchAgentIn(home: string): string {
+  return join(home, "Library", "LaunchAgents", `${APP_ID}.plist`);
+}
+
 describe("startMenuBarApp — the Launch at login switch", () => {
+  let home: string;
+
   beforeEach(() => {
     vi.useFakeTimers();
     electron.on.mockClear();
     electron.setLoginItemSettings.mockClear();
-    electron.loginItem.openAtLogin = false;
-    electron.loginItem.refuses = false;
+    home = mkdtempSync(join(tmpdir(), "ck-connect-check-home-"));
   });
 
   afterEach(() => {
@@ -3435,6 +3446,8 @@ describe("startMenuBarApp — the Launch at login switch", () => {
       configPath: MISSING_CONFIG,
       client: countingClient(),
       popover,
+      platform: "darwin",
+      homeDir: home,
     });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -3443,61 +3456,84 @@ describe("startMenuBarApp — the Launch at login switch", () => {
   }
 
   it("puts what the system holds on the panel's model", async () => {
-    electron.loginItem.openAtLogin = true;
-
     const { app, popover } = await settledApp();
 
-    expect(latest(popover).launchAtLogin).toBe(true);
+    expect(latest(popover).launchAtLogin).toBe(false);
     app.stop();
   });
 
-  it("registers the login item when the switch is checked", async () => {
+  it("writes the LaunchAgent when the switch is checked, and the switch stays on", async () => {
     const { app, popover } = await settledApp();
 
     app.setLaunchAtLogin(true);
 
-    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
-      openAtLogin: true,
-    });
+    expect(existsSync(launchAgentIn(home))).toBe(true);
+    expect(electron.setLoginItemSettings).not.toHaveBeenCalled();
     expect(latest(popover).launchAtLogin).toBe(true);
     app.stop();
   });
 
-  it("drops the login item when the switch is unchecked", async () => {
-    electron.loginItem.openAtLogin = true;
-
+  it("removes the LaunchAgent when the switch is unchecked", async () => {
     const { app, popover } = await settledApp();
+    app.setLaunchAtLogin(true);
 
     app.setLaunchAtLogin(false);
 
-    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
-      openAtLogin: false,
-    });
+    expect(existsSync(launchAgentIn(home))).toBe(false);
     expect(latest(popover).launchAtLogin).toBe(false);
     app.stop();
   });
 
-  it("re-reads the system after a change, so a refusal shows unchecked", async () => {
-    electron.loginItem.refuses = true;
-
+  it("logs a write that fails and redraws the switch off, without throwing", async () => {
+    // A file where `~/Library` should be: the folder can never be created.
+    writeFileSync(join(home, "Library"), "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { app, popover } = await settledApp();
     const pushes = popover.models.length;
 
-    app.setLaunchAtLogin(true);
+    expect(() => app.setLaunchAtLogin(true)).not.toThrow();
 
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not change launch at login"),
+    );
     expect(popover.models.length).toBeGreaterThan(pushes);
     expect(latest(popover).launchAtLogin).toBe(false);
+    warn.mockRestore();
+    app.stop();
+  });
+
+  it("still goes through Electron on Windows, and re-reads it after a refusal", async () => {
+    electron.loginItem.openAtLogin = false;
+    electron.loginItem.refuses = true;
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+      platform: "win32",
+      homeDir: home,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    app.setLaunchAtLogin(true);
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ openAtLogin: true }),
+    );
+    expect(latest(popover).launchAtLogin).toBe(false);
+    electron.loginItem.refuses = false;
     app.stop();
   });
 });
 
 describe("startMenuBarApp — turning Launch at login on the first time", () => {
+  let home: string;
+
   beforeEach(() => {
     vi.useFakeTimers();
     electron.setLoginItemSettings.mockClear();
-    electron.loginItem.openAtLogin = false;
-    electron.loginItem.refuses = false;
     electron.packaged = true;
+    home = mkdtempSync(join(tmpdir(), "ck-connect-check-home-"));
   });
 
   afterEach(() => {
@@ -3518,48 +3554,43 @@ describe("startMenuBarApp — turning Launch at login on the first time", () => 
       .launchAtLoginDefaulted;
   }
 
-  it("registers the login item and records it on a packaged first launch", () => {
+  function launch(configPath: string): ReturnType<typeof startMenuBarApp> {
+    return startMenuBarApp({
+      configPath,
+      client: countingClient(),
+      platform: "darwin",
+      homeDir: home,
+    });
+  }
+
+  it("writes the LaunchAgent and records it on a packaged first launch", () => {
     const path = configHolding({});
 
-    const app = startMenuBarApp({ configPath: path, client: countingClient() });
+    const app = launch(path);
 
-    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
-      openAtLogin: true,
-    });
+    expect(existsSync(launchAgentIn(home))).toBe(true);
     expect(storedFlag(path)).toBe(true);
     app.stop();
   });
 
-  it("registers it when no config file exists yet", () => {
+  it("writes it when no config file exists yet", () => {
     const path = scratchConfig();
 
-    const app = startMenuBarApp({ configPath: path, client: countingClient() });
+    const app = launch(path);
 
-    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
-      openAtLogin: true,
-    });
+    expect(existsSync(launchAgentIn(home))).toBe(true);
     expect(storedFlag(path)).toBe(true);
     app.stop();
   });
 
-  it.each([
-    [true, false],
-    [true, true],
-    [false, false],
-    [false, true],
-  ])(
-    "leaves the login item alone once the flag is %s, registered: %s",
-    (flag, registered) => {
-      electron.loginItem.openAtLogin = registered;
+  it.each([true, false])(
+    "leaves the login item alone once the flag is %s",
+    (flag) => {
       const path = configHolding({ launchAtLoginDefaulted: flag });
 
-      const app = startMenuBarApp({
-        configPath: path,
-        client: countingClient(),
-      });
+      const app = launch(path);
 
-      expect(electron.setLoginItemSettings).not.toHaveBeenCalled();
-      expect(electron.loginItem.openAtLogin).toBe(registered);
+      expect(existsSync(launchAgentIn(home))).toBe(false);
       app.stop();
     },
   );
@@ -3568,10 +3599,23 @@ describe("startMenuBarApp — turning Launch at login on the first time", () => 
     electron.packaged = false;
     const path = configHolding({});
 
-    const app = startMenuBarApp({ configPath: path, client: countingClient() });
+    const app = launch(path);
 
-    expect(electron.setLoginItemSettings).not.toHaveBeenCalled();
+    expect(existsSync(launchAgentIn(home))).toBe(false);
     expect(storedFlag(path)).toBeUndefined();
     app.stop();
+  });
+
+  it("starts anyway when the first-run LaunchAgent cannot be written", () => {
+    writeFileSync(join(home, "Library"), "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const path = configHolding({});
+
+    expect(() => launch(path).stop()).not.toThrow();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not change launch at login"),
+    );
+    warn.mockRestore();
   });
 });

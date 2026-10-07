@@ -29,6 +29,12 @@ export interface PlatformTraits {
    * its own `app-<version>` folder and removes the old one on update.
    */
   installedBySquirrel: boolean;
+  /**
+   * Whether the login item is the app's own LaunchAgent plist rather than
+   * Electron's registration — on macOS Electron goes through SMAppService,
+   * which silently refuses an unsigned bundle.
+   */
+  loginItemByLaunchAgent: boolean;
 }
 
 /** The answers for `platform`, the running one by default. */
@@ -43,6 +49,7 @@ export function platformTraits(
     hasDock: platform === "darwin",
     needsAppUserModelId: windows,
     installedBySquirrel: windows,
+    loginItemByLaunchAgent: platform === "darwin",
   };
 }
 

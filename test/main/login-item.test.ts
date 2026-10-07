@@ -1,3 +1,14 @@
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getLaunchAtLogin, setLaunchAtLogin } from '../../src/main/login-item.js';
@@ -15,6 +26,9 @@ vi.mock('electron', () => ({
   },
 }));
 
+/** A platform whose login item Electron still owns. */
+const ELECTRON_MANAGED = { platform: 'linux' } as const;
+
 describe('setLaunchAtLogin', () => {
   beforeEach(() => {
     electron.setLoginItemSettings.mockClear();
@@ -22,14 +36,14 @@ describe('setLaunchAtLogin', () => {
   });
 
   it('registers the app with the login-item API when enabled', () => {
-    setLaunchAtLogin(true);
+    setLaunchAtLogin(true, ELECTRON_MANAGED);
 
     expect(electron.setLoginItemSettings).toHaveBeenCalledTimes(1);
     expect(electron.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true });
   });
 
   it('clears the registration when disabled', () => {
-    setLaunchAtLogin(false);
+    setLaunchAtLogin(false, ELECTRON_MANAGED);
 
     expect(electron.setLoginItemSettings).toHaveBeenCalledTimes(1);
     expect(electron.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: false });
@@ -46,21 +60,21 @@ describe('getLaunchAtLogin', () => {
   it('reports true while the app is registered, so a menu can show it checked', () => {
     electron.getLoginItemSettings.mockReturnValue({ openAtLogin: true });
 
-    expect(getLaunchAtLogin()).toBe(true);
+    expect(getLaunchAtLogin(ELECTRON_MANAGED)).toBe(true);
   });
 
   it('reports false while the app is not registered', () => {
     electron.getLoginItemSettings.mockReturnValue({ openAtLogin: false });
 
-    expect(getLaunchAtLogin()).toBe(false);
+    expect(getLaunchAtLogin(ELECTRON_MANAGED)).toBe(false);
   });
 
   it('reads the setting on every call rather than caching the first answer', () => {
     electron.getLoginItemSettings.mockReturnValue({ openAtLogin: false });
-    expect(getLaunchAtLogin()).toBe(false);
+    expect(getLaunchAtLogin(ELECTRON_MANAGED)).toBe(false);
 
     electron.getLoginItemSettings.mockReturnValue({ openAtLogin: true });
-    expect(getLaunchAtLogin()).toBe(true);
+    expect(getLaunchAtLogin(ELECTRON_MANAGED)).toBe(true);
 
     expect(electron.getLoginItemSettings).toHaveBeenCalledTimes(2);
   });
@@ -69,7 +83,7 @@ describe('getLaunchAtLogin', () => {
     // Electron's typings promise `openAtLogin`, the platform does not always deliver it.
     electron.getLoginItemSettings.mockReturnValue({} as { openAtLogin: boolean });
 
-    expect(getLaunchAtLogin()).toBe(false);
+    expect(getLaunchAtLogin(ELECTRON_MANAGED)).toBe(false);
   });
 });
 
@@ -132,14 +146,124 @@ describe("launch at login on Windows", () => {
     });
   });
 
-  it("leaves macOS on the bare registration it has always used", () => {
-    setLaunchAtLogin(true, {
-      platform: "darwin",
-      execPath: "/Applications/ck-connect-check.app/Contents/MacOS/ck-connect-check",
-    });
+});
 
-    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
-      openAtLogin: true,
-    });
+describe("launch at login on macOS", () => {
+  const BUNDLE = "/Applications/ck-connect-check.app";
+  const EXEC = `${BUNDLE}/Contents/MacOS/ck-connect-check`;
+  const LABEL = "com.ckandrinirina.connect-check";
+
+  let home: string;
+
+  function target(execPath = EXEC) {
+    return { platform: "darwin" as const, execPath, homeDir: home };
+  }
+
+  function agentPath(): string {
+    return join(home, "Library", "LaunchAgents", `${LABEL}.plist`);
+  }
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "ck-login-item-"));
+    electron.setLoginItemSettings.mockClear();
+    electron.getLoginItemSettings.mockClear();
+  });
+
+  it("writes a LaunchAgent that opens the app bundle at login", () => {
+    setLaunchAtLogin(true, target());
+
+    const plist = readFileSync(agentPath(), "utf8");
+    expect(plist).toContain(`<key>Label</key>\n  <string>${LABEL}</string>`);
+    expect(plist).toMatch(/<key>RunAtLoad<\/key>\s*<true\/>/);
+    expect(plist).toMatch(
+      new RegExp(
+        "<key>ProgramArguments</key>\\s*<array>\\s*" +
+          "<string>/usr/bin/open</string>\\s*" +
+          "<string>-a</string>\\s*" +
+          `<string>${BUNDLE}</string>\\s*` +
+          "</array>",
+      ),
+    );
+  });
+
+  it("creates the LaunchAgents folder when the account has none yet", () => {
+    expect(existsSync(join(home, "Library"))).toBe(false);
+
+    setLaunchAtLogin(true, target());
+
+    expect(existsSync(agentPath())).toBe(true);
+  });
+
+  it("escapes XML characters in the bundle path", () => {
+    const odd = "/Users/ada/Apps & <Tools>/ck-connect-check.app";
+
+    setLaunchAtLogin(true, target(`${odd}/Contents/MacOS/ck-connect-check`));
+
+    expect(readFileSync(agentPath(), "utf8")).toContain(
+      "<string>/Users/ada/Apps &amp; &lt;Tools&gt;/ck-connect-check.app</string>",
+    );
+    expect(getLaunchAtLogin(target(`${odd}/Contents/MacOS/ck-connect-check`))).toBe(true);
+  });
+
+  it("deletes the LaunchAgent when turned off", () => {
+    setLaunchAtLogin(true, target());
+
+    setLaunchAtLogin(false, target());
+
+    expect(existsSync(agentPath())).toBe(false);
+  });
+
+  it("turning off when nothing is registered does not throw", () => {
+    expect(() => setLaunchAtLogin(false, target())).not.toThrow();
+  });
+
+  it("reads true while the LaunchAgent names the running bundle", () => {
+    setLaunchAtLogin(true, target());
+
+    expect(getLaunchAtLogin(target())).toBe(true);
+  });
+
+  it("reads false while there is no LaunchAgent", () => {
+    expect(getLaunchAtLogin(target())).toBe(false);
+  });
+
+  it("reads false when the LaunchAgent names another copy of the app", () => {
+    setLaunchAtLogin(true, target("/Users/ada/Downloads/ck-connect-check.app/Contents/MacOS/ck-connect-check"));
+
+    expect(getLaunchAtLogin(target())).toBe(false);
+  });
+
+  it("reads the file on every call rather than caching the first answer", () => {
+    expect(getLaunchAtLogin(target())).toBe(false);
+
+    setLaunchAtLogin(true, target());
+    expect(getLaunchAtLogin(target())).toBe(true);
+
+    setLaunchAtLogin(false, target());
+    expect(getLaunchAtLogin(target())).toBe(false);
+  });
+
+  it("never goes through Electron's login-item API, which refuses an unsigned app", () => {
+    setLaunchAtLogin(true, target());
+    getLaunchAtLogin(target());
+    setLaunchAtLogin(false, target());
+
+    expect(electron.setLoginItemSettings).not.toHaveBeenCalled();
+    expect(electron.getLoginItemSettings).not.toHaveBeenCalled();
+  });
+
+  it("throws when the LaunchAgents folder cannot be written", () => {
+    const agents = join(home, "Library", "LaunchAgents");
+    mkdirSync(agents, { recursive: true });
+    chmodSync(agents, 0o500);
+
+    expect(() => setLaunchAtLogin(true, target())).toThrow();
+    expect(getLaunchAtLogin(target())).toBe(false);
+  });
+
+  it("throws when a file stands where the folder should be", () => {
+    writeFileSync(join(home, "Library"), "");
+
+    expect(() => setLaunchAtLogin(true, target())).toThrow();
   });
 });
