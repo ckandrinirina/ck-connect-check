@@ -56,6 +56,9 @@ const electron = vi.hoisted(() => ({
   })),
   /** The image each `new Tray(…)` was constructed with, in order. */
   trayImages: [] as unknown[],
+  /** What macOS holds as the login item; only `setLoginItemSettings` moves it. */
+  loginItem: { openAtLogin: false, refuses: false },
+  setLoginItemSettings: vi.fn(),
 }));
 
 /**
@@ -91,6 +94,17 @@ vi.mock("electron", () => {
       on: electron.appOn,
       whenReady: vi.fn(() => Promise.resolve()),
       quit: electron.appQuit,
+      getLoginItemSettings: () => ({
+        openAtLogin: electron.loginItem.openAtLogin,
+      }),
+      setLoginItemSettings: (settings: { openAtLogin: boolean }) => {
+        electron.setLoginItemSettings(settings);
+
+        // A registration the system turned down leaves the item as it was.
+        if (!electron.loginItem.refuses) {
+          electron.loginItem.openAtLogin = settings.openAtLogin;
+        }
+      },
     },
     Menu: { buildFromTemplate: electron.buildFromTemplate },
     Tray,
@@ -3239,6 +3253,84 @@ describe("startMenuBarApp — saying a Set was saved", () => {
     expect(latest(popover).planLimit.saved).toBe("");
     expect(latest(popover).planDays.saved).toBe("");
 
+    app.stop();
+  });
+});
+
+describe("startMenuBarApp — the Launch at login switch", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    electron.on.mockClear();
+    electron.setLoginItemSettings.mockClear();
+    electron.loginItem.openAtLogin = false;
+    electron.loginItem.refuses = false;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function settledApp(): Promise<{
+    app: ReturnType<typeof startMenuBarApp>;
+    popover: RecordingPopover;
+  }> {
+    const popover = recordingPopover();
+    const app = startMenuBarApp({
+      configPath: MISSING_CONFIG,
+      client: countingClient(),
+      popover,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    return { app, popover };
+  }
+
+  it("puts what the system holds on the panel's model", async () => {
+    electron.loginItem.openAtLogin = true;
+
+    const { app, popover } = await settledApp();
+
+    expect(latest(popover).launchAtLogin).toBe(true);
+    app.stop();
+  });
+
+  it("registers the login item when the switch is checked", async () => {
+    const { app, popover } = await settledApp();
+
+    app.setLaunchAtLogin(true);
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: true,
+    });
+    expect(latest(popover).launchAtLogin).toBe(true);
+    app.stop();
+  });
+
+  it("drops the login item when the switch is unchecked", async () => {
+    electron.loginItem.openAtLogin = true;
+
+    const { app, popover } = await settledApp();
+
+    app.setLaunchAtLogin(false);
+
+    expect(electron.setLoginItemSettings).toHaveBeenCalledWith({
+      openAtLogin: false,
+    });
+    expect(latest(popover).launchAtLogin).toBe(false);
+    app.stop();
+  });
+
+  it("re-reads the system after a change, so a refusal shows unchecked", async () => {
+    electron.loginItem.refuses = true;
+
+    const { app, popover } = await settledApp();
+    const pushes = popover.models.length;
+
+    app.setLaunchAtLogin(true);
+
+    expect(popover.models.length).toBeGreaterThan(pushes);
+    expect(latest(popover).launchAtLogin).toBe(false);
     app.stop();
   });
 });

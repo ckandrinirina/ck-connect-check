@@ -2942,3 +2942,52 @@ describe("buildPopoverModel — the forfait alert", () => {
     }
   });
 });
+
+describe("buildPopoverModel — launch at login", () => {
+  it("carries the login item as on when the system says it is", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      launchAtLogin: true,
+      clock,
+    });
+
+    expect(model.launchAtLogin).toBe(true);
+  });
+
+  it("carries it as off when the system says it is not", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(20_000_000_000),
+      launchAtLogin: false,
+      clock,
+    });
+
+    expect(model.launchAtLogin).toBe(false);
+  });
+
+  it("carries it before the first reading, too", () => {
+    const model = buildPopoverModel({
+      result: null,
+      lastReading: null,
+      config: configWithLimit(null),
+      launchAtLogin: true,
+      clock,
+    });
+
+    expect(model.launchAtLogin).toBe(true);
+  });
+
+  it("reads as off when nobody said", () => {
+    const model = buildPopoverModel({
+      result: online(),
+      lastReading: null,
+      config: configWithLimit(null),
+      clock,
+    });
+
+    expect(model.launchAtLogin).toBe(false);
+  });
+});

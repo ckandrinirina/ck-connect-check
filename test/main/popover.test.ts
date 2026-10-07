@@ -9,6 +9,7 @@ import {
   POPOVER_HEIGHT,
   POPOVER_SAVE_PASSWORD_CHANNEL,
   POPOVER_SET_BLOCKED_CHANNEL,
+  POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL,
   POPOVER_SET_TAB_CHANNEL,
   POPOVER_SYNC_CHANNEL,
   POPOVER_TABS,
@@ -1027,5 +1028,104 @@ describe("createPopover — the Settings tab", () => {
     expect(pushedTabs(window)).toEqual(["devices"]);
 
     popover.destroy();
+  });
+});
+
+/**
+ * The Settings tab's Launch at login switch. The channel ends in a system-level
+ * registration, so it is held to the same two checks as every other write:
+ * this panel's own page, and a payload that is exactly a boolean.
+ */
+describe("createPopover — the Launch at login switch", () => {
+  beforeEach(() => {
+    electron.windows.length = 0;
+    electron.channels.clear();
+  });
+
+  it("hands a checked box to the caller as true", () => {
+    const onSetLaunchAtLogin = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetLaunchAtLogin,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, true);
+
+    expect(onSetLaunchAtLogin).toHaveBeenCalledTimes(1);
+    expect(onSetLaunchAtLogin).toHaveBeenCalledWith(true);
+
+    popover.destroy();
+  });
+
+  it("hands an unchecked box to the caller as false", () => {
+    const onSetLaunchAtLogin = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetLaunchAtLogin,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, false);
+
+    expect(onSetLaunchAtLogin).toHaveBeenCalledWith(false);
+
+    popover.destroy();
+  });
+
+  it("ignores the switch from any window but its own page", () => {
+    const onSetLaunchAtLogin = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetLaunchAtLogin,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, { someone: "else" }, true);
+
+    expect(onSetLaunchAtLogin).not.toHaveBeenCalled();
+
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, true);
+
+    expect(onSetLaunchAtLogin).toHaveBeenCalledTimes(1);
+
+    popover.destroy();
+  });
+
+  it("drops a message that is not a boolean", () => {
+    const onSetLaunchAtLogin = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetLaunchAtLogin,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    for (const payload of ["true", 1, null, undefined, { enabled: true }]) {
+      send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, payload);
+    }
+
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, false);
+
+    expect(onSetLaunchAtLogin).toHaveBeenCalledTimes(1);
+    expect(onSetLaunchAtLogin).toHaveBeenCalledWith(false);
+
+    popover.destroy();
+  });
+
+  it("stops listening for the switch once the panel is destroyed", () => {
+    const onSetLaunchAtLogin = vi.fn();
+    const popover = createPopover({
+      htmlPath: "/tmp/index.html",
+      onSetLaunchAtLogin,
+    });
+    popover.show(TRAY_BOUNDS);
+
+    const sender = lastWindow().webContents;
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, sender, true);
+    popover.destroy();
+
+    send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, sender, true);
+
+    expect(onSetLaunchAtLogin).toHaveBeenCalledTimes(1);
   });
 });

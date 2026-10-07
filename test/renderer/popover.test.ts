@@ -1062,6 +1062,7 @@ interface FakeBridge {
   chooseForfait: ReturnType<typeof vi.fn>;
   setBlocked: ReturnType<typeof vi.fn>;
   setTab: ReturnType<typeof vi.fn>;
+  setLaunchAtLogin: ReturnType<typeof vi.fn>;
 }
 
 /** The preload bridge, replaced by a recorder — no Electron, no IPC. */
@@ -1075,6 +1076,7 @@ function stubBridge(): FakeBridge {
     chooseForfait: vi.fn(),
     setBlocked: vi.fn(),
     setTab: vi.fn(),
+    setLaunchAtLogin: vi.fn(),
   };
 
   window.popoverBridge = bridge;
@@ -4570,5 +4572,83 @@ describe("the forfait alert banner", () => {
 
   it("costs no height while it is hidden", () => {
     expect(cssBody(".alert-banner[hidden]")).toMatch(/display:\s*none/);
+  });
+});
+
+describe("the Launch at login switch", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = stubBridge();
+    apply(modelUsing(10 * GB));
+  });
+
+  /** The model the panel is pushed, with the login item as the system read it. */
+  function modelLaunching(launchAtLogin: boolean): PopoverModel {
+    return { ...modelUsing(10 * GB), launchAtLogin };
+  }
+
+  function launchSwitch(): HTMLInputElement {
+    const input = document.querySelector<HTMLInputElement>(
+      "[data-launch-at-login]",
+    );
+
+    if (input === null) {
+      throw new Error("the panel has no Launch at login switch");
+    }
+
+    return input;
+  }
+
+  it("is a checkbox on the Settings pane, labelled Launch at login", () => {
+    const input = launchSwitch();
+
+    expect(input.type).toBe("checkbox");
+    expect(input.closest("[data-pane]")).toBe(settingsPane());
+    expect(input.labels?.[0]?.textContent?.trim()).toBe("Launch at login");
+  });
+
+  it("is checked exactly when the model says the login item is on", () => {
+    apply(modelLaunching(true));
+    expect(launchSwitch().checked).toBe(true);
+
+    apply(modelLaunching(false));
+    expect(launchSwitch().checked).toBe(false);
+  });
+
+  it("asks for the login item when checked, and drops it when unchecked", () => {
+    apply(modelLaunching(false));
+    openSettings();
+
+    launchSwitch().click();
+    expect(bridge.setLaunchAtLogin).toHaveBeenLastCalledWith(true);
+
+    launchSwitch().click();
+    expect(bridge.setLaunchAtLogin).toHaveBeenLastCalledWith(false);
+    expect(bridge.setLaunchAtLogin).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends one message per press however many models have arrived", () => {
+    apply(modelLaunching(false));
+    apply(modelLaunching(false));
+    apply(modelLaunching(false));
+    openSettings();
+
+    launchSwitch().click();
+
+    expect(bridge.setLaunchAtLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows unchecked again when the system refused the registration", () => {
+    apply(modelLaunching(false));
+    openSettings();
+
+    launchSwitch().click();
+    expect(launchSwitch().checked).toBe(true);
+
+    // The re-read after the change came back off.
+    apply(modelLaunching(false));
+
+    expect(launchSwitch().checked).toBe(false);
   });
 });
