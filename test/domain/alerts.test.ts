@@ -8,6 +8,7 @@ import {
   decideAlerts,
   type AlertDecision,
   type AlertInput,
+  type AlertReading,
   type AnnouncedAlerts,
 } from "../../src/domain/alerts.js";
 import type { Clock } from "../../src/domain/quota.js";
@@ -96,10 +97,14 @@ describe("the low state", () => {
   });
 
   it("is never reported with no cap, however little is said to be left", () => {
-    for (const planLimitBytes of [null, undefined, 0]) {
-      const decision = decide(NOON, {
-        reading: { remainingBytes: 0, planLimitBytes },
-      });
+    const readings: AlertReading[] = [
+      { remainingBytes: 0 },
+      { remainingBytes: 0, planLimitBytes: null },
+      { remainingBytes: 0, planLimitBytes: 0 },
+    ];
+
+    for (const reading of readings) {
+      const decision = decide(NOON, { reading });
 
       expect(decision.banner).toBeNull();
       expect(lowNotices(decision)).toBe(0);
