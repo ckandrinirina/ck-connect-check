@@ -1101,7 +1101,11 @@ describe("createPopover — the Launch at login switch", () => {
     popover.show(TRAY_BOUNDS);
 
     for (const payload of ["true", 1, null, undefined, { enabled: true }]) {
-      send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, payload);
+      send(
+        POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL,
+        lastWindow().webContents,
+        payload,
+      );
     }
 
     send(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, lastWindow().webContents, false);

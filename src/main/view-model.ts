@@ -589,6 +589,8 @@ export interface PopoverModel {
   forfait: PopoverForfait | null;
   /** The forfait banner, or null while there is nothing to warn about. */
   alert: PopoverAlert | null;
+  /** Whether macOS starts the app at login — the Settings switch's state. */
+  launchAtLogin: boolean;
   /**
    * Why there is no figure, in one sentence. Empty whenever there is one.
    *
@@ -633,6 +635,8 @@ export interface PopoverInput {
   planDaysSavedAt?: Date | undefined;
   /** Why the last Confirm on the new-plan prompt was refused, if one was. */
   planCapProblem?: PlanCapRefusal | undefined;
+  /** What the system holds as the login item; read fresh by the caller. */
+  launchAtLogin?: boolean;
   /** Injected so the reset countdown and the staleness age are testable. */
   clock?: Clock;
 }
@@ -1184,6 +1188,7 @@ function emptyModel(
   planDays: PopoverPlanDays,
   pace: PopoverPace | null,
   planCapPrompt: PopoverPlanCapPrompt | null,
+  launchAtLogin: boolean,
 ): PopoverModel {
   return {
     monthTotal: NO_VALUE,
@@ -1210,6 +1215,7 @@ function emptyModel(
     controls: ALL_CONTROLS,
     forfait: null,
     alert: null,
+    launchAtLogin,
     // Nothing has been read, so nothing has gone wrong: the dial's own prompt
     // already says the panel is waiting rather than failing.
     notice: "",
@@ -1857,6 +1863,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
   // different plan leaves the stored one unbelievable, and an unbelievable cap
   // reads as no cap: the dial and the share go, the tier 1 pace stays.
   const cap = confirmedPlanLimit(config);
+  const launchAtLogin = input.launchAtLogin ?? false;
 
   if (snapshot === undefined) {
     return emptyModel(
@@ -1871,6 +1878,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
       // and the pace is measured on what is left *now*.
       null,
       planCapPrompt,
+      launchAtLogin,
     );
   }
 
@@ -1914,6 +1922,7 @@ export function buildPopoverModel(input: PopoverInput): PopoverModel {
     controls: half.controls,
     forfait: half.forfait,
     alert: half.alert,
+    launchAtLogin,
     notice: half.notice,
   };
 }

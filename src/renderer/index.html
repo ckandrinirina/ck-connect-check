@@ -476,6 +476,15 @@
       <p class="plan-limit-error" data-field="planDaysError" role="status"></p>
 
       <!--
+        Checked from the model, which reads macOS on every build — never from
+        the press — so a registration the system refused shows unchecked.
+      -->
+      <label class="plan-limit">
+        <input type="checkbox" data-launch-at-login />
+        <span class="plan-limit-label">Launch at login</span>
+      </label>
+
+      <!--
         Shown only when nothing is stored: the password goes straight to the
         Keychain through the main process, and is never written to the config.
         On a pane nobody has selected it would be undiscoverable on its own, so

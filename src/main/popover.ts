@@ -67,6 +67,14 @@ export const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
  */
 export const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
 
+/**
+ * The Settings tab's Launch at login switch, carrying the state asked for.
+ * The page states what the system holds only after the model is re-read, so a
+ * registration macOS refused shows unchecked.
+ */
+export const POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL =
+  "popover:set-launch-at-login";
+
 /** The panes the strip offers, in the order it draws them. */
 export const POPOVER_TABS = ["usage", "devices", "settings"] as const;
 
@@ -133,6 +141,8 @@ export interface PopoverOptions {
    * `main.ts`.
    */
   onSetBlocked?: (request: DeviceBlockRequest) => void;
+  /** The user checked (`true`) or unchecked (`false`) Launch at login. */
+  onSetLaunchAtLogin?: (enabled: boolean) => void;
 }
 
 /**
@@ -295,6 +305,16 @@ export function createPopover(options: PopoverOptions = {}): Popover {
     }
   }
 
+  function onSetLaunchAtLoginMessage(
+    event: IpcMainEvent,
+    payload: unknown,
+  ): void {
+    // Ends in a system-level registration, so only an exact boolean passes.
+    if (fromThisPanel(event) && typeof payload === "boolean") {
+      options.onSetLaunchAtLogin?.(payload);
+    }
+  }
+
   function onSetBlockedMessage(event: IpcMainEvent, payload: unknown): void {
     if (!fromThisPanel(event)) {
       return;
@@ -315,6 +335,7 @@ export function createPopover(options: PopoverOptions = {}): Popover {
   ipcMain.on(POPOVER_CHOOSE_FORFAIT_CHANNEL, onChooseForfaitMessage);
   ipcMain.on(POPOVER_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
   ipcMain.on(POPOVER_SET_TAB_CHANNEL, onSetTabMessage);
+  ipcMain.on(POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL, onSetLaunchAtLoginMessage);
 
   /**
    * Pushes the current model into the page. The renderer exposes a single
@@ -533,6 +554,10 @@ export function createPopover(options: PopoverOptions = {}): Popover {
       );
       ipcMain.removeListener(POPOVER_SET_BLOCKED_CHANNEL, onSetBlockedMessage);
       ipcMain.removeListener(POPOVER_SET_TAB_CHANNEL, onSetTabMessage);
+      ipcMain.removeListener(
+        POPOVER_SET_LAUNCH_AT_LOGIN_CHANNEL,
+        onSetLaunchAtLoginMessage,
+      );
       alive()?.destroy();
       window = null;
     },

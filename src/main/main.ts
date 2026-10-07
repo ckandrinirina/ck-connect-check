@@ -50,6 +50,7 @@ import type {
 } from "../hilink/types.js";
 import { readInfoConso } from "../orange/portal.js";
 import { loadCredential, saveCredential } from "./credentials.js";
+import { getLaunchAtLogin, setLaunchAtLogin } from "./login-item.js";
 import {
   alertSituation,
   createNotifier,
@@ -208,6 +209,12 @@ export interface MenuBarApp {
    */
   setForfait(label: string): void;
   /**
+   * Turns the login item on or off, as the Settings switch asks, then redraws
+   * the panel from what macOS now holds. Exposed for the same reason as the
+   * others.
+   */
+  setLaunchAtLogin(enabled: boolean): void;
+  /**
    * Blocks or unblocks one device, having been asked to. Exposed for the same
    * reason {@link MenuBarApp.sync} is — it is what the window's control does,
    * and a test can drive it without an Electron window.
@@ -271,6 +278,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       },
       onChooseForfait: (label) => {
         setForfait(label);
+      },
+      onSetLaunchAtLogin: (enabled) => {
+        switchLaunchAtLogin(enabled);
       },
       // The pane has already confirmed it; what it costs the router is settled
       // in `setDeviceBlocked`, and a refusal there costs no request at all.
@@ -344,6 +354,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         planCapProblem,
         planLimitSavedAt,
         planDaysSavedAt,
+        // Read from macOS on every build: the user can remove the item from
+        // System Settings while the app runs, and there is no local copy.
+        launchAtLogin: getLaunchAtLogin(),
       }),
     );
   }
@@ -463,6 +476,15 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       console.warn(`could not record the plan length: ${String(error)}`);
     }
 
+    refreshPopover();
+  }
+
+  /**
+   * The switch's state is never taken from the press: the panel is redrawn from
+   * a fresh read, so a registration macOS refused shows unchecked.
+   */
+  function switchLaunchAtLogin(enabled: boolean): void {
+    setLaunchAtLogin(enabled);
     refreshPopover();
   }
 
@@ -1055,6 +1077,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     confirmPlanCap,
     setPlanDays,
     setForfait,
+    setLaunchAtLogin: switchLaunchAtLogin,
     setDeviceBlocked,
     stop() {
       clearInterval(staleCheck);

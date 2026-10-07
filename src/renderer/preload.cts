@@ -3,10 +3,10 @@
  *
  * The page runs under `default-src 'none'` with context isolation on, so it has
  * no `require`, no network and no Electron. This script runs beside it in the
- * isolated world and hands it exactly eight sends — start a sync, store a
+ * isolated world and hands it exactly nine sends — start a sync, store a
  * password, set the plan size, confirm the stored plan size, set the plan
- * length, name the forfait to measure, block or unblock a device, and say
- * which pane is showing — and
+ * length, name the forfait to measure, block or unblock a device, say which
+ * pane is showing, and turn launch at login on or off — and
  * nothing else: no `ipcRenderer`, no channel names, no way to reach a channel
  * this file does not name.
  *
@@ -29,6 +29,7 @@ const SET_PLAN_DAYS_CHANNEL = "popover:set-plan-days";
 const CHOOSE_FORFAIT_CHANNEL = "popover:choose-forfait";
 const POPOVER_SET_BLOCKED_CHANNEL = "popover:set-blocked";
 const POPOVER_SET_TAB_CHANNEL = "popover:set-tab";
+const SET_LAUNCH_AT_LOGIN_CHANNEL = "popover:set-launch-at-login";
 
 contextBridge.exposeInMainWorld("popoverBridge", {
   sync(): void {
@@ -66,6 +67,9 @@ contextBridge.exposeInMainWorld("popoverBridge", {
     // tells the main process, which needs it to decide whether the
     // authenticated device list is worth a request this tick.
     ipcRenderer.send(POPOVER_SET_TAB_CHANNEL, String(name));
+  },
+  setLaunchAtLogin(enabled: boolean): void {
+    ipcRenderer.send(SET_LAUNCH_AT_LOGIN_CHANNEL, enabled === true);
   },
   setBlocked(request: { mac: string; blocked: boolean }): void {
     // Rebuilt rather than forwarded, so nothing the page hangs off the object

@@ -68,6 +68,8 @@ export interface PopoverBridge {
    * authenticated device list is worth a request this tick.
    */
   setTab(name: string): void;
+  /** Ask the main process to turn the login item on or off. */
+  setLaunchAtLogin(enabled: boolean): void;
 }
 
 declare global {
@@ -620,6 +622,10 @@ function bindTabs(): void {
   }
 }
 
+function launchAtLoginSwitch(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>("[data-launch-at-login]");
+}
+
 function planCapConfirm(): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>("[data-plan-cap-confirm]");
 }
@@ -710,6 +716,15 @@ function bindControls(): void {
     });
   }
 
+  const launch = launchAtLoginSwitch();
+
+  if (launch !== null && launch.dataset["bound"] !== "true") {
+    launch.dataset["bound"] = "true";
+    launch.addEventListener("change", () => {
+      window.popoverBridge?.setLaunchAtLogin(launch.checked);
+    });
+  }
+
   const confirm = planCapConfirm();
 
   if (confirm !== null && confirm.dataset["bound"] !== "true") {
@@ -743,6 +758,14 @@ function applyPlanLimit(model: PopoverModel): void {
   document.documentElement.dataset["planLimit"] = model.planLimit.needsValue
     ? "unset"
     : "set";
+}
+
+function applyLaunchAtLogin(model: PopoverModel): void {
+  const input = launchAtLoginSwitch();
+
+  if (input !== null) {
+    input.checked = model.launchAtLogin;
+  }
 }
 
 /** The same, for the plan-length field beside it. */
@@ -1525,6 +1548,7 @@ window.applyPopoverModel = (model: PopoverModel): void => {
   applyPlanLimit(model);
   applyPlanDays(model);
   applyPlanCapPrompt(model);
+  applyLaunchAtLogin(model);
   applySavedMarks(model);
   applyRefusalMarks();
   applyPace(model);
