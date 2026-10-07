@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -15,12 +15,15 @@ describe("defaultConfigPath", () => {
   });
 
   it("falls back to the roaming profile under the home directory when %APPDATA% is unset", () => {
-    const path = defaultConfigPath("win32", {});
-
-    expect(path.startsWith(homedir())).toBe(true);
-    expect(
-      path.endsWith("\\AppData\\Roaming\\ck-connect-check\\config.json"),
-    ).toBe(true);
+    expect(defaultConfigPath("win32", {})).toBe(
+      win32.join(
+        homedir(),
+        "AppData",
+        "Roaming",
+        "ck-connect-check",
+        "config.json",
+      ),
+    );
   });
 
   it("keeps the macOS path under Application Support, whatever %APPDATA% says", () => {

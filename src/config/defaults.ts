@@ -6,11 +6,9 @@
  * `DataLimit` as `0MB`, so we are the only place that knows the real quota.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import type { AnnouncedAlerts } from "../domain/alerts.js";
 import type { AllowanceAnchor } from "../domain/allowance.js";
+import { userDataPath } from "../main/platform.js";
 
 /**
  * Where a stored plan value came from: read off the sync that detected the
@@ -162,22 +160,13 @@ export function defaultConfig(): AppConfig {
 }
 
 /**
- * Where the config lives for the real user. Resolved on call, never at import
- * time, and without Electron — so tests can ignore it and never touch the user
- * directory.
+ * Where the config lives for the real user — `%APPDATA%` on Windows,
+ * Application Support on macOS. Resolved on call, never at import time, and
+ * without Electron — so tests can ignore it and never touch the user directory.
  */
-export function defaultConfigPath(): string {
-  const home = homedir();
-
-  if (process.platform === "darwin") {
-    return join(
-      home,
-      "Library",
-      "Application Support",
-      APP_DIRECTORY_NAME,
-      CONFIG_FILE_NAME,
-    );
-  }
-
-  return join(home, ".config", APP_DIRECTORY_NAME, CONFIG_FILE_NAME);
+export function defaultConfigPath(
+  platform?: NodeJS.Platform,
+  env?: NodeJS.ProcessEnv,
+): string {
+  return userDataPath([APP_DIRECTORY_NAME, CONFIG_FILE_NAME], platform, env);
 }
