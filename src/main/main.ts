@@ -77,7 +77,7 @@ import {
   type DevicesModel,
 } from "./view-model.js";
 import { aboutMenuLabel, DEVICES_MENU_LABEL } from "./tray.js";
-import { createTrayGlyph, trayBarsFor } from "./tray-icon.js";
+import { createTrayDisplay, trayBarsFor } from "./tray-icon.js";
 import {
   createAllowanceSync,
   recordAnchor,
@@ -299,10 +299,10 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     load: () => loadCredential(configPath),
     save: (credential) => saveCredential(configPath, credential),
   };
-  // The glyph starts empty-handed rather than at full signal: no poll has
-  // answered yet, so claiming any bars would be inventing one.
-  const glyph = createTrayGlyph();
-  const tray = new Tray(glyph.imageFor(0));
+  // The signal glyph and a title on macOS, the usage badge and a tooltip on
+  // Windows, where nothing can sit beside a tray icon.
+  const display = createTrayDisplay(traits);
+  const tray = new Tray(display.initialImage);
   // One read for the native About panel and the panel's About section alike.
   const appInfo = readAppInfo();
   const popover =
@@ -706,7 +706,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
       // An unreachable router shows no bars — the title already says `offline`,
       // and a glyph still claiming a signal would contradict it.
-      glyph.apply(
+      display.showSignal(
         tray,
         result.online ? trayBarsFor(result.snapshot.status) : 0,
       );
@@ -1043,7 +1043,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
       refreshPopover();
       checkAlerts();
     },
-    onTitle: (title) => tray.setTitle(title),
+    onTitle: (title) => display.showTitle(tray, title),
   });
 
   // The panel is the only reason to poll quickly, so every way of opening or
@@ -1123,7 +1123,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
   tray.on("right-click", () => tray.popUpContextMenu(menu));
   bindTrayToPopover(tray, panel);
-  tray.setTitle(poller.title);
+  display.showTitle(tray, poller.title);
   refreshPopover();
   poller.start();
 

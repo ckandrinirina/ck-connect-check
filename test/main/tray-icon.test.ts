@@ -3,10 +3,16 @@ import { basename } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RouterStatus } from "../../src/hilink/types.js";
+import { platformTraits } from "../../src/main/platform.js";
+import { STARTUP_TRAY_TITLE } from "../../src/main/poller.js";
+import { NO_TRAY_VALUE, OFFLINE_TRAY_TITLE } from "../../src/main/tray.js";
+import { renderTrayBadge } from "../../src/main/tray-badge.js";
 import {
   TRAY_MAX_BARS,
+  createTrayDisplay,
   createTrayGlyph,
   trayBarsFor,
+  trayFaceFor,
   trayImageFor,
 } from "../../src/main/tray-icon.js";
 
@@ -23,6 +29,12 @@ const electron = vi.hoisted(() => ({
       this.template = value;
     },
   })),
+  createFromBitmap: vi.fn(
+    (bitmap: Buffer, size: { width: number; height: number }) => ({
+      bitmap,
+      size,
+    }),
+  ),
 }));
 
 vi.mock("electron", () => ({ nativeImage: electron }));
@@ -52,6 +64,7 @@ const LEVELS = [0, 1, 2, 3, 4];
 
 beforeEach(() => {
   electron.createFromPath.mockClear();
+  electron.createFromBitmap.mockClear();
 });
 
 describe("trayImageFor", () => {
@@ -206,5 +219,164 @@ describe("createTrayGlyph", () => {
     second.apply(secondTray, 4);
 
     expect(secondTray.setImage).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** The tray, reduced to every call a display makes on it. */
+function fakeFullTray() {
+  return { setImage: vi.fn(), setTitle: vi.fn(), setToolTip: vi.fn() };
+}
+
+/** The pixels of the image last handed to `setImage`, as a bitmap fake holds them. */
+function lastBadgePixels(tray: ReturnType<typeof fakeFullTray>): Uint8Array {
+  const calls = tray.setImage.mock.calls;
+  const image = calls[calls.length - 1]?.[0] as { bitmap: Buffer };
+
+  return new Uint8Array(image.bitmap);
+}
+
+describe("trayFaceFor", () => {
+  it.each([
+    { title: "8Go · 40%", percent: 40 },
+    { title: "12Go ⚠ 60%", percent: 60 },
+    { title: "⚠18Go 90%", percent: 90 },
+    { title: "999Go ⚠ 100%", percent: 100 },
+    { title: "0o · 0%", percent: 0 },
+  ])("reads $percent% out of $title", ({ title, percent }) => {
+    expect(trayFaceFor(title)).toEqual({ percent, tooltip: title });
+  });
+
+  it("keeps a volume with no share as the tooltip, with no figure for the badge", () => {
+    // No cap typed: the volume is the whole title, and a share of nothing is
+    // exactly what the dash refuses to invent.
+    expect(trayFaceFor("8Go")).toEqual({ percent: null, tooltip: "8Go" });
+  });
+
+  it("says the router is unreachable when the title is offline", () => {
+    const face = trayFaceFor(OFFLINE_TRAY_TITLE);
+
+    expect(face.percent).toBeNull();
+    expect(face.tooltip).toMatch(/router/i);
+    expect(face.tooltip).toMatch(/unreachable|not found|offline/i);
+  });
+
+  it("says a sync is needed when there is no figure yet", () => {
+    const face = trayFaceFor(NO_TRAY_VALUE);
+
+    expect(face.percent).toBeNull();
+    expect(face.tooltip).toMatch(/sync/i);
+  });
+
+  it("says it is waiting before the first reading", () => {
+    const face = trayFaceFor(STARTUP_TRAY_TITLE);
+
+    expect(face.percent).toBeNull();
+    expect(face.tooltip).toMatch(/waiting/i);
+  });
+});
+
+describe("createTrayDisplay — Windows", () => {
+  const windows = platformTraits("win32");
+
+  it("starts on the dash badge", () => {
+    const display = createTrayDisplay(windows);
+    const image = display.initialImage as unknown as { bitmap: Buffer };
+
+    expect(new Uint8Array(image.bitmap)).toEqual(renderTrayBadge(null).data);
+  });
+
+  it("draws the share into the icon and puts the title in the tooltip", () => {
+    const display = createTrayDisplay(windows);
+    const tray = fakeFullTray();
+
+    display.showTitle(tray, "8Go · 40%");
+
+    expect(lastBadgePixels(tray)).toEqual(renderTrayBadge(40).data);
+    expect(tray.setToolTip).toHaveBeenCalledWith("8Go · 40%");
+    expect(tray.setTitle).not.toHaveBeenCalled();
+  });
+
+  it("hands the bitmap over at the badge's own size", () => {
+    const display = createTrayDisplay(windows);
+
+    display.showTitle(fakeFullTray(), "8Go · 40%");
+
+    expect(electron.createFromBitmap).toHaveBeenLastCalledWith(
+      expect.anything(),
+      { width: 32, height: 32 },
+    );
+  });
+
+  it.each([OFFLINE_TRAY_TITLE, NO_TRAY_VALUE, STARTUP_TRAY_TITLE])(
+    "shows the dash badge and says why for %s",
+    (title) => {
+      const display = createTrayDisplay(windows);
+      const tray = fakeFullTray();
+
+      display.showTitle(tray, "8Go · 40%");
+      display.showTitle(tray, title);
+
+      expect(lastBadgePixels(tray)).toEqual(renderTrayBadge(null).data);
+      expect(tray.setToolTip).toHaveBeenLastCalledWith(
+        trayFaceFor(title).tooltip,
+      );
+      expect(tray.setTitle).not.toHaveBeenCalled();
+    },
+  );
+
+  it("redraws the badge only when the figure changes", () => {
+    const display = createTrayDisplay(windows);
+    const tray = fakeFullTray();
+
+    display.showTitle(tray, "8Go · 40%");
+    display.showTitle(tray, "8.1Go · 40%");
+
+    expect(tray.setImage).toHaveBeenCalledTimes(1);
+    expect(tray.setToolTip).toHaveBeenLastCalledWith("8.1Go · 40%");
+  });
+
+  it("leaves the signal level out of the icon", () => {
+    // The icon is the figure on Windows; swapping in the bars would hide it.
+    const display = createTrayDisplay(windows);
+    const tray = fakeFullTray();
+
+    display.showSignal(tray, 3);
+
+    expect(tray.setImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("createTrayDisplay — macOS", () => {
+  const mac = platformTraits("darwin");
+
+  it("starts on the empty signal glyph", () => {
+    const display = createTrayDisplay(mac);
+
+    expect((display.initialImage as unknown as FakeImage).path).toBe(
+      trayImageFor(0),
+    );
+    expect(electron.createFromBitmap).not.toHaveBeenCalled();
+  });
+
+  it("puts the title beside the icon and leaves the image to the signal", () => {
+    const display = createTrayDisplay(mac);
+    const tray = fakeFullTray();
+
+    display.showTitle(tray, "8Go · 40%");
+
+    expect(tray.setTitle).toHaveBeenCalledWith("8Go · 40%");
+    expect(tray.setImage).not.toHaveBeenCalled();
+    expect(tray.setToolTip).not.toHaveBeenCalled();
+  });
+
+  it("shows the signal level as the glyph", () => {
+    const display = createTrayDisplay(mac);
+    const tray = fakeFullTray();
+
+    display.showSignal(tray, 3);
+
+    expect(
+      (tray.setImage.mock.calls[0]?.[0] as unknown as FakeImage).path,
+    ).toBe(trayImageFor(3));
   });
 });
