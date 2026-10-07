@@ -21,7 +21,8 @@
     "lint": "eslint .",
     "icon": "electron --force-device-scale-factor=1 scripts/make-icon.mjs && electron --force-device-scale-factor=1 scripts/make-tray-icons.mjs",
     "package": "npm run build && electron-forge package",
-    "make": "npm run build && electron-forge make --arch=universal"
+    "make": "npm run build && electron-forge make --arch=universal",
+    "make:win": "npm run build && electron-forge make --platform=win32 --arch=x64"
   },
   "config": {
     "forge": {
@@ -29,7 +30,7 @@
         "asar": true,
         "appBundleId": "com.ckandrinirina.connect-check",
         "appCategoryType": "public.app-category.utilities",
-        "icon": "assets/icon.icns",
+        "icon": "assets/icon",
         "extendInfo": {
           "LSUIElement": true
         },
@@ -66,6 +67,16 @@
           "platforms": [
             "darwin"
           ]
+        },
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "platforms": [
+            "win32"
+          ],
+          "config": {
+            "name": "ck-connect-check",
+            "setupIcon": "assets/icon.ico"
+          }
         }
       ]
     }
@@ -73,6 +84,7 @@
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
     "@electron-forge/maker-dmg": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.10.2",

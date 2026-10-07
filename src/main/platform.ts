@@ -24,6 +24,11 @@ export interface PlatformTraits {
   hasDock: boolean;
   /** Whether notifications only carry the app's name once an app user model ID is set. */
   needsAppUserModelId: boolean;
+  /**
+   * Whether releases are installed by Squirrel, which runs each version from
+   * its own `app-<version>` folder and removes the old one on update.
+   */
+  installedBySquirrel: boolean;
 }
 
 /** The answers for `platform`, the running one by default. */
@@ -37,6 +42,7 @@ export function platformTraits(
     panelAnchor: windows ? "above-tray" : "below-tray",
     hasDock: platform === "darwin",
     needsAppUserModelId: windows,
+    installedBySquirrel: windows,
   };
 }
 

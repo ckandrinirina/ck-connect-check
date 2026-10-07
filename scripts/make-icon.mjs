@@ -1,15 +1,17 @@
 /**
- * Builds `assets/icon.icns` from `assets/icon.svg`.
+ * Builds `assets/icon.icns` and `assets/icon.ico` from `assets/icon.svg`.
  *
- * Run with `npm run icon`. Both the `.iconset` PNGs and the `.icns` are
- * committed: packaging reads the `.icns` off disk, and must never depend on
- * this script having been run first.
+ * Run with `npm run icon`. The `.iconset` PNGs, the `.icns` and the `.ico` are
+ * committed: packaging reads them off disk, and must never depend on this
+ * script having been run first.
  *
  * The window is Electron's, so this runs under Electron rather than node.
  */
 
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,10 +40,60 @@ const ENTRIES = [
   { file: "icon_512x512@2x.png", pixels: 1024 },
 ];
 
+/** The sizes Windows picks from for the taskbar, Explorer and Setup.exe. */
+const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
+
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const source = join(repoRoot, "assets/icon.svg");
 const iconset = join(repoRoot, "assets/icon.iconset");
 const icns = join(repoRoot, "assets/icon.icns");
+const ico = join(repoRoot, "assets/icon.ico");
+
+/**
+ * An `.ico` whose entries are PNGs, which Windows reads since Vista — no
+ * BMP encoder needed.
+ *
+ * @param {{ size: number, png: Buffer }[]} images
+ */
+function encodeIco(images) {
+  const header = Buffer.alloc(6 + images.length * 16);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2); // 1 = icon
+  header.writeUInt16LE(images.length, 4);
+
+  let offset = header.length;
+  images.forEach(({ size, png }, index) => {
+    const entry = 6 + index * 16;
+    // A dimension byte of 0 stands for 256.
+    header.writeUInt8(size % 256, entry);
+    header.writeUInt8(size % 256, entry + 1);
+    header.writeUInt16LE(1, entry + 4); // colour planes
+    header.writeUInt16LE(32, entry + 6); // bits per pixel
+    header.writeUInt32LE(png.length, entry + 8);
+    header.writeUInt32LE(offset, entry + 12);
+    offset += png.length;
+  });
+
+  return Buffer.concat([header, ...images.map(({ png }) => png)]);
+}
+
+async function buildIco() {
+  const staging = await mkdtemp(join(tmpdir(), "icon-ico-"));
+
+  try {
+    const images = [];
+    for (const size of ICO_SIZES) {
+      const destination = join(staging, `${size}.png`);
+      await renderSvgToPng({ source, size, destination });
+      images.push({ size, png: await readFile(destination) });
+    }
+
+    await writeFile(ico, encodeIco(images));
+    console.log(`  icon.ico — ${ICO_SIZES.length} entries`);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
 
 async function build() {
   // A build script has no business appearing in the Dock while it runs.
@@ -65,6 +117,8 @@ async function build() {
     stdio: "inherit",
   });
   console.log(`  icon.icns — ${ENTRIES.length} entries`);
+
+  await buildIco();
 }
 
 configureDeterministicRendering();

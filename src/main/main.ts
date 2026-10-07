@@ -9,6 +9,7 @@
  */
 
 import { Menu, Notification, Tray, app } from "electron";
+import { spawn } from "node:child_process";
 import { networkInterfaces } from "node:os";
 
 import {
@@ -59,6 +60,7 @@ import {
   type NotificationFactory,
 } from "./notifier.js";
 import { platformTraits } from "./platform.js";
+import { handleSquirrelEvent } from "./squirrel.js";
 import {
   UsagePoller,
   type HostListSource,
@@ -240,12 +242,13 @@ export interface MenuBarApp {
 function applyFirstRunLaunchAtLogin(
   configPath: string,
   config: AppConfig,
+  platform: NodeJS.Platform | undefined,
 ): void {
   if (!app.isPackaged || config.launchAtLoginDefaulted !== undefined) {
     return;
   }
 
-  setLaunchAtLogin(true);
+  setLaunchAtLogin(true, { platform });
   config.launchAtLoginDefaulted = true;
 
   try {
@@ -284,7 +287,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
     console.warn(problem);
   }
 
-  applyFirstRunLaunchAtLogin(configPath, config);
+  applyFirstRunLaunchAtLogin(configPath, config, options.platform);
 
   // One client serves both the poll loop and the sync: they share a session
   // store, so a login taken out for a dialogue is the same one the poll uses.
@@ -398,9 +401,9 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
         planCapProblem,
         planLimitSavedAt,
         planDaysSavedAt,
-        // Read from macOS on every build: the user can remove the item from
-        // System Settings while the app runs, and there is no local copy.
-        launchAtLogin: getLaunchAtLogin(),
+        // Read from the system on every build: the user can remove the item
+        // while the app runs, and there is no local copy.
+        launchAtLogin: getLaunchAtLogin({ platform: options.platform }),
       }),
     );
   }
@@ -528,7 +531,7 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
    * a fresh read, so a registration macOS refused shows unchecked.
    */
   function switchLaunchAtLogin(enabled: boolean): void {
-    setLaunchAtLogin(enabled);
+    setLaunchAtLogin(enabled, { platform: options.platform });
     refreshPopover();
   }
 
@@ -1147,7 +1150,21 @@ export function startMenuBarApp(options: MenuBarOptions = {}): MenuBarApp {
 
 // Only inside a real Electron runtime: importing this file under Vitest must
 // not launch anything.
-if (process.versions.electron !== undefined) {
+// A Squirrel install, update or uninstall run quits before any tray exists.
+if (
+  process.versions.electron !== undefined &&
+  !handleSquirrelEvent(process.argv, {
+    execPath: process.execPath,
+    run: (command, args, done) => {
+      spawn(command, args, { detached: true })
+        .on("close", done)
+        .on("error", done);
+    },
+    quit: () => {
+      app.quit();
+    },
+  })
+) {
   const started = app.whenReady().then(() => startMenuBarApp());
 
   app.on("will-quit", () => {
