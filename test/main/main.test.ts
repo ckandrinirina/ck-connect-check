@@ -15,6 +15,7 @@ import type {
   RouterSnapshot,
 } from "../../src/hilink/types.js";
 import { defaultConfig } from "../../src/config/defaults.js";
+import { APP_ID } from "../../src/app-info.js";
 import { readAppInfo } from "../../src/main/app-info.js";
 import { DEVICES_MENU_LABEL } from "../../src/main/tray.js";
 import type { DevicesModel } from "../../src/main/view-model.js";
@@ -43,6 +44,7 @@ import { SAVED_FOR_MS, type PopoverModel } from "../../src/main/view-model.js";
 /** Electron is never loaded for real here — only the surface `main.ts` touches. */
 const electron = vi.hoisted(() => ({
   dockHide: vi.fn(),
+  setAppUserModelId: vi.fn(),
   setTitle: vi.fn(),
   setImage: vi.fn(),
   on: vi.fn(),
@@ -96,6 +98,7 @@ vi.mock("electron", () => {
   return {
     app: {
       dock: { hide: electron.dockHide },
+      setAppUserModelId: electron.setAppUserModelId,
       on: electron.appOn,
       whenReady: vi.fn(() => Promise.resolve()),
       quit: electron.appQuit,
@@ -298,6 +301,33 @@ describe("startMenuBarApp", () => {
       client: { snapshot: () => Promise.resolve(READING) },
     });
 
+    expect(electron.dockHide).toHaveBeenCalledTimes(1);
+    app.stop();
+  });
+
+  it("on Windows, names the app for notifications by its bundle ID and leaves the Dock alone", () => {
+    electron.setAppUserModelId.mockClear();
+    const app = startMenuBarApp({
+      platform: "win32",
+      configPath: MISSING_CONFIG,
+      client: { snapshot: () => Promise.resolve(READING) },
+    });
+
+    expect(electron.setAppUserModelId).toHaveBeenCalledTimes(1);
+    expect(electron.setAppUserModelId).toHaveBeenCalledWith(APP_ID);
+    expect(electron.dockHide).not.toHaveBeenCalled();
+    app.stop();
+  });
+
+  it("on macOS, sets no app user model ID", () => {
+    electron.setAppUserModelId.mockClear();
+    const app = startMenuBarApp({
+      platform: "darwin",
+      configPath: MISSING_CONFIG,
+      client: { snapshot: () => Promise.resolve(READING) },
+    });
+
+    expect(electron.setAppUserModelId).not.toHaveBeenCalled();
     expect(electron.dockHide).toHaveBeenCalledTimes(1);
     app.stop();
   });
